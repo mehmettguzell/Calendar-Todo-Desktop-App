@@ -88,8 +88,19 @@ export function useInstancesInRange(
 
   return useMemo(() => {
     const out: TaskInstance[] = [];
+    const parentCache = new Map<string, Task>();
+    for (const t of tasks) parentCache.set(t.id, t);
+
     for (const task of tasks) {
-      if (task.parentId) continue; // subtasks render nested under their parent
+      if (task.parentId) {
+        const parent = parentCache.get(task.parentId);
+        if (parent && !parent.tags.includes("plan")) {
+          // Regular subtasks are hidden from the calendar, they only render inside their parent.
+          // Plan subtasks (habits) are allowed to show up on the calendar.
+          continue;
+        }
+      }
+      
       if (!matchesFilters(task, filters)) continue;
       for (const instance of instancesInRange(
         task,

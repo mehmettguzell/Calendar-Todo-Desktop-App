@@ -38,7 +38,7 @@ export function SubtaskList({
       title: trimmed,
       parentId: parent.id,
       categoryId: parent.categoryId,
-      dueDate: parent.dueDate,
+      dueDate: null,
       allDay: true,
     });
     setTitle("");
