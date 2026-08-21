@@ -1,9 +1,21 @@
 import { useState } from "react";
-import { AlarmClock, Clock, Play, Repeat, Square, Timer, Trash2 } from "lucide-react";
+import {
+  AlarmClock,
+  Clock,
+  Play,
+  Repeat,
+  Square,
+  Timer,
+  Trash2,
+} from "lucide-react";
 import { describeWhen, formatTracked } from "@/domain/datetime";
 import type { TaskInstance } from "@/domain/types";
 import { cn } from "@/lib/cn";
-import { useCategoryIndex, useSubtasks, useTrackedSeconds } from "@/state/selectors";
+import {
+  useCategoryIndex,
+  useSubtasks,
+  useTrackedSeconds,
+} from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
 import { Checkbox, StatusBadge } from "@/ui/components/primitives";
 import { SnoozeMenu } from "./SnoozeMenu";
@@ -41,7 +53,9 @@ export function TaskRow({
   const category = task.categoryId ? categories.get(task.categoryId) : null;
   const done = instance.storedStatus === "COMPLETED";
   const doneSubtasks = subtasks.filter((s) => s.status === "COMPLETED").length;
-  const hasReminder = reminders.some((r) => r.taskId === task.id && r.status !== "DISMISSED");
+  const hasReminder = reminders.some(
+    (r) => r.taskId === task.id && r.status !== "DISMISSED",
+  );
   const isFocused = runningFocus?.taskId === task.id;
 
   const time =
@@ -58,14 +72,22 @@ export function TaskRow({
         <Checkbox done={done} onToggle={() => toggleComplete(instance)} />
       </div>
 
-      <button type="button" className="task-main" onClick={() => onOpen(instance)}>
+      <button
+        type="button"
+        className="task-main"
+        onClick={() => onOpen(instance)}
+      >
         <div className="task-title">
           <span className="label wrap">{task.title}</span>
           {instance.status === "OVERDUE" || instance.status === "SNOOZED" ? (
             <StatusBadge status={instance.status} />
           ) : null}
-          {task.recurrence ? <Repeat size={13} className="faint" aria-label="Repeats" /> : null}
-          {hasReminder ? <AlarmClock size={13} className="faint" aria-label="Has reminder" /> : null}
+          {task.recurrence ? (
+            <Repeat size={13} className="faint" aria-label="Repeats" />
+          ) : null}
+          {hasReminder ? (
+            <AlarmClock size={13} className="faint" aria-label="Has reminder" />
+          ) : null}
         </div>
 
         <div className="task-meta">
@@ -76,7 +98,9 @@ export function TaskRow({
             </span>
           ) : null}
           {time ? <span className="mono">{time}</span> : null}
-          {task.allDay && instance.date ? <span className="tag">All-day</span> : null}
+          {task.allDay && instance.date ? (
+            <span className="tag">All-day</span>
+          ) : null}
           {category ? (
             <span className="row" style={{ gap: 5 }}>
               <i className="dot" style={{ background: category.color }} />
@@ -86,7 +110,11 @@ export function TaskRow({
           {subtasks.length > 0 ? (
             <span className="subtask-strip">
               <span className="progress">
-                <i style={{ width: `${(doneSubtasks / subtasks.length) * 100}%` }} />
+                <i
+                  style={{
+                    width: `${(doneSubtasks / subtasks.length) * 100}%`,
+                  }}
+                />
               </span>
               {doneSubtasks}/{subtasks.length}
             </span>
@@ -110,7 +138,10 @@ export function TaskRow({
           type="button"
           className="btn ghost icon"
           title={isFocused ? "Stop focus timer" : "Start focus timer"}
-          onClick={() => (isFocused ? stopFocus() : startFocus(instance))}
+          onClick={(e) => {
+            e.stopPropagation();
+            isFocused ? stopFocus() : startFocus(instance);
+          }}
         >
           {isFocused ? <Square size={14} /> : <Play size={14} />}
         </button>
@@ -118,7 +149,10 @@ export function TaskRow({
           type="button"
           className="btn ghost icon"
           title="Snooze"
-          onClick={() => setSnoozeOpen((v) => !v)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setSnoozeOpen((v) => !v);
+          }}
         >
           <AlarmClock size={14} />
         </button>
@@ -126,13 +160,20 @@ export function TaskRow({
           type="button"
           className="btn ghost icon"
           title="Move to trash"
-          onClick={() => deleteTask(task.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            deleteTask(task.id);
+          }}
         >
           <Trash2 size={14} />
         </button>
         {snoozeOpen ? (
           <div style={{ position: "absolute", top: "100%", right: 0 }}>
-            <SnoozeMenu instance={instance} align="right" onClose={() => setSnoozeOpen(false)} />
+            <SnoozeMenu
+              instance={instance}
+              align="right"
+              onClose={() => setSnoozeOpen(false)}
+            />
           </div>
         ) : null}
       </div>

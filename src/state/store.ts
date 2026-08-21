@@ -82,12 +82,23 @@ interface StoreState {
 
   setStatus(ref: InstanceRef, status: StoredStatus): void;
   toggleComplete(instance: TaskInstance): void;
-  reschedule(taskId: string, dueDate: LocalDate | null, startTime?: string | null): void;
-  snooze(instance: TaskInstance, preset: SnoozePresetId, customTarget?: Date): void;
+  reschedule(
+    taskId: string,
+    dueDate: LocalDate | null,
+    startTime?: string | null,
+  ): void;
+  snooze(
+    instance: TaskInstance,
+    preset: SnoozePresetId,
+    customTarget?: Date,
+  ): void;
   clearSnooze(ref: InstanceRef): void;
 
   addReminder(
-    reminder: Omit<Reminder, "id" | "createdAt" | "status" | "snoozedUntil" | "lastFiredFor">,
+    reminder: Omit<
+      Reminder,
+      "id" | "createdAt" | "status" | "snoozedUntil" | "lastFiredFor"
+    >,
   ): void;
   removeReminder(reminderId: string): void;
   markReminderFired(reminderId: string, occurrenceDate: LocalDate | null): void;
@@ -98,7 +109,10 @@ interface StoreState {
   stopFocus(): void;
 
   addCategory(name: string, color: string): Category;
-  updateCategory(id: string, patch: Partial<Pick<Category, "name" | "color">>): void;
+  updateCategory(
+    id: string,
+    patch: Partial<Pick<Category, "name" | "color">>,
+  ): void;
   removeCategory(id: string): void;
 
   reorderSubtasks(parentId: string, orderedIds: string[]): void;
@@ -119,7 +133,9 @@ function persist(db: Database) {
   if (saveTimer) clearTimeout(saveTimer);
   const repo = repository;
   saveTimer = setTimeout(() => {
-    void repo.save(db).catch((error) => console.error("[tempo] save failed", error));
+    void repo
+      .save(db)
+      .catch((error) => console.error("[tempo] save failed", error));
   }, 250);
 }
 
@@ -150,7 +166,10 @@ export const useStore = create<StoreState>((set, get) => {
     });
   };
 
-  const appendHistory = (db: Database, ...entries: HistoryEntry[]): Database => ({
+  const appendHistory = (
+    db: Database,
+    ...entries: HistoryEntry[]
+  ): Database => ({
     ...db,
     history: [...db.history, ...entries],
   });
@@ -173,12 +192,33 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     tick() {
-      set({ now: Date.now() });
+      const state = get();
+      const nowMs = Date.now();
+      const cutoff = new Date(nowMs - 24 * 60 * 60 * 1000).toISOString();
+
+      const toPurge = state.db.tasks
+        .filter((t) => t.deletedAt !== null && t.deletedAt < cutoff)
+        .map((t) => t.id);
+
+      if (toPurge.length > 0) {
+        commit((db) => ({
+          ...db,
+          tasks: db.tasks.filter((t) => !toPurge.includes(t.id)),
+          occurrences: db.occurrences.filter(
+            (o) => !toPurge.includes(o.taskId),
+          ),
+          reminders: db.reminders.filter((r) => !toPurge.includes(r.taskId)),
+        }));
+      }
+
+      set({ now: nowMs });
     },
 
     createTask(draft) {
       const at = nowInstant();
-      const siblings = get().db.tasks.filter((t) => t.parentId === (draft.parentId ?? null));
+      const siblings = get().db.tasks.filter(
+        (t) => t.parentId === (draft.parentId ?? null),
+      );
       const task: Task = {
         id: createId("t"),
         title: draft.title.trim(),
@@ -204,7 +244,11 @@ export const useStore = create<StoreState>((set, get) => {
       commit((db) =>
         appendHistory(
           { ...db, tasks: [...db.tasks, task] },
-          historyEntry({ taskId: task.id, kind: "CREATED", note: `Created "${task.title}"` }),
+          historyEntry({
+            taskId: task.id,
+            kind: "CREATED",
+            note: `Created "${task.title}"`,
+          }),
         ),
       );
       return task;
@@ -234,13 +278,28 @@ export const useStore = create<StoreState>((set, get) => {
           );
         }
 
-        const tracked = ["title", "description", "priority", "categoryId", "recurrence", "tags"] as const;
+        const tracked = [
+          "title",
+          "description",
+          "priority",
+          "categoryId",
+          "recurrence",
+          "tags",
+        ] as const;
         for (const field of tracked) {
           if (!(field in patch)) continue;
           const before = serialise(task[field]);
           const after = serialise(patch[field]);
           if (before === after) continue;
-          entries.push(historyEntry({ taskId, kind: "UPDATED", field, from: before, to: after }));
+          entries.push(
+            historyEntry({
+              taskId,
+              kind: "UPDATED",
+              field,
+              from: before,
+              to: after,
+            }),
+          );
         }
         if (note) entries.push(historyEntry({ taskId, kind: "UPDATED", note }));
 
@@ -306,7 +365,8 @@ export const useStore = create<StoreState>((set, get) => {
 
     toggleComplete(instance) {
       const ref = refOf(instance);
-      const next: StoredStatus = instance.storedStatus === "COMPLETED" ? "TODO" : "COMPLETED";
+      const next: StoredStatus =
+        instance.storedStatus === "COMPLETED" ? "TODO" : "COMPLETED";
       commit((db) => applyStatus(db, ref, next));
     },
 
@@ -338,7 +398,13 @@ export const useStore = create<StoreState>((set, get) => {
     snooze(instance, preset, customTarget) {
       const { settings } = get().db;
       const now = new Date(get().now);
-      const outcome = resolveSnooze(instance, preset, settings, now, customTarget);
+      const outcome = resolveSnooze(
+        instance,
+        preset,
+        settings,
+        now,
+        customTarget,
+      );
       const ref = refOf(instance);
 
       commit((db) => {
@@ -374,7 +440,10 @@ export const useStore = create<StoreState>((set, get) => {
               note: `Snoozed, moved to ${outcome.reschedule.date}`,
             }),
           );
-          next = { ...next, tasks: next.tasks.map((t) => (t.id === task.id ? moved : t)) };
+          next = {
+            ...next,
+            tasks: next.tasks.map((t) => (t.id === task.id ? moved : t)),
+          };
         }
 
         next = writeSnoozeUntil(next, ref, outcome.until);
@@ -384,7 +453,11 @@ export const useStore = create<StoreState>((set, get) => {
           ...next,
           reminders: next.reminders.map((r) =>
             r.taskId === task.id
-              ? { ...r, snoozedUntil: outcome.until, status: "PENDING" as const }
+              ? {
+                  ...r,
+                  snoozedUntil: outcome.until,
+                  status: "PENDING" as const,
+                }
               : r,
           ),
         };
@@ -438,7 +511,12 @@ export const useStore = create<StoreState>((set, get) => {
           snoozedUntil: null,
         };
         return appendHistory(
-          { ...db, reminders: db.reminders.map((r) => (r.id === reminderId ? next : r)) },
+          {
+            ...db,
+            reminders: db.reminders.map((r) =>
+              r.id === reminderId ? next : r,
+            ),
+          },
           historyEntry({
             taskId: reminder.taskId,
             kind: "REMINDER_FIRED",
@@ -452,7 +530,9 @@ export const useStore = create<StoreState>((set, get) => {
       commit((db) => ({
         ...db,
         reminders: db.reminders.map((r) =>
-          r.id === reminderId ? { ...r, snoozedUntil: until, status: "PENDING" as const } : r,
+          r.id === reminderId
+            ? { ...r, snoozedUntil: until, status: "PENDING" as const }
+            : r,
         ),
       }));
     },
@@ -487,7 +567,10 @@ export const useStore = create<StoreState>((set, get) => {
         },
       });
       commit((db) => {
-        const withSession = { ...db, focusSessions: [...db.focusSessions, session] };
+        const withSession = {
+          ...db,
+          focusSessions: [...db.focusSessions, session],
+        };
         // Working on something is the definition of IN_PROGRESS.
         return instance.storedStatus === "TODO"
           ? applyStatus(withSession, refOf(instance), "IN_PROGRESS")
@@ -501,7 +584,9 @@ export const useStore = create<StoreState>((set, get) => {
       const endedAt = new Date();
       const durationSec = Math.max(
         0,
-        Math.round((endedAt.getTime() - new Date(running.startedAt).getTime()) / 1000),
+        Math.round(
+          (endedAt.getTime() - new Date(running.startedAt).getTime()) / 1000,
+        ),
       );
       set({ runningFocus: null });
       commit((db) =>
@@ -509,7 +594,9 @@ export const useStore = create<StoreState>((set, get) => {
           {
             ...db,
             focusSessions: db.focusSessions.map((s) =>
-              s.id === running.sessionId ? { ...s, endedAt: toInstant(endedAt), durationSec } : s,
+              s.id === running.sessionId
+                ? { ...s, endedAt: toInstant(endedAt), durationSec }
+                : s,
             ),
           },
           historyEntry({
@@ -536,7 +623,9 @@ export const useStore = create<StoreState>((set, get) => {
     updateCategory(id, patch) {
       commit((db) => ({
         ...db,
-        categories: db.categories.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+        categories: db.categories.map((c) =>
+          c.id === id ? { ...c, ...patch } : c,
+        ),
       }));
     },
 
@@ -544,7 +633,9 @@ export const useStore = create<StoreState>((set, get) => {
       commit((db) => ({
         ...db,
         categories: db.categories.filter((c) => c.id !== id),
-        tasks: db.tasks.map((t) => (t.categoryId === id ? { ...t, categoryId: null } : t)),
+        tasks: db.tasks.map((t) =>
+          t.categoryId === id ? { ...t, categoryId: null } : t,
+        ),
       }));
     },
 
@@ -565,7 +656,8 @@ export const useStore = create<StoreState>((set, get) => {
         return {
           ...db,
           tasks: db.tasks.map((task) => {
-            const next = task.parentId === parentId ? position.get(task.id) : undefined;
+            const next =
+              task.parentId === parentId ? position.get(task.id) : undefined;
             return next === undefined || next === task.order
               ? task
               : { ...task, order: next, updatedAt: at };
@@ -593,7 +685,9 @@ export const useStore = create<StoreState>((set, get) => {
     /** Purge every trashed task at once; the same hard delete as purgeTask. */
     emptyTrash() {
       commit((db) => {
-        const ids = db.tasks.filter((t) => t.deletedAt !== null).map((t) => t.id);
+        const ids = db.tasks
+          .filter((t) => t.deletedAt !== null)
+          .map((t) => t.id);
         if (ids.length === 0) return db;
         return {
           ...db,
@@ -635,7 +729,11 @@ function refOf(instance: TaskInstance): InstanceRef {
  * a recurring series. Callers never need to know which, which is the whole
  * point of `InstanceRef`.
  */
-function applyStatus(db: Database, ref: InstanceRef, status: StoredStatus): Database {
+function applyStatus(
+  db: Database,
+  ref: InstanceRef,
+  status: StoredStatus,
+): Database {
   const task = db.tasks.find((t) => t.id === ref.taskId);
   if (!task) return db;
 
@@ -659,7 +757,8 @@ function applyStatus(db: Database, ref: InstanceRef, status: StoredStatus): Data
       date: ref.occurrenceDate,
       status,
       completedAt,
-      snoozedUntil: status === "COMPLETED" ? null : (existing?.snoozedUntil ?? null),
+      snoozedUntil:
+        status === "COMPLETED" ? null : (existing?.snoozedUntil ?? null),
     };
     return {
       ...db,
@@ -694,7 +793,11 @@ function currentStoredStatus(db: Database, ref: InstanceRef): StoredStatus {
   return task.status;
 }
 
-function writeSnoozeUntil(db: Database, ref: InstanceRef, until: string | null): Database {
+function writeSnoozeUntil(
+  db: Database,
+  ref: InstanceRef,
+  until: string | null,
+): Database {
   const task = db.tasks.find((t) => t.id === ref.taskId);
   if (!task) return db;
 
@@ -721,7 +824,9 @@ function writeSnoozeUntil(db: Database, ref: InstanceRef, until: string | null):
   return {
     ...db,
     tasks: db.tasks.map((t) =>
-      t.id === task.id ? { ...t, snoozedUntil: until, updatedAt: nowInstant() } : t,
+      t.id === task.id
+        ? { ...t, snoozedUntil: until, updatedAt: nowInstant() }
+        : t,
     ),
   };
 }

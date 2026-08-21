@@ -73,13 +73,17 @@ export function TaskPanel({
 
   const commitTitle = () => {
     const trimmed = title.trim();
-    if (trimmed && trimmed !== task.title) updateTask(task.id, { title: trimmed });
+    if (trimmed && trimmed !== task.title)
+      updateTask(task.id, { title: trimmed });
     else if (!trimmed) setTitle(task.title);
   };
 
   const isFocused = runningFocus?.taskId === task.id;
   const ref = useMemo(
-    () => ({ taskId: task.id, occurrenceDate: instance.isRecurring ? instance.date : null }),
+    () => ({
+      taskId: task.id,
+      occurrenceDate: instance.isRecurring ? instance.date : null,
+    }),
     [task.id, instance.isRecurring, instance.date],
   );
 
@@ -93,7 +97,12 @@ export function TaskPanel({
           </span>
         ) : null}
         <span className="grow" />
-        <button type="button" className="btn ghost icon" onClick={onClose} aria-label="Close panel">
+        <button
+          type="button"
+          className="btn ghost icon"
+          onClick={onClose}
+          aria-label="Close panel"
+        >
           <X size={16} />
         </button>
       </div>
@@ -125,23 +134,46 @@ export function TaskPanel({
           <button
             type="button"
             className="btn"
-            onClick={() =>
-              setStatus(ref, instance.storedStatus === "IN_PROGRESS" ? "TODO" : "IN_PROGRESS")
-            }
+            onClick={() => {
+              if (isFocused) {
+                stopFocus();
+                setStatus(ref, "TODO");
+              } else {
+                startFocus(instance);
+              }
+            }}
           >
-            {instance.storedStatus === "IN_PROGRESS" ? "Pause" : "Start"}
+            {isFocused ? "Pause" : "Start"}
           </button>
-          <button type="button" className="btn" onClick={() => setSnoozeOpen((v) => !v)}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setSnoozeOpen((v) => !v)}
+          >
             <AlarmClock size={14} /> Snooze
           </button>
           {instance.status === "SNOOZED" ? (
-            <button type="button" className="btn ghost" onClick={() => clearSnooze(ref)}>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => clearSnooze(ref)}
+            >
               Wake now
             </button>
           ) : null}
           {snoozeOpen ? (
-            <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 4 }}>
-              <SnoozeMenu instance={instance} onClose={() => setSnoozeOpen(false)} />
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                marginTop: 4,
+              }}
+            >
+              <SnoozeMenu
+                instance={instance}
+                onClose={() => setSnoozeOpen(false)}
+              />
             </div>
           ) : null}
         </div>
@@ -152,7 +184,10 @@ export function TaskPanel({
             value={description}
             placeholder="Add details…"
             onChange={(e) => setDescription(e.target.value)}
-            onBlur={() => description !== task.description && updateTask(task.id, { description })}
+            onBlur={() =>
+              description !== task.description &&
+              updateTask(task.id, { description })
+            }
           />
         </Field>
 
@@ -164,7 +199,9 @@ export function TaskPanel({
                 className="input"
                 type="date"
                 value={task.dueDate ?? ""}
-                onChange={(e) => updateTask(task.id, { dueDate: e.target.value || null })}
+                onChange={(e) =>
+                  updateTask(task.id, { dueDate: e.target.value || null })
+                }
               />
             </Field>
 
@@ -187,7 +224,9 @@ export function TaskPanel({
                     className="input"
                     type="time"
                     value={task.startTime ?? ""}
-                    onChange={(e) => updateTask(task.id, { startTime: e.target.value || null })}
+                    onChange={(e) =>
+                      updateTask(task.id, { startTime: e.target.value || null })
+                    }
                   />
                 </Field>
                 <Field label="End">
@@ -195,7 +234,9 @@ export function TaskPanel({
                     className="input"
                     type="time"
                     value={task.endTime ?? ""}
-                    onChange={(e) => updateTask(task.id, { endTime: e.target.value || null })}
+                    onChange={(e) =>
+                      updateTask(task.id, { endTime: e.target.value || null })
+                    }
                   />
                 </Field>
               </div>
@@ -216,7 +257,11 @@ export function TaskPanel({
                 <select
                   className="select"
                   value={task.priority}
-                  onChange={(e) => updateTask(task.id, { priority: e.target.value as Priority })}
+                  onChange={(e) =>
+                    updateTask(task.id, {
+                      priority: e.target.value as Priority,
+                    })
+                  }
                 >
                   {PRIORITIES.map((p) => (
                     <option key={p} value={p}>
@@ -229,7 +274,9 @@ export function TaskPanel({
                 <select
                   className="select"
                   value={task.categoryId ?? ""}
-                  onChange={(e) => updateTask(task.id, { categoryId: e.target.value || null })}
+                  onChange={(e) =>
+                    updateTask(task.id, { categoryId: e.target.value || null })
+                  }
                 >
                   <option value="">None</option>
                   {categories.map((c) => (
@@ -252,7 +299,8 @@ export function TaskPanel({
                     .split(",")
                     .map((t) => t.trim().replace(/^#/, ""))
                     .filter(Boolean);
-                  if (tags.join(",") !== task.tags.join(",")) updateTask(task.id, { tags });
+                  if (tags.join(",") !== task.tags.join(","))
+                    updateTask(task.id, { tags });
                 }}
               />
             </Field>

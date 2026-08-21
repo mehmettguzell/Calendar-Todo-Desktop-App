@@ -33,7 +33,10 @@ export function ActivityView() {
   const trashed = useTrashedTasks();
   const [kind, setKind] = useState<HistoryKind | "ALL">("ALL");
 
-  const titles = useMemo(() => new Map(tasks.map((t) => [t.id, t.title])), [tasks]);
+  const titles = useMemo(
+    () => new Map(tasks.map((t) => [t.id, t.title])),
+    [tasks],
+  );
   const entries = useMemo(
     () =>
       history
@@ -52,6 +55,9 @@ export function ActivityView() {
             <Trash2 size={14} />
             <h2>Trash</h2>
             <span className="count">{trashed.length}</span>
+            <span className="faint" style={{ fontSize: 12, marginLeft: 8 }}>
+              (Auto-deletes after 24h)
+            </span>
             <span className="grow" />
             <ConfirmButton
               label="Empty trash"
@@ -64,7 +70,11 @@ export function ActivityView() {
             {trashed.map((task) => (
               <div key={task.id} className="row" style={{ fontSize: 13 }}>
                 <span className="grow truncate faint">{task.title}</span>
-                <button type="button" className="btn sm" onClick={() => restoreTask(task.id)}>
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() => restoreTask(task.id)}
+                >
                   <RotateCcw size={12} /> Restore
                 </button>
                 <button
@@ -86,7 +96,9 @@ export function ActivityView() {
           <History size={14} />
           <h2>Activity</h2>
           <span className="count">
-            {kind === "ALL" ? entries.length : `${entries.length} of ${history.length}`}
+            {kind === "ALL"
+              ? entries.length
+              : `${entries.length} of ${history.length}`}
           </span>
           <span className="grow" />
           <select
@@ -112,7 +124,10 @@ export function ActivityView() {
         </div>
 
         {entries.length === 0 ? (
-          <Empty icon={<History size={26} />} title="No activity recorded yet" />
+          <Empty
+            icon={<History size={26} />}
+            title="No activity recorded yet"
+          />
         ) : (
           <div className="timeline">
             {entries.map((entry) => (
