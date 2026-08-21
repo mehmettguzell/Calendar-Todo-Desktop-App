@@ -995,3 +995,722 @@
   gap: 4px;
   font-size: 11px;
 }
+
+/* ================================================================== */
+/* PLANS VIEW STYLES                                                 */
+/* ================================================================== */
+
+.plans-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.plans-title-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.plans-title-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+}
+
+.plans-main-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.plans-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 2px 0 0 0;
+}
+
+.plans-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.plans-filter-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.plan-tab-btn {
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.plan-tab-btn:hover {
+  color: var(--text);
+}
+
+.plan-tab-btn.active {
+  background: var(--surface);
+  color: var(--accent);
+  font-weight: 650;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Plan Starters Grid */
+.plan-starters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.plan-starter-card {
+  padding: 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: all 150ms ease;
+}
+
+.plan-starter-card:hover {
+  border-color: var(--accent);
+  border-style: solid;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+  background: var(--surface-hover);
+}
+
+.plan-starter-title {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.plan-starter-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.plan-starter-sub-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-top: 4px;
+}
+
+/* Plans Grid */
+.plans-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-4);
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.plan-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+}
+
+.plan-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.plan-card.completed {
+  opacity: 0.85;
+}
+
+.plan-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.plan-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.plan-icon.active {
+  color: var(--accent);
+}
+
+.plan-icon.completed {
+  color: var(--success);
+}
+
+.plan-card-title {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.plan-card.completed .plan-card-title {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.plan-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.plan-card-desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.plan-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  cursor: pointer;
+}
+
+.plan-category-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.plan-priority-tag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.plan-priority-tag.HIGH {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.plan-priority-tag.MEDIUM {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.plan-priority-tag.LOW {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.plan-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.plan-status-pill.active {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.plan-status-pill.success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+/* Plan Progress Section */
+.plan-card-progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plan-progress-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.plan-progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.plan-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.plan-progress-bar.in-progress {
+  background: linear-gradient(90deg, var(--accent), #10b981);
+}
+
+.plan-progress-bar.completed {
+  background: var(--success);
+}
+
+/* Subtasks Section */
+.plan-subtasks-section {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.plan-subtasks-head {
+  cursor: pointer;
+  user-select: none;
+}
+
+.plan-subtasks-toggle-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-faint);
+  transition: color 120ms ease;
+}
+
+.plan-subtasks-toggle-title:hover {
+  color: var(--text);
+}
+
+.plan-subtasks-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.plan-subtask-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12.5px;
+  transition: background 120ms ease;
+}
+
+.plan-subtask-item:hover {
+  background: var(--surface-hover);
+}
+
+.plan-subtask-item.done .plan-subtask-label {
+  text-decoration: line-through;
+  color: var(--text-faint);
+}
+
+.plan-subtask-label {
+  cursor: pointer;
+}
+
+.plan-subtask-add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* ================================================================== */
+/* TASKS VIEW STYLES                                                 */
+/* ================================================================== */
+
+.task-summary-banner {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--space-3);
+}
+
+.task-summary-stat {
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.task-summary-val {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.task-summary-lbl {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Tasks Quick Add Card */
+.tasks-quick-add-card {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.tasks-quick-add-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tasks-quick-input {
+  font-size: 14.5px;
+}
+
+.tasks-quick-options-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  border-top: 1px solid var(--surface-2);
+}
+
+.tasks-quick-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tasks-quick-group-lbl {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.tasks-quick-pill {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.tasks-quick-pill:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.tasks-quick-pill.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.tasks-quick-pill.prio-high.active {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.tasks-quick-pill.prio-med.active {
+  background: var(--warning-soft);
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+/* Tasks Controls Bar */
+.tasks-controls-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tasks-filter-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.filter-pill:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.filter-pill.active {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+.filter-pill.danger.active {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.tasks-view-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.tasks-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.tasks-view-btn:hover {
+  color: var(--text);
+}
+
+.tasks-view-btn.active {
+  background: var(--surface);
+  color: var(--accent);
+  font-weight: 650;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Kanban Board Layout */
+.kanban-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.kanban-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  min-height: 240px;
+}
+
+.kanban-column-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.kanban-col-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0;
+  flex: 1;
+}
+
+.kanban-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kanban-empty-slot {
+  text-align: center;
+  padding: 24px 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* ================================================================== */
+/* TODAY VIEW HIGHLIGHT & FAST ADD STYLES                             */
+/* ================================================================== */
+
+.today-highlight-card {
+  padding: 14px 16px;
+  border: 1.5px solid rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius);
+  background: linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.08),
+    rgba(59, 130, 246, 0.04)
+  );
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.today-highlight-card.is-done {
+  opacity: 0.7;
+  border-color: var(--border);
+  background: var(--surface-2);
+  box-shadow: none;
+}
+
+.today-highlight-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.today-highlight-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: #d97706;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.today-highlight-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.today-highlight-title {
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.today-highlight-card.is-done .today-highlight-title {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.today-highlight-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Today Fast Add Bar */
+.today-fast-add-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.today-fast-input {
+  border: none;
+  background: none;
+  font-size: 13.5px;
+}
+
+.today-fast-input:focus {
+  box-shadow: none;
+}
+
+.prio-high-active {
+  background: var(--danger-soft) !important;
+  color: var(--danger) !important;
+  font-weight: 700;
+}

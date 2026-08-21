@@ -1,10 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronRight, Flame, Shield, Sparkles, Star, Zap } from "lucide-react";
-import {
-  LEVEL_TIERS,
-  type LevelInfo,
-  type StreakInfo,
-} from "@/domain/gamification";
+import { LEVEL_TIERS, type LevelInfo, type StreakInfo } from "@/domain/gamification";
 import { fireConfetti } from "@/lib/confetti";
 import { Modal } from "./primitives";
 
@@ -40,10 +36,7 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
             <div className="level-title-row">
               <span className="level-title truncate">{levelInfo.title}</span>
               {streaks.currentStreak > 0 && (
-                <span
-                  className="level-streak-chip"
-                  title={`${streaks.currentStreak} günlük seri!`}
-                >
+                <span className="level-streak-chip" title={`${streaks.currentStreak} günlük seri!`}>
                   <Flame size={11} /> {streaks.currentStreak}
                 </span>
               )}
@@ -65,18 +58,14 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
         </div>
       </div>
 
-      {/* Level Up Celebration Toast / Banner */}
+      {/* Level Up Celebration Toast */}
       {levelUpNotif && (
         <div className="level-up-toast">
           <Sparkles size={20} className="level-up-sparkle" />
           <div className="grow">
             <strong>Tebrikler! Seviye Atladın! 🎉</strong>
             <div style={{ fontSize: 12 }}>
-              Artık{" "}
-              <strong>
-                Level {levelInfo.level}: {levelInfo.title}
-              </strong>{" "}
-              unvanına sahipsin!
+              Artık <strong>Level {levelInfo.level}: {levelInfo.title}</strong> unvanına sahipsin!
             </div>
           </div>
           <button
@@ -103,9 +92,7 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
                 <span className="level-modal-lvl">Lv.{levelInfo.level}</span>
               </div>
               <div>
-                <h3 style={{ fontSize: 18, fontWeight: 700 }}>
-                  {levelInfo.title}
-                </h3>
+                <h3 style={{ fontSize: 18, fontWeight: 700 }}>{levelInfo.title}</h3>
                 <p className="faint" style={{ fontSize: 13, marginTop: 2 }}>
                   Toplam {levelInfo.totalXp.toLocaleString()} XP topladın.
                 </p>
@@ -116,8 +103,7 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
               <div className="card-head">
                 <span>Sonraki Seviyeye İlerleme</span>
                 <span className="mono">
-                  {levelInfo.xpInCurrentLevel} /{" "}
-                  {levelInfo.xpNeededForNextLevel} XP
+                  {levelInfo.xpInCurrentLevel} / {levelInfo.xpNeededForNextLevel} XP
                 </span>
               </div>
               <div className="level-progress-bar lg">
@@ -170,10 +156,7 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
               <div className="card-head">
                 <span>Seviye Yol Haritası</span>
               </div>
-              <div
-                className="col"
-                style={{ gap: 4, maxHeight: 180, overflowY: "auto" }}
-              >
+              <div className="col" style={{ gap: 4, maxHeight: 180, overflowY: "auto" }}>
                 {LEVEL_TIERS.map((tier) => {
                   const isCurrent = tier.level === levelInfo.level;
                   const isUnlocked = levelInfo.totalXp >= tier.minXp;
@@ -184,15 +167,9 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
                       className={`row level-tier-row ${isCurrent ? "is-current" : ""} ${
                         isUnlocked ? "is-unlocked" : "is-locked"
                       }`}
-                      style={{
-                        fontSize: 12.5,
-                        padding: "4px 8px",
-                        borderRadius: 4,
-                      }}
+                      style={{ fontSize: 12.5, padding: "4px 8px", borderRadius: 4 }}
                     >
-                      <span style={{ fontWeight: 600, minWidth: 46 }}>
-                        Lv.{tier.level}
-                      </span>
+                      <span style={{ fontWeight: 600, minWidth: 46 }}>Lv.{tier.level}</span>
                       <span className="grow truncate">{tier.title}</span>
                       <span className="faint mono" style={{ fontSize: 11 }}>
                         {tier.minXp} XP
