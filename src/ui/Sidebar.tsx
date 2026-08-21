@@ -16,11 +16,13 @@ import { CATEGORY_COLORS } from "@/data/db";
 import type { LocalDate } from "@/domain/types";
 import {
   useCategories,
+  useGamificationStats,
   useInstancesInRange,
   useTodoGroups,
   type Filters,
 } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
+import { LevelBadge } from "./components/LevelBadge";
 import { MiniMonth } from "./components/MiniMonth";
 import { Field, Modal } from "./components/primitives";
 
@@ -92,6 +94,8 @@ export function Sidebar({
       ),
     };
   }, [groups]);
+
+  const { levelInfo, streaks } = useGamificationStats();
 
   const toggleCategory = (id: string) => {
     const active = filters.categoryIds.includes(id);
@@ -192,6 +196,9 @@ export function Sidebar({
       </div>
 
       <div className="grow" />
+
+      {/* Gamification Level & Streak Widget */}
+      <LevelBadge levelInfo={levelInfo} streaks={streaks} />
 
       <button type="button" className="nav-item" onClick={onSettings}>
         <Settings size={16} />

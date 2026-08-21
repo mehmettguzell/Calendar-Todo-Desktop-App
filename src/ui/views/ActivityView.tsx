@@ -3,8 +3,9 @@ import { History, RotateCcw, Trash2 } from "lucide-react";
 import { fromInstant } from "@/domain/datetime";
 import { describeHistory, historyKindLabel } from "@/domain/history";
 import type { HistoryKind } from "@/domain/types";
-import { useTrashedTasks } from "@/state/selectors";
+import { useGamificationStats, useTrashedTasks } from "@/state/selectors";
 import { useStore } from "@/state/store";
+import { ActivityHeatmap } from "@/ui/components/ActivityHeatmap";
 import { ConfirmButton, Empty } from "@/ui/components/primitives";
 
 const KINDS: HistoryKind[] = [
@@ -20,7 +21,7 @@ const KINDS: HistoryKind[] = [
 ];
 
 /**
- * The global, append-only trail (spec section 5.5) plus the trash.
+ * The global, append-only trail (spec section 5.5) plus the trash and activity heatmap.
  * Nothing here is ever rewritten: a rescheduled task keeps every prior date.
  */
 export function ActivityView() {
@@ -31,6 +32,7 @@ export function ActivityView() {
   const emptyTrash = useStore((s) => s.emptyTrash);
   const clearHistory = useStore((s) => s.clearHistory);
   const trashed = useTrashedTasks();
+  const { streaks, totalXp } = useGamificationStats();
   const [kind, setKind] = useState<HistoryKind | "ALL">("ALL");
 
   const titles = useMemo(
@@ -48,7 +50,10 @@ export function ActivityView() {
   );
 
   return (
-    <div className="page">
+    <div className="page wide">
+      {/* Activity Heatmap & Streaks Dashboard */}
+      <ActivityHeatmap streaks={streaks} totalXp={totalXp} />
+
       {trashed.length > 0 ? (
         <section className="section">
           <div className="section-head">
@@ -94,7 +99,7 @@ export function ActivityView() {
       <section className="section">
         <div className="section-head">
           <History size={14} />
-          <h2>Activity</h2>
+          <h2>Activity Trail</h2>
           <span className="count">
             {kind === "ALL"
               ? entries.length

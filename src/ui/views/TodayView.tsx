@@ -1,16 +1,22 @@
-import { useMemo } from "react";
-import { CalendarCheck, CircleAlert, Sun } from "lucide-react";
+import { useEffect, useMemo, useRef } from "react";
+import { CalendarCheck, CircleAlert, Flame, Sun } from "lucide-react";
 import { addDaysLocal, formatTracked, toLocalDate } from "@/domain/datetime";
+import { getMotivationalMessage } from "@/domain/gamification";
 import type { TaskInstance } from "@/domain/types";
+import { fireConfetti } from "@/lib/confetti";
 import {
   compareInstances,
   useFocusSessions,
+  useGamificationStats,
   useInstancesInRange,
   useTodoGroups,
+  useWeeklyStatsHook,
   type Filters,
 } from "@/state/selectors";
 import { useNow } from "@/state/store";
 import { Empty } from "@/ui/components/primitives";
+import { ProgressRing } from "@/ui/components/ProgressRing";
+import { WeeklyBarChart } from "@/ui/components/WeeklyBarChart";
 import { TaskRow } from "@/ui/task/TaskRow";
 
 /**
@@ -31,6 +37,8 @@ export function TodayView({
   const groups = useTodoGroups(filters);
   const upcoming = useInstancesInRange(addDaysLocal(today, 1), addDaysLocal(today, 3), filters);
   const sessions = useFocusSessions();
+  const { streaks } = useGamificationStats();
+  const weeklyStats = useWeeklyStatsHook(7);
 
   const overdue = groups.find((g) => g.id === "overdue")?.instances ?? [];
   // Today always shows what was finished today, whatever the global filter says.
@@ -47,30 +55,92 @@ export function TodayView({
 
   const done = todays.filter((i) => i.storedStatus === "COMPLETED").length;
   const sorted = [...todays].sort(compareInstances);
+  const openCount = sorted.length - done;
+
+  // Dynamic motivational message
+  const motivation = useMemo(
+    () =>
+      getMotivationalMessage({
+        openCount,
+        doneCount: done,
+        overdueCount: overdue.length,
+        streak: streaks.currentStreak,
+      }),
+    [openCount, done, overdue.length, streaks.currentStreak],
+  );
+
+  // Confetti trigger on 100% completion
+  const prevDoneRef = useRef<number>(done);
+  useEffect(() => {
+    if (
+      sorted.length > 0 &&
+      done === sorted.length &&
+      prevDoneRef.current < sorted.length
+    ) {
+      fireConfetti({ particleCount: 100 });
+    }
+    prevDoneRef.current = done;
+  }, [done, sorted.length]);
 
   return (
     <div className="page">
-      <div className="stat-grid section">
-        <div className="stat">
-          <div className="value">{sorted.length - done}</div>
-          <div className="label">Open today</div>
-        </div>
-        <div className="stat">
-          <div className="value">{done}</div>
-          <div className="label">Completed today</div>
-        </div>
-        <div className="stat">
-          <div className="value" style={{ color: overdue.length ? "var(--danger)" : undefined }}>
-            {overdue.length}
+      {/* Today Motivation & Progress Hero Header */}
+      <div className="today-hero-card section">
+        <div className="today-hero-left">
+          <ProgressRing
+            completed={done}
+            total={sorted.length}
+            onCelebrate={() => fireConfetti({ particleCount: 100 })}
+          />
+
+          <div className="today-hero-text">
+            <div className="today-motivation-badge-row">
+              <span className={`today-badge ${motivation.badgeType}`}>
+                {motivation.emoji} {motivation.title}
+              </span>
+              {streaks.currentStreak > 0 && (
+                <span className="today-streak-badge" title={`${streaks.currentStreak} günlük seri`}>
+                  <Flame size={12} /> {streaks.currentStreak} gün seri
+                </span>
+              )}
+            </div>
+
+            <p className="today-hero-subtitle">{motivation.subtitle}</p>
+
+            <div className="today-hero-quickstats">
+              <span className="today-hero-stat">
+                <strong>{openCount}</strong> açık
+              </span>
+              <span className="today-hero-stat-dot">•</span>
+              <span className="today-hero-stat">
+                <strong>{done}</strong> tamamlandı
+              </span>
+              {focusedToday > 0 && (
+                <>
+                  <span className="today-hero-stat-dot">•</span>
+                  <span className="today-hero-stat">
+                    <strong>{formatTracked(focusedToday)}</strong> odaklanma
+                  </span>
+                </>
+              )}
+              {overdue.length > 0 && (
+                <>
+                  <span className="today-hero-stat-dot">•</span>
+                  <span className="today-hero-stat danger">
+                    <strong>{overdue.length}</strong> gecikmiş
+                  </span>
+                </>
+              )}
+            </div>
           </div>
-          <div className="label">Overdue</div>
         </div>
-        <div className="stat">
-          <div className="value">{formatTracked(focusedToday)}</div>
-          <div className="label">Focused today</div>
+
+        <div className="today-hero-right">
+          <WeeklyBarChart stats={weeklyStats} />
         </div>
       </div>
 
+      {/* Overdue Section */}
       {overdue.length > 0 ? (
         <Section title="Overdue" count={overdue.length} alert icon={<CircleAlert size={14} />}>
           {overdue.map((instance) => (
@@ -84,6 +154,7 @@ export function TodayView({
         </Section>
       ) : null}
 
+      {/* Today's Tasks Section */}
       <Section title="Today" count={sorted.length} icon={<Sun size={14} />}>
         {sorted.length === 0 ? (
           <Empty
@@ -104,6 +175,7 @@ export function TodayView({
         )}
       </Section>
 
+      {/* Upcoming Section */}
       {upcoming.length > 0 ? (
         <Section title="Next few days" count={upcoming.length}>
           {upcoming.map((instance) => (
