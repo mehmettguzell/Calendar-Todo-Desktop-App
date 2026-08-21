@@ -287,7 +287,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
 
       if (error) {
-        set({ errorMessage: error.message, loading: false });
+        const msg = error.message.includes("provider is not enabled")
+          ? "Supabase panelinizde Google sağlayıcısı henüz aktif edilmemiş. Authentication -> Providers -> Google sekmesinden aktif edebilir veya E-posta & Şifre ile kayıt olabilirsiniz."
+          : error.message;
+        set({ errorMessage: msg, loading: false });
       }
     } catch (err: unknown) {
       set({

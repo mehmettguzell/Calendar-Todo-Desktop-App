@@ -31,6 +31,7 @@ import { PlansView } from "@/ui/views/PlansView";
 import { NotesView } from "@/ui/views/NotesView";
 import { TodayView } from "@/ui/views/TodayView";
 import { AuthModal } from "@/ui/components/AuthModal";
+import { AuthGate } from "@/ui/components/AuthGate";
 import { useAuthStore } from "@/state/authStore";
 import { initSyncEngine } from "@/state/syncEngine";
 import { useApplyTheme, useShortcuts } from "@/ui/hooks";
@@ -111,6 +112,24 @@ export function App() {
       : null;
     return toInstance(task, date, occurrence, now);
   }, [selection, tasks, occurrences, now]);
+
+  const authUser = useAuthStore((s) => s.user);
+  const authInitialized = useAuthStore((s) => s.initialized);
+  const isConfigured = useAuthStore((s) => s.isConfigured);
+
+  if (!ready || !authInitialized) {
+    return (
+      <div className="auth-gate-loading">
+        <div className="auth-gate-spinner" />
+      </div>
+    );
+  }
+
+  // Force login before using the application
+  const isTest = import.meta.env.MODE === "test";
+  if (!authUser && isConfigured && !isTest) {
+    return <AuthGate />;
+  }
 
   const openInstance = (instance: TaskInstance) =>
     setSelection({

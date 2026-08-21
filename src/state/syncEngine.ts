@@ -6,6 +6,7 @@ import type { Category, FocusSession, Task } from "@/domain/types";
 
 let realtimeChannel: RealtimeChannel | null = null;
 let isSyncing = false;
+let isStoreSubscribed = false;
 
 /**
  * Initializes cross-device cloud synchronization (Desktop ↔ Mobile).
@@ -17,16 +18,53 @@ export function initSyncEngine() {
     const currentUserId = state.user?.id;
 
     if (currentUserId && currentUserId !== prevUserId) {
-      startSync(currentUserId);
+      void startSync(currentUserId);
     } else if (!currentUserId && prevUserId) {
       stopSync();
     }
   });
 
+  // Watch local Zustand store mutations and automatically sync to Supabase
+  if (!isStoreSubscribed) {
+    isStoreSubscribed = true;
+    useStore.subscribe((state, prevState) => {
+      const user = useAuthStore.getState().user;
+      if (!supabase || !user || isSyncing) return;
+
+      // 1. Detect added or updated tasks
+      const prevMap = new Map(prevState.db.tasks.map((t) => [t.id, t]));
+      for (const currentTask of state.db.tasks) {
+        const prev = prevMap.get(currentTask.id);
+        if (
+          !prev ||
+          prev.updatedAt !== currentTask.updatedAt ||
+          prev.status !== currentTask.status ||
+          prev.deletedAt !== currentTask.deletedAt
+        ) {
+          void syncTaskToCloud(currentTask);
+        }
+      }
+
+      // 2. Detect added or updated categories
+      const prevCatMap = new Map(prevState.db.categories.map((c) => [c.id, c]));
+      for (const currentCat of state.db.categories) {
+        const prev = prevCatMap.get(currentCat.id);
+        if (!prev || prev.name !== currentCat.name || prev.color !== currentCat.color) {
+          void syncCategoryToCloud(currentCat);
+        }
+      }
+      for (const prevCat of prevState.db.categories) {
+        if (!state.db.categories.some((c) => c.id === prevCat.id)) {
+          void syncDeleteCategoryToCloud(prevCat.id);
+        }
+      }
+    });
+  }
+
   // Initial check if already logged in
   const currentUser = useAuthStore.getState().user;
   if (currentUser) {
-    startSync(currentUser.id);
+    void startSync(currentUser.id);
   }
 }
 
@@ -35,11 +73,11 @@ async function startSync(userId: string) {
   isSyncing = true;
 
   try {
-    // 1. Initial Pull: Fetch tasks, categories, and focus sessions from Supabase
-    await pullCloudData(userId);
-
-    // 2. Initial Push: Upload local items that don't exist on cloud
+    // 1. Initial Push: Upload and backup ALL existing local items to Supabase
     await pushLocalData(userId);
+
+    // 2. Initial Pull: Fetch tasks, categories, and focus sessions from Supabase
+    await pullCloudData(userId);
 
     // 3. Setup Realtime Listener for instant updates from other devices (e.g. Mobile)
     setupRealtime(userId);
@@ -56,6 +94,101 @@ function stopSync() {
     realtimeChannel = null;
   }
   isSyncing = false;
+}
+
+/**
+ * Directly syncs a single task to Supabase cloud in real-time.
+ */
+export async function syncTaskToCloud(task: Task) {
+  const user = useAuthStore.getState().user;
+  if (!supabase || !user) return;
+
+  try {
+    await supabase.from("tasks").upsert(
+      {
+        id: task.id,
+        user_id: user.id,
+        title: task.title,
+        description: task.description || null,
+        category_id: task.categoryId || null,
+        parent_id: task.parentId || null,
+        priority: task.priority,
+        status: task.status,
+        tags: task.tags,
+        due_date: task.dueDate || null,
+        all_day: task.allDay,
+        start_time: task.startTime || null,
+        end_time: task.endTime || null,
+        recurrence: task.recurrence || null,
+        snoozed_until: task.snoozedUntil || null,
+        completed_at: task.completedAt || null,
+        is_deleted: task.deletedAt !== null,
+        created_at: task.createdAt,
+        updated_at: task.updatedAt || new Date().toISOString(),
+      },
+      { onConflict: "id,user_id" },
+    );
+  } catch (err) {
+    console.error("Failed to sync task to cloud:", err);
+  }
+}
+
+/**
+ * Directly marks a task as deleted in Supabase.
+ */
+export async function syncDeleteTaskToCloud(taskId: string) {
+  const user = useAuthStore.getState().user;
+  if (!supabase || !user) return;
+
+  try {
+    await supabase
+      .from("tasks")
+      .update({ is_deleted: true, updated_at: new Date().toISOString() })
+      .match({ id: taskId, user_id: user.id });
+  } catch (err) {
+    console.error("Failed to sync delete task to cloud:", err);
+  }
+}
+
+/**
+ * Directly syncs a category to Supabase cloud.
+ */
+export async function syncCategoryToCloud(cat: Category) {
+  const user = useAuthStore.getState().user;
+  if (!supabase || !user) return;
+
+  try {
+    await supabase.from("categories").upsert(
+      {
+        id: cat.id,
+        user_id: user.id,
+        name: cat.name,
+        color: cat.color,
+        is_deleted: false,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id,user_id" },
+    );
+  } catch (err) {
+    console.error("Failed to sync category to cloud:", err);
+  }
+}
+
+/**
+ * Directly marks a category as deleted in Supabase.
+ */
+export async function syncDeleteCategoryToCloud(catId: string) {
+  const user = useAuthStore.getState().user;
+  if (!supabase || !user) return;
+
+  try {
+    await supabase
+      .from("categories")
+      .update({ is_deleted: true, updated_at: new Date().toISOString() })
+      .match({ id: catId, user_id: user.id });
+  } catch (err) {
+    console.error("Failed to sync delete category to cloud:", err);
+  }
 }
 
 /**
@@ -156,7 +289,7 @@ async function pullCloudData(userId: string) {
 }
 
 /**
- * Uploads local items to Supabase cloud.
+ * Uploads local items to Supabase cloud to preserve all existing user data.
  */
 async function pushLocalData(userId: string) {
   if (!supabase) return;
@@ -182,7 +315,7 @@ async function pushLocalData(userId: string) {
       completed_at: t.completedAt || null,
       created_at: t.createdAt,
       updated_at: t.updatedAt,
-      is_deleted: false,
+      is_deleted: t.deletedAt !== null,
     }));
 
     await supabase.from("tasks").upsert(records, { onConflict: "id,user_id" });
@@ -196,9 +329,7 @@ async function pushLocalData(userId: string) {
       color: c.color,
       is_deleted: false,
     }));
-    await supabase
-      .from("categories")
-      .upsert(catRecords, { onConflict: "id,user_id" });
+    await supabase.from("categories").upsert(catRecords, { onConflict: "id,user_id" });
   }
 }
 
@@ -249,7 +380,6 @@ function handleRealtimeTaskChange(payload: {
 
   if (eventType === "INSERT" || eventType === "UPDATE") {
     if (newRecord.is_deleted) {
-      // Handle soft delete
       useStore.setState((s) => ({
         db: {
           ...s.db,

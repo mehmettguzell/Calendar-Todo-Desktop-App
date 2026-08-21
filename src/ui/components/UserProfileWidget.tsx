@@ -52,7 +52,17 @@ export function UserProfileWidget() {
           <span className="sidebar-user-name truncate">
             {user.fullName ?? user.email}
           </span>
-          {trial.isPro ? (
+          {user.role === "ADMIN" ? (
+            <span
+              className="sidebar-early-badge"
+              style={{
+                background: "var(--accent-soft)",
+                color: "var(--accent)",
+              }}
+            >
+              Admin 👑
+            </span>
+          ) : trial.isPro ? (
             <Crown size={12} style={{ color: "#f59e0b", flexShrink: 0 }} />
           ) : trial.isEarlyBirdEligible ? (
             <span
@@ -64,11 +74,13 @@ export function UserProfileWidget() {
           ) : null}
         </div>
         <div className="sidebar-user-sub faint truncate">
-          {trial.isPro
-            ? "Tempo Pro"
-            : trial.isExpired
-              ? "Deneme Süresi Bitti"
-              : `${trial.daysLeftInTrial} gün deneme`}
+          {user.role === "ADMIN"
+            ? "Yönetici & Lifetime Pro"
+            : trial.isPro
+              ? "Tempo Pro"
+              : trial.isExpired
+                ? "Deneme Süresi Bitti"
+                : `${trial.daysLeftInTrial} gün deneme`}
         </div>
       </div>
     </div>
