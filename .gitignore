@@ -1,0 +1,55 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+dist-ssr
+*.local
+*.tsbuildinfo
+
+# Rust / Tauri build output. src-tauri/.gitignore covers target/ and gen/schemas
+# too; repeated here so the whole picture is visible from the repo root.
+src-tauri/target
+src-tauri/gen/schemas
+
+# Installers copied out of src-tauri/target for hand-testing. Root-scoped so
+# this never swallows something real deeper in the tree.
+/*.exe
+/*.msi
+
+# Test and coverage output
+coverage
+.vitest
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Local environment. .env.example is the checked-in template, if one is added.
+.env
+.env.*
+!.env.example
+
+# Editors. Only extensions.json is shared; the rest is per-developer.
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local agent settings (the shared .claude/ config stays tracked)
+.claude/settings.local.json
+
+# OS junk
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
