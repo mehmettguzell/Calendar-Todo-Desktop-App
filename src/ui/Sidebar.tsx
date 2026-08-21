@@ -24,6 +24,7 @@ import {
 import { useNow, useStore } from "@/state/store";
 import { LevelBadge } from "./components/LevelBadge";
 import { MiniMonth } from "./components/MiniMonth";
+import { UserProfileWidget } from "./components/UserProfileWidget";
 import { Field, Modal } from "./components/primitives";
 
 export type ViewId =
@@ -196,6 +197,9 @@ export function Sidebar({
       </div>
 
       <div className="grow" />
+
+      {/* User Profile & Trial Sync Widget */}
+      <UserProfileWidget />
 
       {/* Gamification Level & Streak Widget */}
       <LevelBadge levelInfo={levelInfo} streaks={streaks} />

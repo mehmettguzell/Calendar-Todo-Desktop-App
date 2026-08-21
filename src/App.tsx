@@ -30,6 +30,9 @@ import { TasksView } from "@/ui/views/TasksView";
 import { PlansView } from "@/ui/views/PlansView";
 import { NotesView } from "@/ui/views/NotesView";
 import { TodayView } from "@/ui/views/TodayView";
+import { AuthModal } from "@/ui/components/AuthModal";
+import { useAuthStore } from "@/state/authStore";
+import { initSyncEngine } from "@/state/syncEngine";
 import { useApplyTheme, useShortcuts } from "@/ui/hooks";
 
 /** The selected task, remembered as a reference rather than a snapshot. */
@@ -75,6 +78,8 @@ export function App() {
 
   useEffect(() => {
     void hydrate();
+    void useAuthStore.getState().initAuth();
+    initSyncEngine();
   }, [hydrate]);
 
   useEffect(() => {
@@ -240,6 +245,8 @@ export function App() {
         onDismiss={dismissAlert}
         onOpen={(taskId, occurrenceDate) => openTaskId(taskId, occurrenceDate)}
       />
+
+      <AuthModal />
     </div>
   );
 }

@@ -3,7 +3,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Flame,
   Lightbulb,
   Plus,
   Target,
@@ -12,7 +11,11 @@ import {
 } from "lucide-react";
 import type { Priority, Task, TaskInstance } from "@/domain/types";
 import { toInstance } from "@/domain/task";
-import { useCategories, useCategoryIndex, useLiveTasks } from "@/state/selectors";
+import {
+  useCategories,
+  useCategoryIndex,
+  useLiveTasks,
+} from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
 import { Checkbox, Field, Modal } from "@/ui/components/primitives";
 import { cn } from "@/lib/cn";
@@ -32,7 +35,8 @@ const PLAN_STARTERS: PlanStarter[] = [
     id: "fitness",
     title: "🎯 30 Günlük Fitness & Sağlık",
     categoryName: "Health",
-    description: "Düzenli hareket, sağlıklı beslenme ve su takibi ile zinde kal.",
+    description:
+      "Düzenli hareket, sağlıklı beslenme ve su takibi ile zinde kal.",
     subtasks: [
       "Haftada 3 gün kardiyo / egzersiz yap",
       "Günde en az 2.5L su iç",
@@ -67,7 +71,8 @@ const PLAN_STARTERS: PlanStarter[] = [
     id: "habits",
     title: "✨ Üretkenlik & Odak Rutini",
     categoryName: "Personal",
-    description: "Zamanını en verimli şekilde yönetebileceğin günlük alışkanlıklar kazan.",
+    description:
+      "Zamanını en verimli şekilde yönetebileceğin günlük alışkanlıklar kazan.",
     subtasks: [
       "Günün en önemli 1 'Ana Odağını' belirle",
       "Günde en az 2 Focus (Odaklanma) seansı yap",
@@ -114,7 +119,8 @@ export function PlansView({
       const subtasks = subtasksMap.get(plan.id) ?? [];
       const isCompleted =
         plan.status === "COMPLETED" ||
-        (subtasks.length > 0 && subtasks.every((s) => s.status === "COMPLETED"));
+        (subtasks.length > 0 &&
+          subtasks.every((s) => s.status === "COMPLETED"));
 
       if (filter === "ACTIVE") return !isCompleted;
       if (filter === "COMPLETED") return isCompleted;
@@ -137,7 +143,9 @@ export function PlansView({
   };
 
   const handleApplyStarter = (starter: PlanStarter) => {
-    const cat = categories.find((c) => c.name.toLowerCase() === starter.categoryName.toLowerCase());
+    const cat = categories.find(
+      (c) => c.name.toLowerCase() === starter.categoryName.toLowerCase(),
+    );
     const plan = createTask({
       title: starter.title,
       description: starter.description,
@@ -171,7 +179,8 @@ export function PlansView({
           <div>
             <h2 className="plans-main-title">Planlar & Hedefler</h2>
             <p className="plans-subtitle">
-              Büyük hedefleri yönetilebilir adımlara bölün, ilerlemenizi takip edin.
+              Büyük hedefleri yönetilebilir adımlara bölün, ilerlemenizi takip
+              edin.
             </p>
           </div>
         </div>
@@ -262,7 +271,10 @@ export function PlansView({
 
       {/* Plans Grid */}
       {visiblePlans.length === 0 && plans.length > 0 ? (
-        <div className="card" style={{ padding: "32px 16px", textAlign: "center" }}>
+        <div
+          className="card"
+          style={{ padding: "32px 16px", textAlign: "center" }}
+        >
           <p className="faint">Bu filtreye uygun plan bulunamadı.</p>
         </div>
       ) : (
@@ -285,7 +297,13 @@ export function PlansView({
         <NewPlanModal
           categories={categories}
           onClose={() => setNewPlanModal(false)}
-          onCreate={(title, description, categoryId, priority, initialSubtasks) => {
+          onCreate={(
+            title,
+            description,
+            categoryId,
+            priority,
+            initialSubtasks,
+          ) => {
             const plan = createTask({
               title,
               description,
@@ -344,7 +362,11 @@ function PlanCard({
     plan.status === "COMPLETED" ||
     (totalSubtasks > 0 && doneSubtasks === totalSubtasks);
   const progressPct =
-    totalSubtasks > 0 ? Math.round((doneSubtasks / totalSubtasks) * 100) : isPlanCompleted ? 100 : 0;
+    totalSubtasks > 0
+      ? Math.round((doneSubtasks / totalSubtasks) * 100)
+      : isPlanCompleted
+        ? 100
+        : 0;
 
   const handleAddSubtask = () => {
     const trimmed = newSubtask.trim();
@@ -371,7 +393,10 @@ function PlanCard({
         <div className="plan-card-title-row" onClick={onOpen}>
           <Target
             size={18}
-            className={cn("plan-icon", isPlanCompleted ? "completed" : "active")}
+            className={cn(
+              "plan-icon",
+              isPlanCompleted ? "completed" : "active",
+            )}
           />
           <h3 className="plan-card-title truncate">{plan.title}</h3>
         </div>
@@ -418,13 +443,9 @@ function PlanCard({
             {plan.priority}
           </span>
         )}
-        {isPlanCompleted ? (
+        {isPlanCompleted && (
           <span className="plan-status-pill success">
             <CheckCircle2 size={11} /> Tamamlandı
-          </span>
-        ) : (
-          <span className="plan-status-pill active">
-            <Flame size={11} /> Aktif
           </span>
         )}
       </div>

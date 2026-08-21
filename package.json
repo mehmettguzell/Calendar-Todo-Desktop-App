@@ -16,6 +16,8 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@supabase/server": "^1.4.1",
+    "@supabase/supabase-js": "^2.112.3",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-notification": "^2",
     "date-fns": "^4.1.0",
