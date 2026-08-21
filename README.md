@@ -75,6 +75,18 @@ Get-NetTCPConnection -LocalPort 1420 -State Listen |
   ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
 ```
 
+**Reminders are not showing up.** **Settings → Notifications → Send a test
+notification** takes the exact path a reminder takes and reports what the OS
+said, which separates the app's half of the problem from the system's. Two
+things are worth knowing before hunting further:
+
+- Reminders fire only while Tempo is running. There is no background service,
+  so a reminder whose moment passes with the app closed is delivered the next
+  time it starts, not before.
+- A reminder is a separate thing from a due date. New tasks get one by default
+  (the switch at the bottom of the New task dialog), but a task created with the
+  switch off has a date and no reminder, and will never announce itself.
+
 **`linker 'link.exe' not found`.** The MSVC build tools are missing. Install
 "Desktop development with C++", then reopen the terminal so the new PATH is
 picked up.
@@ -147,6 +159,11 @@ changing the time changes it for the whole series.
 rescheduled task keeps every date it ever had (spec §5.5). Deleting is a soft
 delete; even a permanent purge leaves the history rows behind.
 
+That rule binds the app, not the user: **Activity → Clear activity** erases the
+trail on request, and **Trash → Empty trash** purges every deleted task at once.
+What the rule forbids is the app dropping an entry as a *side effect* of
+something else.
+
 ### Persistence
 
 Your tasks live in a single readable file:
@@ -156,7 +173,8 @@ Your tasks live in a single readable file:
 ```
 
 It is plain JSON, so it can be backed up, version-controlled or synced like any
-other document. The exact path is shown in **Settings → Data file**.
+other document. The exact path is shown in **Settings → Data file**, and
+**Settings → Reset** empties it back to a fresh install.
 
 The file I/O is a Rust command (`save_database`) rather than the fs plugin, so
 the location is fixed by the app instead of by a permission scope, and writes
@@ -172,9 +190,13 @@ changed line in `createRepository.ts`.
 
 - `src/domain/__tests__/` — status derivation, snooze semantics, recurrence
   expansion, including the spec's worked example (Aug 25 14:00 → Aug 26 14:00).
+- `src/domain/__tests__/reminders.test.ts` — when a reminder comes due, and
+  when it stays quiet: before its offset, after delivery, once completed.
 - `src/test/singleSourceOfTruth.test.tsx` — mounts the real app and asserts
   §3: one task appears in Today and the calendar, completing it anywhere
   completes it everywhere, and rescheduling records history.
+- `src/test/destructiveActions.test.ts` — that emptying the trash, clearing the
+  activity trail and resetting each stop exactly where they are meant to.
 
 ## Keyboard
 

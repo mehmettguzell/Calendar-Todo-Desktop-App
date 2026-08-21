@@ -50,6 +50,48 @@ fn save_database(app: tauri::AppHandle, contents: String) -> Result<(), String> 
     Ok(())
 }
 
+/// Show a desktop notification and say whether the OS actually took it.
+///
+/// The notification plugin fires its toast on a detached task and drops the
+/// result, so a toast Windows refused looks exactly like one it displayed.
+/// That is the difference between "notifications do not work" being a mystery
+/// and being a message, so this path keeps the error.
+#[cfg_attr(not(windows), allow(unused_variables))]
+#[tauri::command]
+async fn show_notification(
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+) -> Result<(), String> {
+    let mut notification = notify_rust::Notification::new();
+    notification.summary(&title).body(&body);
+
+    // Windows draws the toast's name and icon from an AppUserModelID, and ours
+    // only exists once the installer has registered a Start menu shortcut.
+    // Claiming it while running out of `target/` produces no toast at all, so
+    // there we leave it unset and notify-rust falls back to an id that is
+    // always registered.
+    #[cfg(windows)]
+    {
+        let exe = tauri::utils::platform::current_exe().map_err(|e| e.to_string())?;
+        // `.../target/debug/tempo.exe` and `.../target/release/tempo.exe`.
+        let running_from_build_output = exe.parent().is_some_and(|dir| {
+            matches!(
+                dir.file_name().and_then(|n| n.to_str()),
+                Some("debug" | "release")
+            ) && dir.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()) == Some("target")
+        });
+        if !running_from_build_output {
+            notification.app_id(&app.config().identifier);
+        }
+    }
+
+    notification
+        .show()
+        .map(|_| ())
+        .map_err(|e| format!("Windows refused the notification: {e}"))
+}
+
 /// Bring the main window to the foreground; the notification "Open" path.
 #[tauri::command]
 fn focus_main_window(app: tauri::AppHandle) {
@@ -68,6 +110,7 @@ pub fn run() {
             database_path,
             load_database,
             save_database,
+            show_notification,
             focus_main_window
         ])
         .run(tauri::generate_context!())

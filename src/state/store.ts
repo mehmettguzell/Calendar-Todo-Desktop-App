@@ -102,6 +102,10 @@ interface StoreState {
   removeCategory(id: string): void;
 
   updateSettings(patch: Partial<Settings>): void;
+
+  clearHistory(): void;
+  emptyTrash(): void;
+  resetDatabase(): Promise<void>;
 }
 
 let repository: Repository | null = null;
@@ -115,6 +119,23 @@ function persist(db: Database) {
   saveTimer = setTimeout(() => {
     void repo.save(db).catch((error) => console.error("[tempo] save failed", error));
   }, 250);
+}
+
+/**
+ * Write immediately, cancelling any pending debounced write.
+ *
+ * Used by destructive actions: after "reset everything" the file on disk must
+ * already be empty, because the next thing the user does may well be to close
+ * the app — and a queued write holding the *old* document would then land on
+ * top of the reset, or never land at all.
+ */
+async function persistNow(db: Database): Promise<void> {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if (!repository) return;
+  await repository.save(db);
 }
 
 export const useStore = create<StoreState>((set, get) => {
@@ -527,6 +548,44 @@ export const useStore = create<StoreState>((set, get) => {
 
     updateSettings(patch) {
       commit((db) => ({ ...db, settings: { ...db.settings, ...patch } }));
+    },
+
+    /**
+     * Discard the activity trail.
+     *
+     * This does not weaken the append-only rule (spec section 5.5): that rule
+     * binds the *app*, which may never rewrite or drop an entry as a side
+     * effect of rescheduling or completing something. Erasing the trail on an
+     * explicit request from the person it belongs to is a different act.
+     */
+    clearHistory() {
+      commit((db) => ({ ...db, history: [] }));
+    },
+
+    /** Purge every trashed task at once; the same hard delete as purgeTask. */
+    emptyTrash() {
+      commit((db) => {
+        const ids = db.tasks.filter((t) => t.deletedAt !== null).map((t) => t.id);
+        if (ids.length === 0) return db;
+        return {
+          ...db,
+          tasks: db.tasks.filter((t) => !ids.includes(t.id)),
+          occurrences: db.occurrences.filter((o) => !ids.includes(o.taskId)),
+          reminders: db.reminders.filter((r) => !ids.includes(r.taskId)),
+        };
+      });
+    },
+
+    /**
+     * Back to a fresh install: tasks, reminders, history and settings all go.
+     *
+     * Awaited rather than debounced so the caller can report a failed write
+     * instead of showing an empty app over a file that still holds everything.
+     */
+    async resetDatabase() {
+      const db = emptyDatabase();
+      set({ db, runningFocus: null, now: Date.now() });
+      await persistNow(db);
     },
   };
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { STATUS_LABEL } from "@/domain/task";
@@ -153,6 +153,72 @@ export function Popover({
     >
       {children}
     </div>
+  );
+}
+
+/**
+ * A destructive button that asks once before it acts.
+ *
+ * The confirmation replaces the button in place rather than opening a dialog,
+ * so it works the same inside a modal as it does in a section header. It
+ * disarms itself after a few seconds: an armed Delete left sitting on screen is
+ * a trap for the next click.
+ */
+export function ConfirmButton({
+  label,
+  confirm,
+  onConfirm,
+  icon,
+  disabled,
+  title,
+}: {
+  label: string;
+  confirm: string;
+  onConfirm: () => void;
+  icon?: ReactNode;
+  disabled?: boolean;
+  title?: string;
+}) {
+  const [armed, setArmed] = useState(false);
+
+  useEffect(() => {
+    if (!armed) return;
+    const handle = setTimeout(() => setArmed(false), 6000);
+    return () => clearTimeout(handle);
+  }, [armed]);
+
+  if (!armed) {
+    return (
+      <button
+        type="button"
+        className="btn sm danger"
+        disabled={disabled}
+        title={title}
+        onClick={() => setArmed(true)}
+      >
+        {icon}
+        {label}
+      </button>
+    );
+  }
+
+  return (
+    <span className="row" style={{ gap: 6 }}>
+      <button
+        type="button"
+        className="btn sm danger"
+        autoFocus
+        onClick={() => {
+          setArmed(false);
+          onConfirm();
+        }}
+      >
+        {confirm}
+      </button>
+      <button type="button" className="btn sm" onClick={() => setArmed(false)}>
+        Cancel
+      </button>
+    </span>
   );
 }
 

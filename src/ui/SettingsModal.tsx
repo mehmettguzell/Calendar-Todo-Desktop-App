@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
+import { BellRing } from "lucide-react";
 import { databasePath } from "@/data/fileStore";
 import { isTauri } from "@/lib/env";
+import { notify } from "@/services/notifications";
 import { useStore } from "@/state/store";
-import { Field, Modal, Switch } from "./components/primitives";
+import { ConfirmButton, Field, Modal, Switch } from "./components/primitives";
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
   const settings = useStore((s) => s.db.settings);
   const updateSettings = useStore((s) => s.updateSettings);
+  const resetDatabase = useStore((s) => s.resetDatabase);
   const storagePath = useStoragePath();
+  const [resetError, setResetError] = useState<string | null>(null);
 
   return (
     <Modal
@@ -91,10 +95,82 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           />
         </Field>
       </div>
+      <Field
+        label="Notifications"
+        hint="Reminders only fire while Tempo is running — there is no background service."
+      >
+        <NotificationCheck />
+      </Field>
+
       <Field label="Data file" hint="Plain JSON — back it up or sync it like any other file">
         <input className="input mono" readOnly value={storagePath} style={{ fontSize: 12 }} />
       </Field>
+
+      <Field
+        label="Reset"
+        hint="Erases every task, reminder, category and activity entry, and empties the data file. This cannot be undone."
+      >
+        <div className="col" style={{ gap: 6, alignItems: "flex-start" }}>
+          <ConfirmButton
+            label="Reset all data"
+            confirm="Yes, erase everything"
+            onConfirm={() => {
+              setResetError(null);
+              void resetDatabase()
+                .then(onClose)
+                .catch((error: unknown) =>
+                  setResetError(error instanceof Error ? error.message : String(error)),
+                );
+            }}
+          />
+          {/* The store has already emptied itself in memory by the time a
+              failed write reports back, so saying nothing would leave an empty
+              app sitting on top of a file that still holds everything. */}
+          {resetError ? (
+            <span style={{ fontSize: 11.5, color: "var(--danger)" }}>
+              Cleared here, but the file could not be written: {resetError}
+            </span>
+          ) : null}
+        </div>
+      </Field>
     </Modal>
+  );
+}
+
+/**
+ * "Notifications are not arriving" has several causes that look identical from
+ * the app: a reminder that has not come due, a permission Windows withdrew, a
+ * toast the OS dropped. One button that takes the exact path a reminder takes
+ * separates the app's half of the problem from the system's.
+ */
+function NotificationCheck() {
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [sending, setSending] = useState(false);
+
+  const send = () => {
+    setSending(true);
+    setResult(null);
+    void notify({ title: "Tempo", body: "Notifications are working." })
+      .then(() => setResult({ ok: true, message: "Sent — a banner should have appeared." }))
+      .catch((error: unknown) =>
+        setResult({ ok: false, message: error instanceof Error ? error.message : String(error) }),
+      )
+      .finally(() => setSending(false));
+  };
+
+  return (
+    <div className="col" style={{ gap: 6, alignItems: "flex-start" }}>
+      <button type="button" className="btn sm" disabled={sending} onClick={send}>
+        <BellRing size={13} /> Send a test notification
+      </button>
+      {result ? (
+        <span
+          style={{ fontSize: 11.5, color: result.ok ? "var(--text-muted)" : "var(--danger)" }}
+        >
+          {result.message}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -104,7 +180,7 @@ function useStoragePath(): string {
 
   useEffect(() => {
     if (!isTauri()) {
-      setPath("Browser localStorage (desktop build writes to Documents\calendar)");
+      setPath("Browser localStorage (the desktop build writes to Documents\\calendar)");
       return;
     }
     let cancelled = false;

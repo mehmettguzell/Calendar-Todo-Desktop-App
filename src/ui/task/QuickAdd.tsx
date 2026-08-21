@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { toLocalDate } from "@/domain/datetime";
+import { shiftTime, toLocalDate } from "@/domain/datetime";
 import { PRIORITY_LABEL } from "@/domain/task";
 import { PRIORITIES, type LocalDate, type Priority, type Recurrence } from "@/domain/types";
 import { useCategories } from "@/state/selectors";
@@ -38,7 +38,10 @@ export function QuickAdd({
   const [categoryId, setCategoryId] = useState("");
   const [tags, setTags] = useState("");
   const [recurrence, setRecurrence] = useState<Recurrence | null>(null);
-  const [withReminder, setWithReminder] = useState(Boolean(defaultTime));
+  // On by default. A task nobody is reminded about is the common complaint
+  // this app exists to answer, and the switch is right there for the times it
+  // is not wanted. Tasks with no date silently skip it (see submit).
+  const [withReminder, setWithReminder] = useState(true);
 
   const submit = () => {
     const trimmed = title.trim();
@@ -185,9 +188,20 @@ export function QuickAdd({
 
       <Switch
         checked={withReminder}
-        label={`Remind me ${settings.defaultReminderOffset} min before`}
+        label={reminderLabel(allDay, settings.defaultReminderOffset, settings.allDayReminderTime)}
         onChange={setWithReminder}
       />
     </Modal>
   );
+}
+
+/**
+ * An all-day task has no start time to count back from, so its reminder lands
+ * at the clock time from Settings. Saying "10 min before" there would name a
+ * moment that does not exist.
+ */
+function reminderLabel(allDay: boolean, offsetMinutes: number, allDayTime: string): string {
+  if (allDay) return `Remind me at ${shiftTime(allDayTime, -offsetMinutes)}`;
+  if (offsetMinutes === 0) return "Remind me at the start time";
+  return `Remind me ${offsetMinutes} min before`;
 }

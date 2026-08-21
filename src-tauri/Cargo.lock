@@ -3681,6 +3681,7 @@ dependencies = [
 name = "tempo"
 version = "0.1.0"
 dependencies = [
+ "notify-rust",
  "serde",
  "serde_json",
  "tauri",

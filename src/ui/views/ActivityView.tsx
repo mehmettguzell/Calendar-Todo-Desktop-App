@@ -5,7 +5,7 @@ import { describeHistory, historyKindLabel } from "@/domain/history";
 import type { HistoryKind } from "@/domain/types";
 import { useTrashedTasks } from "@/state/selectors";
 import { useStore } from "@/state/store";
-import { Empty } from "@/ui/components/primitives";
+import { ConfirmButton, Empty } from "@/ui/components/primitives";
 
 const KINDS: HistoryKind[] = [
   "CREATED",
@@ -28,6 +28,8 @@ export function ActivityView() {
   const tasks = useStore((s) => s.db.tasks);
   const restoreTask = useStore((s) => s.restoreTask);
   const purgeTask = useStore((s) => s.purgeTask);
+  const emptyTrash = useStore((s) => s.emptyTrash);
+  const clearHistory = useStore((s) => s.clearHistory);
   const trashed = useTrashedTasks();
   const [kind, setKind] = useState<HistoryKind | "ALL">("ALL");
 
@@ -50,6 +52,13 @@ export function ActivityView() {
             <Trash2 size={14} />
             <h2>Trash</h2>
             <span className="count">{trashed.length}</span>
+            <span className="grow" />
+            <ConfirmButton
+              label="Empty trash"
+              confirm={`Delete ${trashed.length} permanently`}
+              title="Delete every trashed task permanently (history is kept)"
+              onConfirm={emptyTrash}
+            />
           </div>
           <div className="col" style={{ gap: 4 }}>
             {trashed.map((task) => (
@@ -76,7 +85,9 @@ export function ActivityView() {
         <div className="section-head">
           <History size={14} />
           <h2>Activity</h2>
-          <span className="count">{entries.length}</span>
+          <span className="count">
+            {kind === "ALL" ? entries.length : `${entries.length} of ${history.length}`}
+          </span>
           <span className="grow" />
           <select
             className="select"
@@ -91,6 +102,13 @@ export function ActivityView() {
               </option>
             ))}
           </select>
+          <ConfirmButton
+            label="Clear activity"
+            confirm={`Erase ${history.length} entries`}
+            disabled={history.length === 0}
+            title="Erase the whole trail. Tasks and their dates are not touched."
+            onConfirm={clearHistory}
+          />
         </div>
 
         {entries.length === 0 ? (

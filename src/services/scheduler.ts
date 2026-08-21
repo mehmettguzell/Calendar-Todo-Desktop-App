@@ -55,10 +55,13 @@ export function useReminderScheduler(): {
 
         useStore.getState().markReminderFired(reminder.id, instance.date as LocalDate | null);
 
+        // The card below is the delivery that always happens; the OS banner is
+        // best effort, and a machine that refuses it must not take the reminder
+        // down with it.
         void notify({
           title: instance.task.title,
           body: describeWhen(instance.date, instance.task.allDay ? null : instance.task.startTime, now),
-        });
+        }).catch((error) => console.error("[tempo] the OS notification did not get through", error));
 
         setAlerts((current) => [
           ...current.filter((a) => a.id !== deliveryKey),
