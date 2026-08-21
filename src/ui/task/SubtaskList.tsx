@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { ArrowUpRight, GripVertical, Plus, Trash2 } from "lucide-react";
 import type { Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
@@ -13,7 +13,13 @@ import { Checkbox } from "@/ui/components/primitives";
  * shows up on the calendar like anything else. Nothing about it is a second
  * kind of record.
  */
-export function SubtaskList({ parent, onOpen }: { parent: Task; onOpen: (taskId: string) => void }) {
+export function SubtaskList({
+  parent,
+  onOpen,
+}: {
+  parent: Task;
+  onOpen: (taskId: string) => void;
+}) {
   const subtasks = useSubtasks(parent.id);
   const createTask = useStore((s) => s.createTask);
   const setStatus = useStore((s) => s.setStatus);
@@ -21,6 +27,7 @@ export function SubtaskList({ parent, onOpen }: { parent: Task; onOpen: (taskId:
   const reorderSubtasks = useStore((s) => s.reorderSubtasks);
   const [title, setTitle] = useState("");
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const dragIndexRef = useRef<number | null>(null);
   /** Where the dragged row would land: the gap *before* this index. */
   const [dropSlot, setDropSlot] = useState<number | null>(null);
 
@@ -49,21 +56,47 @@ export function SubtaskList({ parent, onOpen }: { parent: Task; onOpen: (taskId:
 
   const endDrag = () => {
     setDragIndex(null);
+    dragIndexRef.current = null;
     setDropSlot(null);
   };
 
   const drop = () => {
-    if (dragIndex === null || dropSlot === null) return endDrag();
+    const currentIndex = dragIndexRef.current;
+    if (currentIndex === null || dropSlot === null) return endDrag();
     // A slot below the dragged row loses one place once that row is lifted out.
-    const target = dropSlot > dragIndex ? dropSlot - 1 : dropSlot;
-    move(dragIndex, target - dragIndex);
+    const target = dropSlot > currentIndex ? dropSlot - 1 : dropSlot;
+    move(currentIndex, target - currentIndex);
     endDrag();
   };
 
   const done = subtasks.filter((s) => s.status === "COMPLETED").length;
 
   return (
-    <div className="col" style={{ gap: 6 }}>
+    <div
+      className="col"
+      style={{ gap: 6 }}
+      onDragEnter={(e) => {
+        if (dragIndexRef.current !== null) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = "move";
+        }
+      }}
+      onDragOver={(e) => {
+        if (dragIndexRef.current !== null) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = "move";
+        }
+      }}
+      onDrop={(e) => {
+        if (dragIndexRef.current !== null) {
+          e.preventDefault();
+          e.stopPropagation();
+          drop();
+        }
+      }}
+    >
       {subtasks.length > 0 ? (
         <div className="row faint" style={{ fontSize: 11.5 }}>
           <span className="progress" style={{ width: 80 }}>
@@ -81,30 +114,50 @@ export function SubtaskList({ parent, onOpen }: { parent: Task; onOpen: (taskId:
             subtask.status === "COMPLETED" && "done",
             dragIndex === index && "dragging",
             dropSlot === index && "drop-before",
-            dropSlot === subtasks.length && index === subtasks.length - 1 && "drop-after",
+            dropSlot === subtasks.length &&
+              index === subtasks.length - 1 &&
+              "drop-after",
           )}
           draggable
           onDragStart={(e) => {
+            e.stopPropagation();
             setDragIndex(index);
+            dragIndexRef.current = index;
             e.dataTransfer.effectAllowed = "move";
-            // Firefox refuses to start a drag without payload on the transfer.
             e.dataTransfer.setData("text/plain", subtask.id);
           }}
+          onDragEnter={(e) => {
+            if (dragIndexRef.current !== null) {
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = "move";
+            }
+          }}
           onDragOver={(e) => {
-            if (dragIndex === null) return;
+            if (dragIndexRef.current === null) return;
             e.preventDefault();
+            e.stopPropagation();
             e.dataTransfer.dropEffect = "move";
             const box = e.currentTarget.getBoundingClientRect();
-            setDropSlot(e.clientY < box.top + box.height / 2 ? index : index + 1);
+            setDropSlot(
+              e.clientY < box.top + box.height / 2 ? index : index + 1,
+            );
           }}
           onDrop={(e) => {
-            e.preventDefault();
-            drop();
+            e.stopPropagation();
+            if (dragIndexRef.current !== null) {
+              e.preventDefault();
+              drop();
+            }
           }}
-          onDragEnd={endDrag}
+          onDragEnd={(e) => {
+            e.stopPropagation();
+            endDrag();
+          }}
         >
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={0}
             className="subtask-grip"
             aria-label={`Reorder "${subtask.title}" — arrow up or down`}
             title="Drag to reorder (or focus and press ↑ / ↓)"
@@ -115,7 +168,7 @@ export function SubtaskList({ parent, onOpen }: { parent: Task; onOpen: (taskId:
             }}
           >
             <GripVertical size={13} />
-          </button>
+          </div>
 
           <Checkbox
             square
@@ -157,7 +210,12 @@ export function SubtaskList({ parent, onOpen }: { parent: Task; onOpen: (taskId:
             if (e.key === "Enter") add();
           }}
         />
-        <button type="button" className="btn icon" onClick={add} title="Add subtask">
+        <button
+          type="button"
+          className="btn icon"
+          onClick={add}
+          title="Add subtask"
+        >
           <Plus size={15} />
         </button>
       </div>
