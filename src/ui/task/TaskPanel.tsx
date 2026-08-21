@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AlarmClock, Play, Square, Trash2, X } from "lucide-react";
+import { AlarmClock, Play, Square, Trash2, X, ArrowLeft } from "lucide-react";
 import { formatTracked } from "@/domain/datetime";
 import { PRIORITY_LABEL } from "@/domain/task";
 import { PRIORITIES, type Priority, type TaskInstance } from "@/domain/types";
@@ -7,6 +7,7 @@ import {
   useCategories,
   useTaskHistory,
   useTrackedSeconds,
+  useTaskById,
 } from "@/state/selectors";
 import { useStore } from "@/state/store";
 import { Field, StatusBadge, Switch } from "@/ui/components/primitives";
@@ -45,6 +46,7 @@ export function TaskPanel({
   const categories = useCategories();
   const history = useTaskHistory(task.id);
   const tracked = useTrackedSeconds(task.id);
+  const parentTask = useTaskById(task.parentId);
 
   const [title, setTitle] = useState(task.title);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -108,6 +110,17 @@ export function TaskPanel({
       </div>
 
       <div className="panel-body scroll">
+        {parentTask ? (
+          <button
+            type="button"
+            className="btn ghost sm"
+            style={{ alignSelf: "flex-start", marginBottom: 12, paddingLeft: 4, paddingRight: 8 }}
+            onClick={() => onOpenTask(parentTask.id)}
+            title={`Back to ${parentTask.title}`}
+          >
+            <ArrowLeft size={14} /> <span className="truncate" style={{ maxWidth: 220 }}>{parentTask.title}</span>
+          </button>
+        ) : null}
         <textarea
           ref={titleRef}
           className="panel-title-input"
@@ -342,6 +355,35 @@ export function TaskPanel({
         <span className="grow faint" style={{ fontSize: 11.5 }}>
           Created {new Date(task.createdAt).toLocaleDateString()}
         </span>
+        {task.tags.includes("plan") ? (
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={() => {
+              updateTask(task.id, {
+                tags: task.tags.filter((t) => t !== "plan"),
+              });
+            }}
+          >
+            Remove from Plans
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={() => {
+              updateTask(task.id, {
+                tags: [...task.tags.filter((t) => t !== "plan"), "plan"],
+                dueDate: null,
+                startTime: null,
+                endTime: null,
+                allDay: true,
+              });
+            }}
+          >
+            Move to Plans
+          </button>
+        )}
         <button
           type="button"
           className="btn danger"
