@@ -5,7 +5,11 @@ import { toInstance } from "@/domain/task";
 import type { LocalDate, TaskInstance } from "@/domain/types";
 import { ensureNotificationPermission } from "@/services/notifications";
 import { useReminderScheduler } from "@/services/scheduler";
-import { EMPTY_FILTERS, useOccurrenceIndex, type Filters } from "@/state/selectors";
+import {
+  EMPTY_FILTERS,
+  useOccurrenceIndex,
+  type Filters,
+} from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
 import { SettingsModal } from "@/ui/SettingsModal";
 import { Sidebar, type ViewId } from "@/ui/Sidebar";
@@ -22,6 +26,7 @@ import {
 } from "@/ui/views/CalendarView";
 import { FocusView } from "@/ui/views/FocusView";
 import { TasksView } from "@/ui/views/TasksView";
+import { PlansView } from "@/ui/views/PlansView";
 import { TodayView } from "@/ui/views/TodayView";
 import { useApplyTheme, useShortcuts } from "@/ui/hooks";
 
@@ -40,6 +45,7 @@ const VIEW_TITLES: Record<ViewId, string> = {
   today: "Today",
   calendar: "Calendar",
   tasks: "Tasks",
+  plans: "Plans",
   focus: "Focus",
   activity: "Activity",
 };
@@ -54,7 +60,9 @@ export function App() {
 
   const [view, setView] = useState<ViewId>("today");
   const [mode, setMode] = useState<CalendarMode>("month");
-  const [anchor, setAnchor] = useState<LocalDate>(() => toLocalDate(new Date()));
+  const [anchor, setAnchor] = useState<LocalDate>(() =>
+    toLocalDate(new Date()),
+  );
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [quickAdd, setQuickAdd] = useState<QuickAddSeed | null>(null);
@@ -90,7 +98,9 @@ export function App() {
     const task = tasks.find((t) => t.id === selection.taskId);
     if (!task || task.deletedAt) return null;
     const date = selection.occurrenceDate ?? task.dueDate;
-    const occurrence = date ? (occurrences.get(occurrenceId(task.id, date)) ?? null) : null;
+    const occurrence = date
+      ? (occurrences.get(occurrenceId(task.id, date)) ?? null)
+      : null;
     return toInstance(task, date, occurrence, now);
   }, [selection, tasks, occurrences, now]);
 
@@ -100,8 +110,10 @@ export function App() {
       occurrenceDate: instance.isRecurring ? instance.date : null,
     });
 
-  const openTaskId = (taskId: string, occurrenceDate: LocalDate | null = null) =>
-    setSelection({ taskId, occurrenceDate });
+  const openTaskId = (
+    taskId: string,
+    occurrenceDate: LocalDate | null = null,
+  ) => setSelection({ taskId, occurrenceDate });
 
   if (!ready) {
     return (
@@ -113,7 +125,9 @@ export function App() {
   }
 
   const title =
-    view === "calendar" ? calendarTitle(mode, anchor, settings.weekStartsOn) : VIEW_TITLES[view];
+    view === "calendar"
+      ? calendarTitle(mode, anchor, settings.weekStartsOn)
+      : VIEW_TITLES[view];
 
   return (
     <div className={selected ? "app has-panel" : "app"}>
@@ -142,7 +156,11 @@ export function App() {
 
         <div className="view-body scroll">
           {view === "today" ? (
-            <TodayView filters={filters} selectedKey={selected?.key ?? null} onOpen={openInstance} />
+            <TodayView
+              filters={filters}
+              selectedKey={selected?.key ?? null}
+              onOpen={openInstance}
+            />
           ) : null}
 
           {view === "calendar" ? (
@@ -156,11 +174,26 @@ export function App() {
           ) : null}
 
           {view === "tasks" ? (
-            <TasksView filters={filters} selectedKey={selected?.key ?? null} onOpen={openInstance} />
+            <TasksView
+              filters={filters}
+              selectedKey={selected?.key ?? null}
+              onOpen={openInstance}
+            />
+          ) : null}
+
+          {view === "plans" ? (
+            <PlansView
+              selectedKey={selected?.key ?? null}
+              onOpen={openInstance}
+            />
           ) : null}
 
           {view === "focus" ? (
-            <FocusView filters={filters} selectedKey={selected?.key ?? null} onOpen={openInstance} />
+            <FocusView
+              filters={filters}
+              selectedKey={selected?.key ?? null}
+              onOpen={openInstance}
+            />
           ) : null}
 
           {view === "activity" ? <ActivityView /> : null}
@@ -184,7 +217,9 @@ export function App() {
         />
       ) : null}
 
-      {settingsOpen ? <SettingsModal onClose={() => setSettingsOpen(false)} /> : null}
+      {settingsOpen ? (
+        <SettingsModal onClose={() => setSettingsOpen(false)} />
+      ) : null}
 
       <ReminderAlerts
         alerts={alerts}

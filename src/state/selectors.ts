@@ -89,7 +89,6 @@ export function useInstancesInRange(
   return useMemo(() => {
     const out: TaskInstance[] = [];
     for (const task of tasks) {
-      if (task.parentId) continue; // subtasks render nested under their parent
       if (!matchesFilters(task, filters)) continue;
       for (const instance of instancesInRange(
         task,
@@ -204,6 +203,7 @@ export function useTodoGroups(filters: Filters): TodoGroup[] {
 
     for (const task of tasks) {
       if (task.parentId) continue; // subtasks render nested under their parent
+      if (task.tags.includes("plan")) continue; // plans render in their own view
       if (!matchesFilters(task, filters)) continue;
 
       const instance = representativeInstance(task, occurrences, now);

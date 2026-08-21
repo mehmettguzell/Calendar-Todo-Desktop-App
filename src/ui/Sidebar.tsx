@@ -8,6 +8,7 @@ import {
   Settings,
   Sun,
   Timer,
+  Target,
 } from "lucide-react";
 import { addDaysLocal, toLocalDate } from "@/domain/datetime";
 import { CATEGORY_COLORS } from "@/data/db";
@@ -22,12 +23,19 @@ import { useNow, useStore } from "@/state/store";
 import { MiniMonth } from "./components/MiniMonth";
 import { Field, Modal } from "./components/primitives";
 
-export type ViewId = "today" | "calendar" | "tasks" | "focus" | "activity";
+export type ViewId =
+  | "today"
+  | "calendar"
+  | "tasks"
+  | "plans"
+  | "focus"
+  | "activity";
 
 const NAV: { id: ViewId; label: string; icon: typeof Sun }[] = [
   { id: "today", label: "Today", icon: Sun },
   { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "tasks", label: "Tasks", icon: ListChecks },
+  { id: "plans", label: "Plans", icon: Target },
   { id: "focus", label: "Focus", icon: Timer },
   { id: "activity", label: "Activity", icon: History },
 ];
@@ -64,13 +72,22 @@ export function Sidebar({
     filters,
   );
   const busy = useMemo(
-    () => new Set(monthInstances.map((i) => i.date).filter(Boolean) as LocalDate[]),
+    () =>
+      new Set(monthInstances.map((i) => i.date).filter(Boolean) as LocalDate[]),
     [monthInstances],
   );
 
   const counts = useMemo(() => {
-    const get = (id: string) => groups.find((g) => g.id === id)?.instances.length ?? 0;
-    return { today: get("today"), overdue: get("overdue"), open: groups.reduce((n, g) => n + (g.id === "completed" ? 0 : g.instances.length), 0) };
+    const get = (id: string) =>
+      groups.find((g) => g.id === id)?.instances.length ?? 0;
+    return {
+      today: get("today"),
+      overdue: get("overdue"),
+      open: groups.reduce(
+        (n, g) => n + (g.id === "completed" ? 0 : g.instances.length),
+        0,
+      ),
+    };
   }, [groups]);
 
   const toggleCategory = (id: string) => {
@@ -96,7 +113,11 @@ export function Sidebar({
         {NAV.map((item) => {
           const Icon = item.icon;
           const badge =
-            item.id === "today" ? counts.today : item.id === "tasks" ? counts.open : 0;
+            item.id === "today"
+              ? counts.today
+              : item.id === "tasks"
+                ? counts.open
+                : 0;
           return (
             <button
               key={item.id}
