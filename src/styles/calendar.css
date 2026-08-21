@@ -1,6 +1,11 @@
-.cal { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+/* The month grid keeps a readable row height rather than squeezing to fit, so
+   on a short window the whole view scrolls instead of the cells shrinking away. */
+.cal { display: flex; flex-direction: column; min-height: 100%; }
 
 .cal-weekdays {
+  position: sticky;
+  top: 0;
+  z-index: 4;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   border-bottom: 1px solid var(--border);
@@ -96,7 +101,10 @@
 
 /* ------------------------------------------------------- week / day */
 
-.time-grid { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* Fills the view so the hour body scrolls under pinned headers. The floor keeps
+   a short window from squeezing that body down to nothing; below it the view
+   scrolls as a whole instead. */
+.time-grid { display: flex; flex-direction: column; height: 100%; min-height: 420px; }
 
 .time-head {
   display: grid;
@@ -137,6 +145,10 @@
 .allday-row {
   display: grid;
   min-height: 30px;
+  /* A day with many all-day tasks scrolls its own strip instead of pushing the
+     hour grid off the screen. */
+  max-height: 25vh;
+  overflow-y: auto;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
 }

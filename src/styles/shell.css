@@ -1,6 +1,13 @@
 .app {
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr;
+  /* The row has to be pinned to the window. Left implicit it is `auto`, so it
+     grows to whatever the tallest column holds: the shell then reaches past the
+     bottom of the window, `body { overflow: hidden }` cuts the overhang off, and
+     nothing scrolls it back into view because `.view-body` and `.sidebar` were
+     handed a height as tall as their own content and so never overflow.
+     `minmax(0, 1fr)` is the 1fr that may also be shorter than its content. */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   background: var(--bg);
 }
