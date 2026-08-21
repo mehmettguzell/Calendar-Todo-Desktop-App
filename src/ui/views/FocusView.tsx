@@ -1,8 +1,17 @@
 import { useMemo } from "react";
 import { Square, Timer } from "lucide-react";
-import { formatDuration, formatTracked, fromInstant, toLocalDate } from "@/domain/datetime";
+import {
+  formatDuration,
+  formatTracked,
+  fromInstant,
+  toLocalDate,
+} from "@/domain/datetime";
 import type { TaskInstance } from "@/domain/types";
-import { useFocusSessions, useInstancesInRange, type Filters } from "@/state/selectors";
+import {
+  useFocusSessions,
+  useInstancesInRange,
+  type Filters,
+} from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
 import { useElapsedSeconds } from "@/services/scheduler";
 import { Empty } from "@/ui/components/primitives";
@@ -23,6 +32,8 @@ export function FocusView({
 }) {
   const runningFocus = useStore((s) => s.runningFocus);
   const stopFocus = useStore((s) => s.stopFocus);
+  const cancelFocus = useStore((s) => s.cancelFocus);
+  const clearFocusSessions = useStore((s) => s.clearFocusSessions);
   const tasks = useStore((s) => s.db.tasks);
   const sessions = useFocusSessions();
   const now = useNow();
@@ -48,10 +59,16 @@ export function FocusView({
           <div className="grow">
             <div style={{ fontWeight: 600 }}>{runningTask.title}</div>
             <div className="muted" style={{ fontSize: 12 }}>
-              Started {fromInstant(runningFocus.startedAt).toLocaleTimeString([], { timeStyle: "short" })}
+              Started{" "}
+              {fromInstant(runningFocus.startedAt).toLocaleTimeString([], {
+                timeStyle: "short",
+              })}
             </div>
           </div>
           <span className="timer mono">{formatDuration(elapsed)}</span>
+          <button type="button" className="btn ghost" onClick={cancelFocus}>
+            Cancel
+          </button>
           <button type="button" className="btn" onClick={stopFocus}>
             <Square size={14} /> Stop
           </button>
@@ -98,22 +115,46 @@ export function FocusView({
       <section className="section">
         <div className="section-head">
           <h2>Recent sessions</h2>
-          <span className="count">{sessions.length}</span>
+          <span className="count grow">{sessions.length}</span>
+          {sessions.length > 0 ? (
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => {
+                if (
+                  confirm(
+                    "Are you sure you want to clear all focus history? This cannot be undone.",
+                  )
+                ) {
+                  clearFocusSessions();
+                }
+              }}
+            >
+              Clear History
+            </button>
+          ) : null}
         </div>
         <div className="col" style={{ gap: 4 }}>
           {sessions.slice(0, 25).map((session) => {
             const task = tasks.find((t) => t.id === session.taskId);
             return (
               <div key={session.id} className="row" style={{ fontSize: 13 }}>
-                <span className="grow truncate">{task?.title ?? "Deleted task"}</span>
+                <span className="grow truncate">
+                  {task?.title ?? "Deleted task"}
+                </span>
                 <span className="faint" style={{ fontSize: 12 }}>
                   {fromInstant(session.startedAt).toLocaleString([], {
                     dateStyle: "short",
                     timeStyle: "short",
                   })}
                 </span>
-                <span className="mono" style={{ minWidth: 64, textAlign: "right" }}>
-                  {session.endedAt ? formatTracked(session.durationSec) : "running"}
+                <span
+                  className="mono"
+                  style={{ minWidth: 64, textAlign: "right" }}
+                >
+                  {session.endedAt
+                    ? formatTracked(session.durationSec)
+                    : "running"}
                 </span>
               </div>
             );

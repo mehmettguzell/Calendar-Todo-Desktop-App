@@ -89,6 +89,7 @@ export function useInstancesInRange(
   return useMemo(() => {
     const out: TaskInstance[] = [];
     for (const task of tasks) {
+      if (task.parentId) continue; // subtasks render nested under their parent
       if (!matchesFilters(task, filters)) continue;
       for (const instance of instancesInRange(
         task,

@@ -107,6 +107,8 @@ interface StoreState {
 
   startFocus(instance: TaskInstance): void;
   stopFocus(): void;
+  cancelFocus(): void;
+  clearFocusSessions(): void;
 
   addCategory(name: string, color: string): Category;
   updateCategory(
@@ -607,6 +609,26 @@ export const useStore = create<StoreState>((set, get) => {
           }),
         ),
       );
+    },
+
+    cancelFocus() {
+      const running = get().runningFocus;
+      if (!running) return;
+      set({ runningFocus: null });
+      commit((db) => ({
+        ...db,
+        focusSessions: db.focusSessions.filter(
+          (s) => s.id !== running.sessionId,
+        ),
+      }));
+    },
+
+    clearFocusSessions() {
+      set({ runningFocus: null });
+      commit((db) => ({
+        ...db,
+        focusSessions: [],
+      }));
     },
 
     addCategory(name, color) {
