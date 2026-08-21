@@ -7,6 +7,7 @@ import "./styles/shell.css";
 import "./styles/controls.css";
 import "./styles/views.css";
 import "./styles/calendar.css";
+import "./styles/notes.css";
 import "./styles/overlays.css";
 
 const container = document.getElementById("root");

@@ -17,6 +17,7 @@ import { Topbar } from "@/ui/Topbar";
 import { ReminderAlerts } from "@/ui/components/ReminderAlerts";
 import { QuickAdd } from "@/ui/task/QuickAdd";
 import { TaskPanel } from "@/ui/task/TaskPanel";
+import { NotePanel } from "@/ui/task/NotePanel";
 import { ActivityView } from "@/ui/views/ActivityView";
 import {
   CalendarView,
@@ -27,6 +28,7 @@ import {
 import { FocusView } from "@/ui/views/FocusView";
 import { TasksView } from "@/ui/views/TasksView";
 import { PlansView } from "@/ui/views/PlansView";
+import { NotesView } from "@/ui/views/NotesView";
 import { TodayView } from "@/ui/views/TodayView";
 import { useApplyTheme, useShortcuts } from "@/ui/hooks";
 
@@ -46,6 +48,7 @@ const VIEW_TITLES: Record<ViewId, string> = {
   calendar: "Calendar",
   tasks: "Tasks",
   plans: "Plans",
+  notes: "Notes",
   focus: "Focus",
   activity: "Activity",
 };
@@ -188,6 +191,10 @@ export function App() {
             />
           ) : null}
 
+          {view === "notes" ? (
+            <NotesView selectedKey={selected?.key ?? null} onOpen={openInstance} />
+          ) : null}
+
           {view === "focus" ? (
             <FocusView
               filters={filters}
@@ -201,11 +208,18 @@ export function App() {
       </main>
 
       {selected ? (
-        <TaskPanel
-          instance={selected}
-          onClose={() => setSelection(null)}
-          onOpenTask={(taskId) => openTaskId(taskId)}
-        />
+        selected.task.tags.includes("note") ? (
+          <NotePanel
+            instance={selected}
+            onClose={() => setSelection(null)}
+          />
+        ) : (
+          <TaskPanel
+            instance={selected}
+            onClose={() => setSelection(null)}
+            onOpenTask={(taskId) => openTaskId(taskId)}
+          />
+        )
       ) : null}
 
       {quickAdd ? (

@@ -9,6 +9,7 @@ import {
   Sun,
   Timer,
   Target,
+  StickyNote,
 } from "lucide-react";
 import { addDaysLocal, toLocalDate } from "@/domain/datetime";
 import { CATEGORY_COLORS } from "@/data/db";
@@ -28,6 +29,7 @@ export type ViewId =
   | "calendar"
   | "tasks"
   | "plans"
+  | "notes"
   | "focus"
   | "activity";
 
@@ -36,6 +38,7 @@ const NAV: { id: ViewId; label: string; icon: typeof Sun }[] = [
   { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "tasks", label: "Tasks", icon: ListChecks },
   { id: "plans", label: "Plans", icon: Target },
+  { id: "notes", label: "Notes", icon: StickyNote },
   { id: "focus", label: "Focus", icon: Timer },
   { id: "activity", label: "Activity", icon: History },
 ];

@@ -216,6 +216,7 @@ export function useTodoGroups(filters: Filters): TodoGroup[] {
     for (const task of tasks) {
       if (task.parentId) continue; // subtasks render nested under their parent
       if (task.tags.includes("plan")) continue; // plans render in their own view
+      if (task.tags.includes("note")) continue; // notes render in their own view
       if (!matchesFilters(task, filters)) continue;
 
       const instance = representativeInstance(task, occurrences, now);

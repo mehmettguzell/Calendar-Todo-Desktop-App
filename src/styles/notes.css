@@ -1,0 +1,378 @@
+/* ------------------------------------------------------------------ notes
+   A note should look like paper, not like a table row. Colour lives on the
+   card as four tokens (--note-bg, --note-edge, --note-ink, --note-wash) so the
+   same markup renders a wall of notes, the panel header and the picker.     */
+
+.note-paper {
+  --note-bg: var(--surface);
+  --note-edge: var(--border-strong);
+  --note-ink: var(--text-muted);
+  --note-wash: var(--surface-2);
+}
+
+.note-paper[data-color="amber"] {
+  --note-bg: #fff7e3;
+  --note-edge: #e9a23b;
+  --note-ink: #92610f;
+  --note-wash: #fdf0d3;
+}
+
+.note-paper[data-color="rose"] {
+  --note-bg: #fff1f2;
+  --note-edge: #e5637a;
+  --note-ink: #a13049;
+  --note-wash: #fde3e7;
+}
+
+.note-paper[data-color="violet"] {
+  --note-bg: #f4f1ff;
+  --note-edge: #8b76f0;
+  --note-ink: #5b45c4;
+  --note-wash: #e8e3fd;
+}
+
+.note-paper[data-color="sky"] {
+  --note-bg: #eef6ff;
+  --note-edge: #4a90e2;
+  --note-ink: #23609f;
+  --note-wash: #dfeeff;
+}
+
+.note-paper[data-color="emerald"] {
+  --note-bg: #eefaf1;
+  --note-edge: #2fa564;
+  --note-ink: #16693d;
+  --note-wash: #ddf3e5;
+}
+
+:root[data-theme="dark"] .note-paper[data-color="amber"] {
+  --note-bg: #2a2114;
+  --note-edge: #d99a3f;
+  --note-ink: #e5b871;
+  --note-wash: #35291a;
+}
+
+:root[data-theme="dark"] .note-paper[data-color="rose"] {
+  --note-bg: #2c1a1e;
+  --note-edge: #e0687e;
+  --note-ink: #eb93a3;
+  --note-wash: #382026;
+}
+
+:root[data-theme="dark"] .note-paper[data-color="violet"] {
+  --note-bg: #201d33;
+  --note-edge: #9384f2;
+  --note-ink: #b0a5f7;
+  --note-wash: #292342;
+}
+
+:root[data-theme="dark"] .note-paper[data-color="sky"] {
+  --note-bg: #16222f;
+  --note-edge: #5b9ee6;
+  --note-ink: #8dc0f0;
+  --note-wash: #1c2b3b;
+}
+
+:root[data-theme="dark"] .note-paper[data-color="emerald"] {
+  --note-bg: #142519;
+  --note-edge: #3fb377;
+  --note-ink: #7cd3a3;
+  --note-wash: #1a2e21;
+}
+
+/* ------------------------------------------------------------- toolbar */
+
+.notes-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.notes-search {
+  position: relative;
+  flex: 1;
+  min-width: 180px;
+}
+
+.notes-search > svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.notes-search input { padding-left: 30px; }
+.notes-bar > .select { flex: none; width: auto; }
+
+.notes-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+
+.label-pill {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 550;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.label-pill:hover { border-color: var(--border-strong); color: var(--text); }
+
+.label-pill.on {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* ---------------------------------------------------------- note wall */
+
+/* Column flow rather than a grid: notes keep their natural height, so a
+   two-line thought does not sit in a box the size of a full page of text. */
+.note-wall {
+  column-width: 232px;
+  column-gap: var(--space-3);
+}
+
+.note-wall > * {
+  break-inside: avoid;
+  margin-bottom: var(--space-3);
+}
+
+.note-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  padding: var(--space-3) var(--space-3) 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--note-edge);
+  border-radius: var(--radius);
+  background: var(--note-bg);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 130ms ease, box-shadow 130ms ease, border-color 130ms ease;
+}
+
+.note-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.note-card.selected {
+  border-color: var(--accent);
+  border-left-color: var(--note-edge);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.note-card .note-title {
+  font-size: 13.5px;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.note-card .note-title.untitled { color: var(--text-faint); font-weight: 550; }
+
+.note-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 168px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+}
+
+.note-preview .l-heading { color: var(--text); font-weight: 650; }
+.note-preview .l-blank { height: 6px; }
+.note-preview .l-divider { height: 1px; margin: 5px 0; background: var(--border); }
+.note-preview .l-item { display: flex; gap: 6px; overflow-wrap: anywhere; }
+.note-preview .l-item .marker { flex: none; color: var(--note-ink); }
+.note-preview .l-item.done { color: var(--text-faint); text-decoration: line-through; }
+.note-preview .l-text { overflow-wrap: anywhere; }
+
+.note-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+
+.note-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.note-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--note-wash);
+  color: var(--note-ink);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.note-pin {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.note-card:hover .note-pin,
+.note-pin:focus-visible { opacity: 1; }
+.note-pin:hover { background: var(--surface-hover); color: var(--text); }
+.note-pin.on { opacity: 1; color: var(--note-ink); }
+
+/* ------------------------------------------------------ starter cards */
+
+.note-starters {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: var(--space-3);
+}
+
+.note-starter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 550;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.note-starter:hover {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ----------------------------------------------------------- the panel */
+
+.note-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 10px var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--note-wash);
+}
+
+.swatches { display: flex; align-items: center; gap: 5px; }
+
+.swatch {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.swatch:hover { transform: scale(1.18); }
+.swatch.on { box-shadow: 0 0 0 2px var(--note-wash), 0 0 0 3.5px var(--note-edge); }
+
+.note-editor {
+  flex: 1;
+  min-height: 240px;
+  padding: 0 var(--space-4) var(--space-4);
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.65;
+  resize: none;
+}
+
+.note-editor:focus { outline: none; box-shadow: none; }
+
+/* The reading side of the editor: the same body, rendered rather than typed,
+   with the checkboxes live so a list can be worked through in place. */
+.note-read {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 3px;
+  padding: 0 var(--space-4) var(--space-4);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.note-read .r-blank { height: 10px; }
+.note-read .r-divider { height: 1px; margin: 10px 0; background: var(--border); }
+.note-read .r-heading { margin-top: 6px; font-size: 15px; font-weight: 680; }
+.note-read .r-line { display: flex; gap: 8px; overflow-wrap: anywhere; }
+.note-read .r-line .marker { flex: none; padding-top: 3px; color: var(--note-ink); }
+
+.note-read .r-todo {
+  align-items: flex-start;
+  padding: 1px 4px;
+  margin-left: -4px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.note-read .r-todo:hover { background: var(--note-wash); }
+.note-read .r-todo.done { color: var(--text-faint); text-decoration: line-through; }
+.note-read .r-empty { color: var(--text-faint); }
+
+.note-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-4) var(--space-2);
+}
+
+.note-foot-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px var(--space-4);
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.tag-input {
+  min-width: 84px;
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 11.5px;
+}
+
+.tag-input:focus { outline: none; }
+
+.note-tag.removable { display: inline-flex; align-items: center; gap: 4px; }
+.note-tag.removable button { color: inherit; opacity: 0.6; line-height: 1; }
+.note-tag.removable button:hover { opacity: 1; }
