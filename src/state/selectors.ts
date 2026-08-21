@@ -43,12 +43,18 @@ export function useTrashedTasks(): Task[] {
 
 export function useOccurrenceIndex(): Map<string, Occurrence> {
   const occurrences = useStore((s) => s.db.occurrences);
-  return useMemo(() => new Map(occurrences.map((o) => [o.id, o])), [occurrences]);
+  return useMemo(
+    () => new Map(occurrences.map((o) => [o.id, o])),
+    [occurrences],
+  );
 }
 
 export function useCategories(): Category[] {
   const categories = useStore((s) => s.db.categories);
-  return useMemo(() => [...categories].sort((a, b) => a.order - b.order), [categories]);
+  return useMemo(
+    () => [...categories].sort((a, b) => a.order - b.order),
+    [categories],
+  );
 }
 
 export function useCategoryIndex(): Map<string, Category> {
@@ -83,8 +89,15 @@ export function useInstancesInRange(
   return useMemo(() => {
     const out: TaskInstance[] = [];
     for (const task of tasks) {
+      if (task.parentId) continue; // subtasks render nested under their parent
       if (!matchesFilters(task, filters)) continue;
-      for (const instance of instancesInRange(task, from, to, occurrences, now)) {
+      for (const instance of instancesInRange(
+        task,
+        from,
+        to,
+        occurrences,
+        now,
+      )) {
         if (!filters.showCompleted && instance.status === "COMPLETED") continue;
         out.push(instance);
       }
@@ -93,7 +106,9 @@ export function useInstancesInRange(
   }, [tasks, occurrences, from, to, filters, now]);
 }
 
-export function groupByDate(instances: TaskInstance[]): Map<LocalDate, TaskInstance[]> {
+export function groupByDate(
+  instances: TaskInstance[],
+): Map<LocalDate, TaskInstance[]> {
   const map = new Map<LocalDate, TaskInstance[]>();
   for (const instance of instances) {
     if (!instance.date) continue;
@@ -114,9 +129,12 @@ export function compareInstances(a: TaskInstance, b: TaskInstance): number {
     const diff = a.startsAt.getTime() - b.startsAt.getTime();
     if (diff !== 0) return diff;
   }
-  const priority = priorityRank(b.task.priority) - priorityRank(a.task.priority);
+  const priority =
+    priorityRank(b.task.priority) - priorityRank(a.task.priority);
   if (priority !== 0) return priority;
-  return a.task.order - b.task.order || a.task.title.localeCompare(b.task.title);
+  return (
+    a.task.order - b.task.order || a.task.title.localeCompare(b.task.title)
+  );
 }
 
 export function priorityRank(priority: Priority): number {
@@ -124,14 +142,26 @@ export function priorityRank(priority: Priority): number {
 }
 
 export function matchesFilters(task: Task, filters: Filters): boolean {
-  if (filters.categoryIds.length > 0 && !filters.categoryIds.includes(task.categoryId ?? "")) {
+  if (
+    filters.categoryIds.length > 0 &&
+    !filters.categoryIds.includes(task.categoryId ?? "")
+  ) {
     return false;
   }
-  if (filters.priorities.length > 0 && !filters.priorities.includes(task.priority)) return false;
-  if (filters.tags.length > 0 && !filters.tags.some((tag) => task.tags.includes(tag))) return false;
+  if (
+    filters.priorities.length > 0 &&
+    !filters.priorities.includes(task.priority)
+  )
+    return false;
+  if (
+    filters.tags.length > 0 &&
+    !filters.tags.some((tag) => task.tags.includes(tag))
+  )
+    return false;
   const q = filters.query.trim().toLowerCase();
   if (q) {
-    const haystack = `${task.title} ${task.description} ${task.tags.join(" ")}`.toLowerCase();
+    const haystack =
+      `${task.title} ${task.description} ${task.tags.join(" ")}`.toLowerCase();
     if (!haystack.includes(q)) return false;
   }
   return true;
@@ -166,8 +196,11 @@ export function useTodoGroups(filters: Filters): TodoGroup[] {
     const today = toLocalDate(now);
     const tomorrow = addDaysLocal(today, 1);
     const weekEnd = addDaysLocal(today, 7);
-    const buckets = new Map<string, TaskInstance[]>(TODO_GROUPS.map(([id]) => [id, []]));
-    const push = (id: string, instance: TaskInstance) => buckets.get(id)?.push(instance);
+    const buckets = new Map<string, TaskInstance[]>(
+      TODO_GROUPS.map(([id]) => [id, []]),
+    );
+    const push = (id: string, instance: TaskInstance) =>
+      buckets.get(id)?.push(instance);
 
     for (const task of tasks) {
       if (task.parentId) continue; // subtasks render nested under their parent
@@ -202,7 +235,10 @@ export function useTodoGroups(filters: Filters): TodoGroup[] {
 export function useSubtasks(parentId: string): Task[] {
   const tasks = useLiveTasks();
   return useMemo(
-    () => tasks.filter((t) => t.parentId === parentId).sort((a, b) => a.order - b.order),
+    () =>
+      tasks
+        .filter((t) => t.parentId === parentId)
+        .sort((a, b) => a.order - b.order),
     [tasks, parentId],
   );
 }
@@ -210,7 +246,10 @@ export function useSubtasks(parentId: string): Task[] {
 export function useTaskHistory(taskId: string): HistoryEntry[] {
   const history = useStore((s) => s.db.history);
   return useMemo(
-    () => history.filter((h) => h.taskId === taskId).sort((a, b) => b.at.localeCompare(a.at)),
+    () =>
+      history
+        .filter((h) => h.taskId === taskId)
+        .sort((a, b) => b.at.localeCompare(a.at)),
     [history, taskId],
   );
 }
@@ -228,12 +267,18 @@ export function useFocusSessions(taskId?: string): FocusSession[] {
 
 export function useTrackedSeconds(taskId: string): number {
   const sessions = useFocusSessions(taskId);
-  return useMemo(() => sessions.reduce((total, s) => total + s.durationSec, 0), [sessions]);
+  return useMemo(
+    () => sessions.reduce((total, s) => total + s.durationSec, 0),
+    [sessions],
+  );
 }
 
 export function useTaskById(taskId: string | null): Task | null {
   const tasks = useStore((s) => s.db.tasks);
-  return useMemo(() => tasks.find((t) => t.id === taskId) ?? null, [tasks, taskId]);
+  return useMemo(
+    () => tasks.find((t) => t.id === taskId) ?? null,
+    [tasks, taskId],
+  );
 }
 
 export function occurrenceFor(
