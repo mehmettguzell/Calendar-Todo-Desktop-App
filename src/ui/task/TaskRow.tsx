@@ -60,7 +60,7 @@ export function TaskRow({
 
       <button type="button" className="task-main" onClick={() => onOpen(instance)}>
         <div className="task-title">
-          <span className="label truncate">{task.title}</span>
+          <span className="label wrap">{task.title}</span>
           {instance.status === "OVERDUE" || instance.status === "SNOOZED" ? (
             <StatusBadge status={instance.status} />
           ) : null}

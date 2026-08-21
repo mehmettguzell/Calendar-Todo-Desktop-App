@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AlarmClock, Play, Square, Trash2, X } from "lucide-react";
 import { formatTracked } from "@/domain/datetime";
 import { PRIORITY_LABEL } from "@/domain/task";
@@ -47,6 +47,7 @@ export function TaskPanel({
   const tracked = useTrackedSeconds(task.id);
 
   const [title, setTitle] = useState(task.title);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
   const [description, setDescription] = useState(task.description);
   const [tagInput, setTagInput] = useState(task.tags.join(", "));
   const [snoozeOpen, setSnoozeOpen] = useState(false);
@@ -57,6 +58,24 @@ export function TaskPanel({
     setDescription(task.description);
     setTagInput(task.tags.join(", "));
   }, [task.id, task.title, task.description, task.tags]);
+
+  /**
+   * The title is a textarea so a long name wraps into view instead of scrolling
+   * sideways inside a one-line input. Nothing else about it is multi-line: it
+   * grows to exactly its content, and Enter commits rather than adding a break.
+   */
+  useLayoutEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [title]);
+
+  const commitTitle = () => {
+    const trimmed = title.trim();
+    if (trimmed && trimmed !== task.title) updateTask(task.id, { title: trimmed });
+    else if (!trimmed) setTitle(task.title);
+  };
 
   const isFocused = runningFocus?.taskId === task.id;
   const ref = useMemo(
@@ -80,11 +99,18 @@ export function TaskPanel({
       </div>
 
       <div className="panel-body scroll">
-        <input
+        <textarea
+          ref={titleRef}
           className="panel-title-input"
+          rows={1}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => title.trim() && title !== task.title && updateTask(task.id, { title: title.trim() })}
+          onBlur={commitTitle}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            e.currentTarget.blur();
+          }}
           placeholder="Untitled task"
         />
 

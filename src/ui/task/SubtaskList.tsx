@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowUpRight, Plus, Trash2 } from "lucide-react";
+import { ArrowUpRight, GripVertical, Plus, Trash2 } from "lucide-react";
 import type { Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { useSubtasks } from "@/state/selectors";
@@ -18,7 +18,11 @@ export function SubtaskList({ parent, onOpen }: { parent: Task; onOpen: (taskId:
   const createTask = useStore((s) => s.createTask);
   const setStatus = useStore((s) => s.setStatus);
   const deleteTask = useStore((s) => s.deleteTask);
+  const reorderSubtasks = useStore((s) => s.reorderSubtasks);
   const [title, setTitle] = useState("");
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  /** Where the dragged row would land: the gap *before* this index. */
+  const [dropSlot, setDropSlot] = useState<number | null>(null);
 
   const add = () => {
     const trimmed = title.trim();
@@ -31,6 +35,29 @@ export function SubtaskList({ parent, onOpen }: { parent: Task; onOpen: (taskId:
       allDay: true,
     });
     setTitle("");
+  };
+
+  /** Move the row at `index` `delta` places, then hand the store the new order. */
+  const move = (index: number, delta: number) => {
+    const target = index + delta;
+    if (target < 0 || target >= subtasks.length) return;
+    const ids = subtasks.map((s) => s.id);
+    const [moved] = ids.splice(index, 1) as [string];
+    ids.splice(target, 0, moved);
+    reorderSubtasks(parent.id, ids);
+  };
+
+  const endDrag = () => {
+    setDragIndex(null);
+    setDropSlot(null);
+  };
+
+  const drop = () => {
+    if (dragIndex === null || dropSlot === null) return endDrag();
+    // A slot below the dragged row loses one place once that row is lifted out.
+    const target = dropSlot > dragIndex ? dropSlot - 1 : dropSlot;
+    move(dragIndex, target - dragIndex);
+    endDrag();
   };
 
   const done = subtasks.filter((s) => s.status === "COMPLETED").length;
@@ -46,8 +73,50 @@ export function SubtaskList({ parent, onOpen }: { parent: Task; onOpen: (taskId:
         </div>
       ) : null}
 
-      {subtasks.map((subtask) => (
-        <div key={subtask.id} className={cn("subtask-row", subtask.status === "COMPLETED" && "done")}>
+      {subtasks.map((subtask, index) => (
+        <div
+          key={subtask.id}
+          className={cn(
+            "subtask-row",
+            subtask.status === "COMPLETED" && "done",
+            dragIndex === index && "dragging",
+            dropSlot === index && "drop-before",
+            dropSlot === subtasks.length && index === subtasks.length - 1 && "drop-after",
+          )}
+          draggable
+          onDragStart={(e) => {
+            setDragIndex(index);
+            e.dataTransfer.effectAllowed = "move";
+            // Firefox refuses to start a drag without payload on the transfer.
+            e.dataTransfer.setData("text/plain", subtask.id);
+          }}
+          onDragOver={(e) => {
+            if (dragIndex === null) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            const box = e.currentTarget.getBoundingClientRect();
+            setDropSlot(e.clientY < box.top + box.height / 2 ? index : index + 1);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            drop();
+          }}
+          onDragEnd={endDrag}
+        >
+          <button
+            type="button"
+            className="subtask-grip"
+            aria-label={`Reorder "${subtask.title}" — arrow up or down`}
+            title="Drag to reorder (or focus and press ↑ / ↓)"
+            onKeyDown={(e) => {
+              if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+              e.preventDefault();
+              move(index, e.key === "ArrowUp" ? -1 : 1);
+            }}
+          >
+            <GripVertical size={13} />
+          </button>
+
           <Checkbox
             square
             done={subtask.status === "COMPLETED"}
@@ -58,7 +127,7 @@ export function SubtaskList({ parent, onOpen }: { parent: Task; onOpen: (taskId:
               )
             }
           />
-          <span className="label truncate">{subtask.title}</span>
+          <span className="label wrap">{subtask.title}</span>
           <button
             type="button"
             className="btn ghost icon"

@@ -101,6 +101,8 @@ interface StoreState {
   updateCategory(id: string, patch: Partial<Pick<Category, "name" | "color">>): void;
   removeCategory(id: string): void;
 
+  reorderSubtasks(parentId: string, orderedIds: string[]): void;
+
   updateSettings(patch: Partial<Settings>): void;
 
   clearHistory(): void;
@@ -544,6 +546,32 @@ export const useStore = create<StoreState>((set, get) => {
         categories: db.categories.filter((c) => c.id !== id),
         tasks: db.tasks.map((t) => (t.categoryId === id ? { ...t, categoryId: null } : t)),
       }));
+    },
+
+    /**
+     * Rewrite one parent's sibling order from a list of ids.
+     *
+     * The caller sends the whole order rather than a from/to pair, so a drag
+     * that crossed several rows is one write and the stored `order` values stay
+     * a dense 0..n-1 run instead of drifting apart.
+     *
+     * No history entry: the trail records what happened to a task's schedule and
+     * status, and a row that only changed places would bury those in noise.
+     */
+    reorderSubtasks(parentId, orderedIds) {
+      commit((db) => {
+        const position = new Map(orderedIds.map((id, index) => [id, index]));
+        const at = nowInstant();
+        return {
+          ...db,
+          tasks: db.tasks.map((task) => {
+            const next = task.parentId === parentId ? position.get(task.id) : undefined;
+            return next === undefined || next === task.order
+              ? task
+              : { ...task, order: next, updatedAt: at };
+          }),
+        };
+      });
     },
 
     updateSettings(patch) {

@@ -78,6 +78,9 @@ select {
 .col { display: flex; flex-direction: column; }
 .grow { flex: 1; min-width: 0; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The opposite of .truncate: a name too long for its row is worth reading, so
+   it wraps — breaking mid-word only when a single word is wider than the row. */
+.wrap { min-width: 0; overflow-wrap: anywhere; }
 .empty {
   display: grid;
   place-items: center;
