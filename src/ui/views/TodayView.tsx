@@ -10,7 +10,7 @@ import {
   Plus,
   Sun,
 } from "lucide-react";
-import { addDaysLocal, formatTracked, toLocalDate } from "@/domain/datetime";
+import { formatTracked, toLocalDate } from "@/domain/datetime";
 import { getMotivationalMessage } from "@/domain/gamification";
 import type { Priority, TaskInstance } from "@/domain/types";
 import { fireConfetti } from "@/lib/confetti";
@@ -46,11 +46,6 @@ export function TodayView({
   const now = useNow();
   const today = toLocalDate(now);
   const groups = useTodoGroups(filters);
-  const upcoming = useInstancesInRange(
-    addDaysLocal(today, 1),
-    addDaysLocal(today, 3),
-    filters,
-  );
   const sessions = useFocusSessions();
   const createTask = useStore((s) => s.createTask);
   const { streaks } = useGamificationStats();
@@ -332,20 +327,6 @@ export function TodayView({
             </div>
           )}
         </section>
-      ) : null}
-
-      {/* Upcoming Section */}
-      {upcoming.length > 0 ? (
-        <Section title="Önümüzdeki Günler" count={upcoming.length}>
-          {upcoming.map((instance) => (
-            <TaskRow
-              key={instance.key}
-              instance={instance}
-              selected={instance.key === selectedKey}
-              onOpen={onOpen}
-            />
-          ))}
-        </Section>
       ) : null}
     </div>
   );
