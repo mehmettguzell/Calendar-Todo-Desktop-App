@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { shiftTime, toLocalDate } from "@/domain/datetime";
 import { PRIORITY_LABEL } from "@/domain/task";
-import { PRIORITIES, type LocalDate, type Priority, type Recurrence } from "@/domain/types";
+import {
+  PRIORITIES,
+  type LocalDate,
+  type Priority,
+  type Recurrence,
+} from "@/domain/types";
 import { useCategories } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
 import { Field, Modal, Switch } from "@/ui/components/primitives";
@@ -30,7 +35,10 @@ export function QuickAdd({
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [dueDate, setDueDate] = useState<string>(defaultDate ?? toLocalDate(now));
+  const [dueDate, setDueDate] = useState<string>(
+    defaultDate ?? toLocalDate(now),
+  );
+  const [endDate, setEndDate] = useState<string>("");
   const [allDay, setAllDay] = useState(!defaultTime);
   const [startTime, setStartTime] = useState(defaultTime ?? "09:00");
   const [endTime, setEndTime] = useState("");
@@ -51,6 +59,7 @@ export function QuickAdd({
       title: trimmed,
       description: description.trim(),
       dueDate: dueDate || null,
+      endDate: endDate || null,
       allDay,
       startTime: allDay ? null : startTime || null,
       endTime: allDay || !endTime ? null : endTime,
@@ -84,7 +93,12 @@ export function QuickAdd({
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="btn primary" disabled={!title.trim()} onClick={submit}>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={!title.trim()}
+            onClick={submit}
+          >
             Create task
           </button>
         </>
@@ -113,12 +127,21 @@ export function QuickAdd({
       </Field>
 
       <div className="field-row">
-        <Field label="Date">
+        <Field label="Start Date">
           <input
             className="input"
             type="date"
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
+          />
+        </Field>
+        <Field label="End Date">
+          <input
+            className="input"
+            type="date"
+            value={endDate}
+            min={dueDate || undefined}
+            onChange={(e) => setEndDate(e.target.value)}
           />
         </Field>
         <Field label="Priority">
@@ -188,7 +211,11 @@ export function QuickAdd({
 
       <Switch
         checked={withReminder}
-        label={reminderLabel(allDay, settings.defaultReminderOffset, settings.allDayReminderTime)}
+        label={reminderLabel(
+          allDay,
+          settings.defaultReminderOffset,
+          settings.allDayReminderTime,
+        )}
         onChange={setWithReminder}
       />
     </Modal>
@@ -200,7 +227,11 @@ export function QuickAdd({
  * at the clock time from Settings. Saying "10 min before" there would name a
  * moment that does not exist.
  */
-function reminderLabel(allDay: boolean, offsetMinutes: number, allDayTime: string): string {
+function reminderLabel(
+  allDay: boolean,
+  offsetMinutes: number,
+  allDayTime: string,
+): string {
   if (allDay) return `Remind me at ${shiftTime(allDayTime, -offsetMinutes)}`;
   if (offsetMinutes === 0) return "Remind me at the start time";
   return `Remind me ${offsetMinutes} min before`;

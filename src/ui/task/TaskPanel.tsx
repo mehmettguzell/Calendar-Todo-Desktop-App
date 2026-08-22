@@ -114,11 +114,19 @@ export function TaskPanel({
           <button
             type="button"
             className="btn ghost sm"
-            style={{ alignSelf: "flex-start", marginBottom: 12, paddingLeft: 4, paddingRight: 8 }}
+            style={{
+              alignSelf: "flex-start",
+              marginBottom: 12,
+              paddingLeft: 4,
+              paddingRight: 8,
+            }}
             onClick={() => onOpenTask(parentTask.id)}
             title={`Back to ${parentTask.title}`}
           >
-            <ArrowLeft size={14} /> <span className="truncate" style={{ maxWidth: 220 }}>{parentTask.title}</span>
+            <ArrowLeft size={14} />{" "}
+            <span className="truncate" style={{ maxWidth: 220 }}>
+              {parentTask.title}
+            </span>
           </button>
         ) : null}
         <textarea
@@ -207,16 +215,29 @@ export function TaskPanel({
         <div className="card">
           <div className="card-head">Schedule</div>
           <div className="col" style={{ gap: 10 }}>
-            <Field label="Date">
-              <input
-                className="input"
-                type="date"
-                value={task.dueDate ?? ""}
-                onChange={(e) =>
-                  updateTask(task.id, { dueDate: e.target.value || null })
-                }
-              />
-            </Field>
+            <div className="field-row">
+              <Field label="Start Date">
+                <input
+                  className="input"
+                  type="date"
+                  value={task.dueDate ?? ""}
+                  onChange={(e) =>
+                    updateTask(task.id, { dueDate: e.target.value || null })
+                  }
+                />
+              </Field>
+              <Field label="End Date">
+                <input
+                  className="input"
+                  type="date"
+                  value={task.endDate ?? ""}
+                  min={task.dueDate ?? undefined}
+                  onChange={(e) =>
+                    updateTask(task.id, { endDate: e.target.value || null })
+                  }
+                />
+              </Field>
+            </div>
 
             <Switch
               checked={task.allDay}

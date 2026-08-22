@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS public.tasks (
   status TEXT NOT NULL DEFAULT 'TODO' CHECK (status IN ('TODO', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
   tags TEXT[] NOT NULL DEFAULT '{}',
   due_date TEXT,
+  end_date TEXT,
   all_day BOOLEAN NOT NULL DEFAULT TRUE,
   starts_at TIMESTAMPTZ,
   duration_sec INTEGER,
@@ -90,70 +91,103 @@ ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.focus_sessions ENABLE ROW LEVEL SECURITY;
 
 -- Profiles Policies
+-- NOTE: the INSERT policy is required. public.tasks.user_id has a FK onto
+-- public.profiles, so the client must be able to create its own missing
+-- profile row (accounts predating the signup trigger) before any task can
+-- be written. Without it every upsert here fails with an RLS violation and
+-- task sync silently stops.
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 CREATE POLICY "Users can view own profile"
   ON public.profiles FOR SELECT
   USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+CREATE POLICY "Users can insert own profile"
+  ON public.profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile"
   ON public.profiles FOR UPDATE
-  USING (auth.uid() = id);
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
 -- Subscriptions Policies
+DROP POLICY IF EXISTS "Users can view own subscription" ON public.subscriptions;
 CREATE POLICY "Users can view own subscription"
   ON public.subscriptions FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own subscription" ON public.subscriptions;
+CREATE POLICY "Users can insert own subscription"
+  ON public.subscriptions FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own subscription" ON public.subscriptions;
 CREATE POLICY "Users can update own subscription"
   ON public.subscriptions FOR UPDATE
-  USING (auth.uid() = user_id);
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 -- Categories Policies
+DROP POLICY IF EXISTS "Users can select own categories" ON public.categories;
 CREATE POLICY "Users can select own categories"
   ON public.categories FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own categories" ON public.categories;
 CREATE POLICY "Users can insert own categories"
   ON public.categories FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own categories" ON public.categories;
 CREATE POLICY "Users can update own categories"
   ON public.categories FOR UPDATE
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own categories" ON public.categories;
 CREATE POLICY "Users can delete own categories"
   ON public.categories FOR DELETE
   USING (auth.uid() = user_id);
 
 -- Tasks Policies
+DROP POLICY IF EXISTS "Users can select own tasks" ON public.tasks;
 CREATE POLICY "Users can select own tasks"
   ON public.tasks FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own tasks" ON public.tasks;
 CREATE POLICY "Users can insert own tasks"
   ON public.tasks FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own tasks" ON public.tasks;
 CREATE POLICY "Users can update own tasks"
   ON public.tasks FOR UPDATE
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own tasks" ON public.tasks;
 CREATE POLICY "Users can delete own tasks"
   ON public.tasks FOR DELETE
   USING (auth.uid() = user_id);
 
 -- Focus Sessions Policies
+DROP POLICY IF EXISTS "Users can select own focus sessions" ON public.focus_sessions;
 CREATE POLICY "Users can select own focus sessions"
   ON public.focus_sessions FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own focus sessions" ON public.focus_sessions;
 CREATE POLICY "Users can insert own focus sessions"
   ON public.focus_sessions FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own focus sessions" ON public.focus_sessions;
 CREATE POLICY "Users can update own focus sessions"
   ON public.focus_sessions FOR UPDATE
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own focus sessions" ON public.focus_sessions;
 CREATE POLICY "Users can delete own focus sessions"
   ON public.focus_sessions FOR DELETE
   USING (auth.uid() = user_id);
@@ -212,9 +246,18 @@ CREATE TRIGGER on_auth_user_created
 -- Enable instantaneous cross-device sync (Desktop ↔ Mobile)
 -- ==================================================================
 
-ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.subscriptions;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.categories;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.focus_sessions;
+-- Re-runnable: ADD TABLE errors if the table is already published.
+DO $$
+DECLARE t TEXT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['profiles', 'subscriptions', 'categories', 'tasks', 'focus_sessions']
+  LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = t
+    ) THEN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', t);
+    END IF;
+  END LOOP;
+END $$;
 

@@ -117,6 +117,24 @@
   gap: 1px;
 }
 
+.category-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  position: relative;
+  border-radius: var(--radius-sm);
+  transition: background 120ms ease;
+}
+
+.category-chip-row:hover {
+  background: var(--surface-hover);
+}
+
+.category-chip-row:hover .category-chip-action-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .category-chip {
   display: flex;
   align-items: center;
@@ -125,16 +143,56 @@
   border-radius: var(--radius-sm);
   color: var(--text-muted);
   text-align: left;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  width: 100%;
 }
 
 .category-chip:hover {
-  background: var(--surface-hover);
   color: var(--text);
 }
+
 .category-chip[aria-pressed="true"] {
   background: var(--surface-hover);
   color: var(--text);
   font-weight: 600;
+}
+
+.category-chip-count {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--surface);
+  margin-left: auto;
+}
+
+.category-chip-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
+  margin-right: 4px;
+}
+
+.category-chip-action-btn:hover {
+  color: var(--text);
+  background: var(--surface);
 }
 
 .dot {
@@ -824,95 +882,84 @@
   flex: 1;
 }
 
-/* ================================================================== */
-/* FULL-SCREEN AUTH GATE BARRIER                                     */
-/* ================================================================== */
+/* ==========================================================================
+   Trash / Recycle Bin Modal
+   ========================================================================== */
 
-.auth-gate-wrapper {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: var(--bg);
-  padding: 20px;
-  z-index: 99999;
-}
-
-.auth-gate-card {
-  width: 100%;
-  max-width: 440px;
-  padding: 28px 24px;
-  border-radius: var(--radius-lg, 14px);
-  background: var(--surface);
+.trash-notice-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg, 0 10px 30px rgba(0, 0, 0, 0.2));
-  animation: authGateFadeIn 300ms ease;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
 }
 
-@keyframes authGateFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.auth-gate-brand {
+.trash-empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 36px 16px;
   text-align: center;
-  margin-bottom: 20px;
+  color: var(--muted);
 }
 
-.auth-gate-logo {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), #7c3aed);
-  color: #fff;
-  margin-bottom: 8px;
-  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.3);
+.trash-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
 }
 
-.auth-gate-brand h1 {
-  font-size: 24px;
-  font-weight: 800;
-  margin: 0;
-  letter-spacing: -0.5px;
+.trash-empty-hint {
+  font-size: 12px;
+  max-width: 320px;
 }
 
-.auth-gate-tagline {
-  font-size: 12.5px;
-  color: var(--text-muted);
-  margin: 4px 0 0 0;
+.trash-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 380px;
+  padding-right: 4px;
 }
 
-.auth-gate-loading {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: var(--bg);
-  z-index: 99999;
+.trash-task-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  transition: background 120ms ease;
 }
 
-.auth-gate-spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 700ms linear infinite;
+.trash-task-row:hover {
+  background: var(--bg-hover);
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.trash-task-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.trash-category-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 500;
+  border: 1px solid currentColor;
+  background: var(--surface);
+  flex-shrink: 0;
 }

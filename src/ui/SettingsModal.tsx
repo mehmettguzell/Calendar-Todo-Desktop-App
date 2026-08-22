@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BellRing } from "lucide-react";
 import { databasePath } from "@/data/fileStore";
 import { isTauri } from "@/lib/env";
+import { useI18n, type Language } from "@/lib/i18n";
 import { notify } from "@/services/notifications";
 import { useStore } from "@/state/store";
 import { ConfirmButton, Field, Modal, Switch } from "./components/primitives";
@@ -12,40 +13,56 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const resetDatabase = useStore((s) => s.resetDatabase);
   const storagePath = useStoragePath();
   const [resetError, setResetError] = useState<string | null>(null);
+  const { t } = useI18n();
 
   return (
     <Modal
-      title="Settings"
+      title={t("settingsTitle")}
       onClose={onClose}
       width={440}
       footer={
         <button type="button" className="btn primary" onClick={onClose}>
-          Done
+          {t("done")}
         </button>
       }
     >
-      <Field label="Appearance">
+      <Field label={t("language")}>
+        <select
+          className="select"
+          value={settings.language ?? "tr"}
+          onChange={(e) =>
+            updateSettings({ language: e.target.value as Language })
+          }
+        >
+          <option value="tr">{t("langTr")}</option>
+          <option value="en">{t("langEn")}</option>
+        </select>
+      </Field>
+
+      <Field label={t("appearance")}>
         <select
           className="select"
           value={settings.theme}
           onChange={(e) =>
-            updateSettings({ theme: e.target.value as "system" | "light" | "dark" })
+            updateSettings({
+              theme: e.target.value as "system" | "light" | "dark",
+            })
           }
         >
-          <option value="system">Match system</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
+          <option value="system">{t("themeSystem")}</option>
+          <option value="light">{t("themeLight")}</option>
+          <option value="dark">{t("themeDark")}</option>
         </select>
       </Field>
 
       <Switch
         checked={settings.weekStartsOn === 1}
-        label="Weeks start on Monday"
+        label={t("weekStartsOnMonday")}
         onChange={(monday) => updateSettings({ weekStartsOn: monday ? 1 : 0 })}
       />
 
       <div className="field-row">
-        <Field label="Day starts" hint="Week and day grids">
+        <Field label={t("dayStarts")} hint={t("dayStartsHint")}>
           <input
             className="input"
             type="number"
@@ -53,11 +70,13 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             max={23}
             value={settings.dayStartHour}
             onChange={(e) =>
-              updateSettings({ dayStartHour: clamp(Number(e.target.value), 0, 23) })
+              updateSettings({
+                dayStartHour: clamp(Number(e.target.value), 0, 23),
+              })
             }
           />
         </Field>
-        <Field label="Day ends">
+        <Field label={t("dayEnds")}>
           <input
             className="input"
             type="number"
@@ -66,7 +85,11 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             value={settings.dayEndHour}
             onChange={(e) =>
               updateSettings({
-                dayEndHour: clamp(Number(e.target.value), settings.dayStartHour + 1, 24),
+                dayEndHour: clamp(
+                  Number(e.target.value),
+                  settings.dayStartHour + 1,
+                  24,
+                ),
               })
             }
           />
@@ -74,7 +97,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="field-row">
-        <Field label="Default reminder" hint="Minutes before start">
+        <Field label={t("defaultReminder")} hint={t("defaultReminderHint")}>
           <input
             className="input"
             type="number"
@@ -82,44 +105,49 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             max={1440}
             value={settings.defaultReminderOffset}
             onChange={(e) =>
-              updateSettings({ defaultReminderOffset: clamp(Number(e.target.value), 0, 1440) })
+              updateSettings({
+                defaultReminderOffset: clamp(Number(e.target.value), 0, 1440),
+              })
             }
           />
         </Field>
-        <Field label="All-day time" hint="Used when an all-day task needs a clock time">
+        <Field label={t("allDayTime")} hint={t("allDayTimeHint")}>
           <input
             className="input"
             type="time"
             value={settings.allDayReminderTime}
-            onChange={(e) => updateSettings({ allDayReminderTime: e.target.value })}
+            onChange={(e) =>
+              updateSettings({ allDayReminderTime: e.target.value })
+            }
           />
         </Field>
       </div>
-      <Field
-        label="Notifications"
-        hint="Reminders only fire while Tempo is running — there is no background service."
-      >
+      <Field label={t("notifications")} hint={t("notificationsHint")}>
         <NotificationCheck />
       </Field>
 
-      <Field label="Data file" hint="Plain JSON — back it up or sync it like any other file">
-        <input className="input mono" readOnly value={storagePath} style={{ fontSize: 12 }} />
+      <Field label={t("dataFile")} hint={t("dataFileHint")}>
+        <input
+          className="input mono"
+          readOnly
+          value={storagePath}
+          style={{ fontSize: 12 }}
+        />
       </Field>
 
-      <Field
-        label="Reset"
-        hint="Erases every task, reminder, category and activity entry, and empties the data file. This cannot be undone."
-      >
+      <Field label={t("reset")} hint={t("resetHint")}>
         <div className="col" style={{ gap: 6, alignItems: "flex-start" }}>
           <ConfirmButton
-            label="Reset all data"
-            confirm="Yes, erase everything"
+            label={t("resetAllData")}
+            confirm={t("resetConfirm")}
             onConfirm={() => {
               setResetError(null);
               void resetDatabase()
                 .then(onClose)
                 .catch((error: unknown) =>
-                  setResetError(error instanceof Error ? error.message : String(error)),
+                  setResetError(
+                    error instanceof Error ? error.message : String(error),
+                  ),
                 );
             }}
           />
@@ -144,28 +172,42 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
  * separates the app's half of the problem from the system's.
  */
 function NotificationCheck() {
-  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(
+    null,
+  );
   const [sending, setSending] = useState(false);
+  const { t } = useI18n();
 
   const send = () => {
     setSending(true);
     setResult(null);
     void notify({ title: "Tempo", body: "Notifications are working." })
-      .then(() => setResult({ ok: true, message: "Sent — a banner should have appeared." }))
+      .then(() => setResult({ ok: true, message: t("testNotifSuccess") }))
       .catch((error: unknown) =>
-        setResult({ ok: false, message: error instanceof Error ? error.message : String(error) }),
+        setResult({
+          ok: false,
+          message: error instanceof Error ? error.message : String(error),
+        }),
       )
       .finally(() => setSending(false));
   };
 
   return (
     <div className="col" style={{ gap: 6, alignItems: "flex-start" }}>
-      <button type="button" className="btn sm" disabled={sending} onClick={send}>
-        <BellRing size={13} /> Send a test notification
+      <button
+        type="button"
+        className="btn sm"
+        disabled={sending}
+        onClick={send}
+      >
+        <BellRing size={13} /> {t("sendTestNotification")}
       </button>
       {result ? (
         <span
-          style={{ fontSize: 11.5, color: result.ok ? "var(--text-muted)" : "var(--danger)" }}
+          style={{
+            fontSize: 11.5,
+            color: result.ok ? "var(--text-muted)" : "var(--danger)",
+          }}
         >
           {result.message}
         </span>
@@ -180,7 +222,9 @@ function useStoragePath(): string {
 
   useEffect(() => {
     if (!isTauri()) {
-      setPath("Browser localStorage (the desktop build writes to Documents\\calendar)");
+      setPath(
+        "Browser localStorage (the desktop build writes to Documents\\calendar)",
+      );
       return;
     }
     let cancelled = false;

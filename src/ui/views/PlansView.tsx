@@ -5,10 +5,12 @@ import {
   ChevronRight,
   Lightbulb,
   Plus,
+  Sun,
   Target,
   Timer,
   Trash2,
 } from "lucide-react";
+import { toLocalDate } from "@/domain/datetime";
 import type { Priority, Task, TaskInstance } from "@/domain/types";
 import { toInstance } from "@/domain/task";
 import {
@@ -285,7 +287,7 @@ export function PlansView({
               plan={plan}
               subtasks={subtasksMap.get(plan.id) ?? []}
               selected={plan.id === selectedKey}
-              onOpen={() => onOpen(toInstance(plan, null, null, now))}
+              onOpen={onOpen}
               now={now}
             />
           ))}
@@ -344,16 +346,29 @@ function PlanCard({
   plan: Task;
   subtasks: Task[];
   selected: boolean;
-  onOpen: () => void;
+  onOpen: (instance: TaskInstance) => void;
   now: Date;
 }) {
   const toggleComplete = useStore((s) => s.toggleComplete);
   const createTask = useStore((s) => s.createTask);
+  const updateTask = useStore((s) => s.updateTask);
   const deleteTask = useStore((s) => s.deleteTask);
   const categories = useCategoryIndex();
 
   const [expanded, setExpanded] = useState(true);
   const [newSubtask, setNewSubtask] = useState("");
+
+  const today = toLocalDate(now);
+  const isPlanToday = plan.dueDate === today;
+  const openPlan = () => onOpen(toInstance(plan, null, null, now));
+
+  const togglePlanToday = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    updateTask(plan.id, {
+      dueDate: isPlanToday ? null : today,
+      allDay: true,
+    });
+  };
 
   const category = plan.categoryId ? categories.get(plan.categoryId) : null;
   const doneSubtasks = subtasks.filter((s) => s.status === "COMPLETED").length;
@@ -390,7 +405,7 @@ function PlanCard({
     >
       {/* Plan Card Head */}
       <div className="plan-card-head">
-        <div className="plan-card-title-row" onClick={onOpen}>
+        <div className="plan-card-title-row" onClick={openPlan}>
           <Target
             size={18}
             className={cn(
@@ -404,9 +419,18 @@ function PlanCard({
         <div className="plan-card-actions">
           <button
             type="button"
+            className={cn("btn ghost icon sm", isPlanToday && "active")}
+            title={isPlanToday ? "Bugünden kaldır" : "Planı Bugüne Ata"}
+            onClick={togglePlanToday}
+            style={isPlanToday ? { color: "#f59e0b" } : undefined}
+          >
+            <Sun size={14} />
+          </button>
+          <button
+            type="button"
             className="btn ghost icon sm"
             title="Bu plana odaklan (Focus)"
-            onClick={() => onOpen()}
+            onClick={openPlan}
           >
             <Timer size={14} />
           </button>
@@ -426,12 +450,17 @@ function PlanCard({
 
       {/* Plan Description & Meta */}
       {plan.description && (
-        <p className="plan-card-desc" onClick={onOpen}>
+        <p className="plan-card-desc" onClick={openPlan}>
           {plan.description}
         </p>
       )}
 
-      <div className="plan-card-meta-row" onClick={onOpen}>
+      <div className="plan-card-meta-row" onClick={openPlan}>
+        {isPlanToday && (
+          <span className="plan-today-pill" title="Bugünün görevlerine eklendi">
+            <Sun size={11} /> Bugün
+          </span>
+        )}
         {category && (
           <span className="plan-category-pill">
             <i className="dot" style={{ background: category.color }} />
@@ -491,6 +520,7 @@ function PlanCard({
               subtasks.map((sub) => {
                 const subDone = sub.status === "COMPLETED";
                 const subInstance = toInstance(sub, sub.dueDate, null, now);
+                const isSubToday = sub.dueDate === today;
                 return (
                   <div
                     key={sub.id}
@@ -502,10 +532,37 @@ function PlanCard({
                     />
                     <span
                       className="plan-subtask-label grow truncate"
-                      onClick={() => onOpen()}
+                      onClick={() => onOpen(subInstance)}
+                      title="Alt görevin özelliklerini aç"
                     >
                       {sub.title}
                     </span>
+                    {isSubToday && (
+                      <span
+                        className="plan-subtask-today-tag"
+                        title="Bugüne atanmış"
+                      >
+                        <Sun size={10} /> Bugün
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className={cn(
+                        "btn ghost icon xs plan-subtask-today-btn",
+                        isSubToday && "active",
+                      )}
+                      title={isSubToday ? "Bugünden Kaldır" : "Bugüne Ata"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateTask(sub.id, {
+                          dueDate: isSubToday ? null : today,
+                          allDay: true,
+                        });
+                      }}
+                      style={isSubToday ? { color: "#f59e0b" } : undefined}
+                    >
+                      <Sun size={12} />
+                    </button>
                   </div>
                 );
               })

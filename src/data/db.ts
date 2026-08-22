@@ -25,6 +25,7 @@ export interface Database {
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
+  language: "en",
   weekStartsOn: 1,
   defaultReminderOffset: 10,
   dayStartHour: 7,
@@ -65,6 +66,43 @@ function defaultCategories(): Category[] {
   ];
 }
 
+export function deduplicateCategories(
+  categories: Category[],
+  tasks: Task[] = [],
+): { categories: Category[]; tasks: Task[] } {
+  const seen = new Map<string, Category>();
+  const idRemap = new Map<string, string>();
+
+  for (const cat of categories) {
+    const key = cat.name.trim().toLowerCase();
+    if (!key) continue;
+    const existing = seen.get(key);
+    if (!existing) {
+      seen.set(key, { ...cat, name: cat.name.trim() });
+    } else {
+      idRemap.set(cat.id, existing.id);
+    }
+  }
+
+  const uniqueCategories = Array.from(seen.values()).map((c, idx) => ({
+    ...c,
+    order: idx,
+  }));
+
+  const remappedTasks = tasks.map((t) => {
+    if (t.categoryId && idRemap.has(t.categoryId)) {
+      return { ...t, categoryId: idRemap.get(t.categoryId)! };
+    }
+    return t;
+  });
+
+  return {
+    categories:
+      uniqueCategories.length > 0 ? uniqueCategories : defaultCategories(),
+    tasks: remappedTasks,
+  };
+}
+
 /**
  * Bring a document read from disk up to the current shape.
  * Unknown/older versions are repaired field-by-field rather than discarded —
@@ -75,17 +113,25 @@ export function migrate(raw: unknown): Database {
   if (!raw || typeof raw !== "object") return base;
   const doc = raw as Partial<Database>;
 
+  const tasks = Array.isArray(doc.tasks)
+    ? doc.tasks.map(normaliseTask)
+    : base.tasks;
+  const rawCategories =
+    Array.isArray(doc.categories) && doc.categories.length > 0
+      ? doc.categories
+      : base.categories;
+
+  const { categories: cleanCategories, tasks: cleanTasks } =
+    deduplicateCategories(rawCategories, tasks);
+
   return {
     version: DB_VERSION,
-    tasks: Array.isArray(doc.tasks) ? doc.tasks.map(normaliseTask) : base.tasks,
+    tasks: cleanTasks,
     occurrences: Array.isArray(doc.occurrences)
       ? doc.occurrences
       : base.occurrences,
     reminders: Array.isArray(doc.reminders) ? doc.reminders : base.reminders,
-    categories:
-      Array.isArray(doc.categories) && doc.categories.length > 0
-        ? doc.categories
-        : base.categories,
+    categories: cleanCategories,
     history: Array.isArray(doc.history) ? doc.history : base.history,
     focusSessions: Array.isArray(doc.focusSessions)
       ? doc.focusSessions

@@ -2,28 +2,33 @@ import { useMemo, useState } from "react";
 import {
   CalendarDays,
   CircleDot,
-  History,
   ListChecks,
+  Pencil,
   Plus,
   Settings,
   Sun,
   Timer,
   Target,
   StickyNote,
+  Trash2,
 } from "lucide-react";
 import { addDaysLocal, toLocalDate } from "@/domain/datetime";
 import { CATEGORY_COLORS } from "@/data/db";
-import type { LocalDate } from "@/domain/types";
+import type { Category, LocalDate } from "@/domain/types";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
   useCategories,
   useGamificationStats,
   useInstancesInRange,
+  useLiveTasks,
   useTodoGroups,
+  useTrashedTasks,
   type Filters,
 } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
 import { LevelBadge } from "./components/LevelBadge";
 import { MiniMonth } from "./components/MiniMonth";
+import { TrashModal } from "./components/TrashModal";
 import { UserProfileWidget } from "./components/UserProfileWidget";
 import { Field, Modal } from "./components/primitives";
 
@@ -33,17 +38,15 @@ export type ViewId =
   | "tasks"
   | "plans"
   | "notes"
-  | "focus"
-  | "activity";
+  | "focus";
 
-const NAV: { id: ViewId; label: string; icon: typeof Sun }[] = [
-  { id: "today", label: "Today", icon: Sun },
-  { id: "calendar", label: "Calendar", icon: CalendarDays },
-  { id: "tasks", label: "Tasks", icon: ListChecks },
-  { id: "plans", label: "Plans", icon: Target },
-  { id: "notes", label: "Notes", icon: StickyNote },
-  { id: "focus", label: "Focus", icon: Timer },
-  { id: "activity", label: "Activity", icon: History },
+const NAV: { id: ViewId; labelKey: TranslationKey; icon: typeof Sun }[] = [
+  { id: "today", labelKey: "navToday", icon: Sun },
+  { id: "calendar", labelKey: "navCalendar", icon: CalendarDays },
+  { id: "tasks", labelKey: "navTasks", icon: ListChecks },
+  { id: "plans", labelKey: "navPlans", icon: Target },
+  { id: "notes", labelKey: "navNotes", icon: StickyNote },
+  { id: "focus", labelKey: "navFocus", icon: Timer },
 ];
 
 export function Sidebar({
@@ -67,9 +70,27 @@ export function Sidebar({
   const today = toLocalDate(now);
   const settings = useStore((s) => s.db.settings);
   const addCategory = useStore((s) => s.addCategory);
+  const updateCategory = useStore((s) => s.updateCategory);
+  const removeCategory = useStore((s) => s.removeCategory);
   const categories = useCategories();
+  const liveTasks = useLiveTasks();
+  const trashedTasks = useTrashedTasks();
   const groups = useTodoGroups(filters);
   const [addingCategory, setAddingCategory] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const { t } = useI18n();
+
+  // Task count per category (for non-completed tasks)
+  const categoryCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const t of liveTasks) {
+      if (t.categoryId && t.status !== "COMPLETED") {
+        map[t.categoryId] = (map[t.categoryId] ?? 0) + 1;
+      }
+    }
+    return map;
+  }, [liveTasks]);
 
   // A dot in the mini month for any day holding at least one task.
   const monthInstances = useInstancesInRange(
@@ -108,6 +129,16 @@ export function Sidebar({
     });
   };
 
+  const handleDeleteCategory = (id: string) => {
+    removeCategory(id);
+    if (filters.categoryIds.includes(id)) {
+      onFilters({
+        ...filters,
+        categoryIds: filters.categoryIds.filter((c) => c !== id),
+      });
+    }
+  };
+
   return (
     <nav className="sidebar scroll">
       <div className="brand">
@@ -135,7 +166,7 @@ export function Sidebar({
               onClick={() => onView(item.id)}
             >
               <Icon size={16} />
-              {item.label}
+              {t(item.labelKey)}
               {badge > 0 ? <span className="nav-count">{badge}</span> : null}
               {item.id === "today" && counts.overdue > 0 ? (
                 <span className="nav-count is-alert">{counts.overdue}</span>
@@ -160,11 +191,11 @@ export function Sidebar({
 
       <div className="col" style={{ gap: 4 }}>
         <div className="side-heading">
-          Categories
+          {t("categories")}
           <button
             type="button"
             className="btn ghost icon"
-            title="New category"
+            title={t("newCategory")}
             onClick={() => setAddingCategory(true)}
           >
             <Plus size={13} />
@@ -172,25 +203,43 @@ export function Sidebar({
         </div>
         <div className="chip-list">
           {categories.map((category) => (
-            <button
-              key={category.id}
-              type="button"
-              className="category-chip"
-              aria-pressed={filters.categoryIds.includes(category.id)}
-              onClick={() => toggleCategory(category.id)}
-            >
-              <i className="dot" style={{ background: category.color }} />
-              <span className="grow truncate">{category.name}</span>
-            </button>
+            <div key={category.id} className="category-chip-row">
+              <button
+                type="button"
+                className="category-chip grow truncate"
+                aria-pressed={filters.categoryIds.includes(category.id)}
+                onClick={() => toggleCategory(category.id)}
+                title={category.name}
+              >
+                <i className="dot" style={{ background: category.color }} />
+                <span className="grow truncate">{category.name}</span>
+                {(categoryCounts[category.id] ?? 0) > 0 && (
+                  <span className="category-chip-count">
+                    {categoryCounts[category.id]}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                className="category-chip-action-btn"
+                title={t("editCategory")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingCategory(category);
+                }}
+              >
+                <Pencil size={11} />
+              </button>
+            </div>
           ))}
           {filters.categoryIds.length > 0 ? (
             <button
               type="button"
               className="btn ghost sm"
-              style={{ alignSelf: "flex-start" }}
+              style={{ alignSelf: "flex-start", marginTop: 4 }}
               onClick={() => onFilters({ ...filters, categoryIds: [] })}
             >
-              Clear filter
+              {t("clearFilter")} ({filters.categoryIds.length})
             </button>
           ) : null}
         </div>
@@ -204,10 +253,24 @@ export function Sidebar({
       {/* Gamification Level & Streak Widget */}
       <LevelBadge levelInfo={levelInfo} streaks={streaks} />
 
+      <button
+        type="button"
+        className="nav-item"
+        onClick={() => setTrashOpen(true)}
+      >
+        <Trash2 size={16} />
+        {t("trash")}
+        {trashedTasks.length > 0 ? (
+          <span className="nav-count">{trashedTasks.length}</span>
+        ) : null}
+      </button>
+
       <button type="button" className="nav-item" onClick={onSettings}>
         <Settings size={16} />
-        Settings
+        {t("navSettings")}
       </button>
+
+      {trashOpen && <TrashModal onClose={() => setTrashOpen(false)} />}
 
       {addingCategory ? (
         <NewCategoryDialog
@@ -215,6 +278,21 @@ export function Sidebar({
           onCreate={(name, color) => {
             addCategory(name, color);
             setAddingCategory(false);
+          }}
+        />
+      ) : null}
+
+      {editingCategory ? (
+        <EditCategoryDialog
+          category={editingCategory}
+          onClose={() => setEditingCategory(null)}
+          onUpdate={(name, color) => {
+            updateCategory(editingCategory.id, { name, color });
+            setEditingCategory(null);
+          }}
+          onDelete={() => {
+            handleDeleteCategory(editingCategory.id);
+            setEditingCategory(null);
           }}
         />
       ) : null}
@@ -231,16 +309,17 @@ function NewCategoryDialog({
 }) {
   const [name, setName] = useState("");
   const [color, setColor] = useState(CATEGORY_COLORS[0] as string);
+  const { t } = useI18n();
 
   return (
     <Modal
-      title="New category"
+      title={t("newCategory")}
       onClose={onClose}
       width={380}
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("cancel")}
           </button>
           <button
             type="button"
@@ -248,12 +327,12 @@ function NewCategoryDialog({
             disabled={!name.trim()}
             onClick={() => onCreate(name, color)}
           >
-            Create
+            {t("create")}
           </button>
         </>
       }
     >
-      <Field label="Name">
+      <Field label={t("categoryName")}>
         <input
           className="input"
           autoFocus
@@ -262,7 +341,75 @@ function NewCategoryDialog({
           onChange={(e) => setName(e.target.value)}
         />
       </Field>
-      <Field label="Colour">
+      <Field label={t("categoryColor")}>
+        <div className="color-picker">
+          {CATEGORY_COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              aria-pressed={c === color}
+              aria-label={c}
+              style={{ background: c }}
+              onClick={() => setColor(c)}
+            />
+          ))}
+        </div>
+      </Field>
+    </Modal>
+  );
+}
+
+function EditCategoryDialog({
+  category,
+  onClose,
+  onUpdate,
+  onDelete,
+}: {
+  category: Category;
+  onClose: () => void;
+  onUpdate: (name: string, color: string) => void;
+  onDelete: () => void;
+}) {
+  const [name, setName] = useState(category.name);
+  const [color, setColor] = useState(category.color);
+  const { t } = useI18n();
+
+  return (
+    <Modal
+      title={t("editCategory")}
+      onClose={onClose}
+      width={380}
+      footer={
+        <div className="row grow justify-between">
+          <button type="button" className="btn ghost danger" onClick={onDelete}>
+            {t("delete")}
+          </button>
+          <div className="row" style={{ gap: 6 }}>
+            <button type="button" className="btn" onClick={onClose}>
+              {t("cancel")}
+            </button>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!name.trim()}
+              onClick={() => onUpdate(name.trim(), color)}
+            >
+              {t("save")}
+            </button>
+          </div>
+        </div>
+      }
+    >
+      <Field label={t("categoryName")}>
+        <input
+          className="input"
+          autoFocus
+          value={name}
+          placeholder="Category name"
+          onChange={(e) => setName(e.target.value)}
+        />
+      </Field>
+      <Field label={t("categoryColor")}>
         <div className="color-picker">
           {CATEGORY_COLORS.map((c) => (
             <button

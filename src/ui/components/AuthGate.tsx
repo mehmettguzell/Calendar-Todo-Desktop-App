@@ -49,7 +49,9 @@ export function AuthGate() {
     setInfoMessage(null);
     const ok = await resetPassword(email.trim());
     if (ok) {
-      setInfoMessage("Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.");
+      setInfoMessage(
+        "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.",
+      );
     }
   };
 
@@ -117,7 +119,10 @@ export function AuthGate() {
               </div>
 
               <div className="field">
-                <div className="row" style={{ justifyContent: "space-between" }}>
+                <div
+                  className="row"
+                  style={{ justifyContent: "space-between" }}
+                >
                   <label className="field-label">Şifre</label>
                   <button
                     type="button"
@@ -170,8 +175,12 @@ export function AuthGate() {
               <Sparkles size={16} className="auth-promo-icon" />
               <div>
                 <strong>14 Gün Ücretsiz Deneme!</strong>
-                <p className="faint" style={{ fontSize: 11.5, margin: "2px 0 0 0" }}>
-                  Masaüstü ve Mobil anlık eşitleme ve ilk 7 güne özel %40 indirim avantajı.
+                <p
+                  className="faint"
+                  style={{ fontSize: 11.5, margin: "2px 0 0 0" }}
+                >
+                  Masaüstü ve Mobil anlık eşitleme ve ilk 7 güne özel %40
+                  indirim avantajı.
                 </p>
               </div>
             </div>
@@ -264,7 +273,8 @@ export function AuthGate() {
         {mode === "forgot" && (
           <div className="col" style={{ gap: 14 }}>
             <p className="faint" style={{ fontSize: 13 }}>
-              Kayıtlı e-posta adresinizi girin. Şifrenizi sıfırlayabileceğiniz bir bağlantı göndereceğiz.
+              Kayıtlı e-posta adresinizi girin. Şifrenizi sıfırlayabileceğiniz
+              bir bağlantı göndereceğiz.
             </p>
 
             <form onSubmit={handleForgot} className="col" style={{ gap: 10 }}>

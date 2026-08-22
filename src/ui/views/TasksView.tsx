@@ -8,19 +8,23 @@ import {
   List,
   ListChecks,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { toLocalDate } from "@/domain/datetime";
 import { toInstance } from "@/domain/task";
 import type { Priority, Task, TaskInstance } from "@/domain/types";
 import { cn } from "@/lib/cn";
+import { useI18n } from "@/lib/i18n";
 import {
   useCategories,
   useLiveTasks,
   useTodoGroups,
+  useTrashedTasks,
   type Filters,
 } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
 import { Empty } from "@/ui/components/primitives";
+import { TrashModal } from "@/ui/components/TrashModal";
 import { TaskRow } from "@/ui/task/TaskRow";
 
 type ViewMode = "list" | "priority" | "category";
@@ -35,20 +39,42 @@ export function TasksView({
   onOpen: (instance: TaskInstance) => void;
 }) {
   const tasks = useLiveTasks();
+  const trashedTasks = useTrashedTasks();
   const createTask = useStore((s) => s.createTask);
   const categories = useCategories();
   const now = useNow();
   const today = toLocalDate(now);
   const groups = useTodoGroups(filters);
+  const { t } = useI18n();
 
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [quickTitle, setQuickTitle] = useState("");
-  const [filterPill, setFilterPill] = useState<"all" | "high" | "overdue" | "completed">("all");
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [filterPill, setFilterPill] = useState<
+    "all" | "high" | "overdue" | "completed"
+  >("all");
 
-  // Non-subtask, non-plan, non-note tasks
+  const parentCache = useMemo(() => {
+    const map = new Map<string, Task>();
+    for (const t of tasks) map.set(t.id, t);
+    return map;
+  }, [tasks]);
+
+  // Main actionable tasks: standalone tasks, scheduled plans, and scheduled plan subtasks
   const mainTasks = useMemo(
-    () => tasks.filter((t) => !t.parentId && !t.tags.includes("plan") && !t.tags.includes("note")),
-    [tasks],
+    () =>
+      tasks.filter((t) => {
+        if (t.tags.includes("note")) return false;
+        if (t.parentId) {
+          const parent = parentCache.get(t.parentId);
+          return parent?.tags.includes("plan") && t.dueDate !== null;
+        }
+        if (t.tags.includes("plan")) {
+          return t.dueDate !== null;
+        }
+        return true;
+      }),
+    [tasks, parentCache],
   );
 
   // Filtered main tasks
@@ -73,9 +99,12 @@ export function TasksView({
   const stats = useMemo(() => {
     const total = mainTasks.length;
     const open = mainTasks.filter((t) => t.status !== "COMPLETED").length;
-    const high = mainTasks.filter((t) => t.priority === "HIGH" && t.status !== "COMPLETED").length;
+    const high = mainTasks.filter(
+      (t) => t.priority === "HIGH" && t.status !== "COMPLETED",
+    ).length;
     const overdue = mainTasks.filter(
-      (t) => t.status !== "COMPLETED" && t.dueDate !== null && t.dueDate < today,
+      (t) =>
+        t.status !== "COMPLETED" && t.dueDate !== null && t.dueDate < today,
     ).length;
     const done = mainTasks.filter((t) => t.status === "COMPLETED").length;
     return { total, open, high, overdue, done };
@@ -105,13 +134,19 @@ export function TasksView({
           <div className="task-summary-lbl">Açık Görev</div>
         </div>
         <div className="task-summary-stat">
-          <div className="task-summary-val" style={{ color: stats.high > 0 ? "var(--danger)" : undefined }}>
+          <div
+            className="task-summary-val"
+            style={{ color: stats.high > 0 ? "var(--danger)" : undefined }}
+          >
             {stats.high}
           </div>
           <div className="task-summary-lbl">Yüksek Öncelik 🔥</div>
         </div>
         <div className="task-summary-stat">
-          <div className="task-summary-val" style={{ color: stats.overdue > 0 ? "var(--warning)" : undefined }}>
+          <div
+            className="task-summary-val"
+            style={{ color: stats.overdue > 0 ? "var(--warning)" : undefined }}
+          >
             {stats.overdue}
           </div>
           <div className="task-summary-lbl">Gecikenler ⚠️</div>
@@ -165,7 +200,10 @@ export function TasksView({
           {stats.overdue > 0 && (
             <button
               type="button"
-              className={cn("filter-pill danger", filterPill === "overdue" && "active")}
+              className={cn(
+                "filter-pill danger",
+                filterPill === "overdue" && "active",
+              )}
               onClick={() => setFilterPill("overdue")}
             >
               <CircleAlert size={12} /> Gecikenler ({stats.overdue})
@@ -173,40 +211,72 @@ export function TasksView({
           )}
           <button
             type="button"
-            className={cn("filter-pill", filterPill === "completed" && "active")}
+            className={cn(
+              "filter-pill",
+              filterPill === "completed" && "active",
+            )}
             onClick={() => setFilterPill("completed")}
           >
             <CheckCircle2 size={12} /> Tamamlananlar ({stats.done})
           </button>
         </div>
 
-        <div className="tasks-view-switcher">
+        <div className="row items-center" style={{ gap: 8 }}>
+          <div className="tasks-view-switcher">
+            <button
+              type="button"
+              className={cn("tasks-view-btn", viewMode === "list" && "active")}
+              title="Liste Görünümü"
+              onClick={() => setViewMode("list")}
+            >
+              <List size={15} /> Liste
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "tasks-view-btn",
+                viewMode === "priority" && "active",
+              )}
+              title="Öncelik Panosu (Kanban)"
+              onClick={() => setViewMode("priority")}
+            >
+              <FolderKanban size={15} /> Öncelik Panosu
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "tasks-view-btn",
+                viewMode === "category" && "active",
+              )}
+              title="Kategori Matrisi"
+              onClick={() => setViewMode("category")}
+            >
+              <Layers size={15} /> Kategoriler
+            </button>
+          </div>
+
           <button
             type="button"
-            className={cn("tasks-view-btn", viewMode === "list" && "active")}
-            title="Liste Görünümü"
-            onClick={() => setViewMode("list")}
+            className="btn ghost sm"
+            style={{ gap: 6, padding: "5px 10px", fontSize: 12 }}
+            title={t("trash")}
+            onClick={() => setTrashOpen(true)}
           >
-            <List size={15} /> Liste
-          </button>
-          <button
-            type="button"
-            className={cn("tasks-view-btn", viewMode === "priority" && "active")}
-            title="Öncelik Panosu (Kanban)"
-            onClick={() => setViewMode("priority")}
-          >
-            <FolderKanban size={15} /> Öncelik Panosu
-          </button>
-          <button
-            type="button"
-            className={cn("tasks-view-btn", viewMode === "category" && "active")}
-            title="Kategori Matrisi"
-            onClick={() => setViewMode("category")}
-          >
-            <Layers size={15} /> Kategoriler
+            <Trash2 size={13} />
+            {t("trash")}
+            {trashedTasks.length > 0 && (
+              <span
+                className="nav-count is-alert"
+                style={{ fontSize: 10, padding: "1px 5px", height: "auto" }}
+              >
+                {trashedTasks.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
+
+      {trashOpen && <TrashModal onClose={() => setTrashOpen(false)} />}
 
       {/* Main View Contents */}
       {viewMode === "list" ? (
@@ -295,7 +365,11 @@ function ListView({
     <div className="tasks-groups-container">
       {groups.map((group) => (
         <section key={group.id} className="section">
-          <div className={group.id === "overdue" ? "section-head alert" : "section-head"}>
+          <div
+            className={
+              group.id === "overdue" ? "section-head alert" : "section-head"
+            }
+          >
             <h2>{group.label}</h2>
             <span className="count">{group.instances.length}</span>
           </div>
@@ -315,7 +389,12 @@ function ListView({
   );
 }
 
-const PRIORITY_COLUMNS: { id: Priority; label: string; icon: string; className: string }[] = [
+const PRIORITY_COLUMNS: {
+  id: Priority;
+  label: string;
+  icon: string;
+  className: string;
+}[] = [
   { id: "HIGH", label: "Yüksek / Acil", icon: "🔴", className: "high" },
   { id: "MEDIUM", label: "Orta Öncelik", icon: "🟡", className: "medium" },
   { id: "LOW", label: "Düşük Öncelik", icon: "🔵", className: "low" },

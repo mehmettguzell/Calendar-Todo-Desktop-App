@@ -111,7 +111,7 @@ export function useInstancesInRange(
           continue;
         }
       }
-      
+
       if (!matchesFilters(task, filters)) continue;
       for (const instance of instancesInRange(
         task,
@@ -224,10 +224,26 @@ export function useTodoGroups(filters: Filters): TodoGroup[] {
     const push = (id: string, instance: TaskInstance) =>
       buckets.get(id)?.push(instance);
 
+    const parentCache = new Map<string, Task>();
+    for (const t of tasks) parentCache.set(t.id, t);
+
     for (const task of tasks) {
-      if (task.parentId) continue; // subtasks render nested under their parent
-      if (task.tags.includes("plan")) continue; // plans render in their own view
       if (task.tags.includes("note")) continue; // notes render in their own view
+
+      if (task.parentId) {
+        const parent = parentCache.get(task.parentId);
+        const isPlanSubtask = parent && parent.tags.includes("plan");
+        // Only show subtasks in todo groups if they are scheduled plan/habit subtasks
+        if (!isPlanSubtask || !task.dueDate) {
+          continue;
+        }
+      } else if (task.tags.includes("plan")) {
+        // Only show plans in todo groups if they have a scheduled due date
+        if (!task.dueDate) {
+          continue;
+        }
+      }
+
       if (!matchesFilters(task, filters)) continue;
 
       const instance = representativeInstance(task, occurrences, now);
@@ -397,7 +413,8 @@ export function useActivityHeatmapWeeks(weeksCount = 20): HeatmapWeek[] {
     // Align end of grid with the end of current week (Sunday = 0, Monday = 1.. Saturday = 6)
     // In GitHub heatmap, columns are weeks (Mon-Sun or Sun-Sat). Let's use Monday as day 0 of week column.
     const currentDayOfWeek = todayObj.getDay(); // 0 is Sunday, 1 is Monday ...
-    const offsetToWeekEnd = (7 - (currentDayOfWeek === 0 ? 7 : currentDayOfWeek)) % 7; // days until Sunday
+    const offsetToWeekEnd =
+      (7 - (currentDayOfWeek === 0 ? 7 : currentDayOfWeek)) % 7; // days until Sunday
     const gridEndDate = addDaysLocal(today, offsetToWeekEnd);
 
     const totalDays = weeksCount * 7;
@@ -445,4 +462,3 @@ export function useActivityHeatmapWeeks(weeksCount = 20): HeatmapWeek[] {
     return weeks;
   }, [activityMap, today, weeksCount]);
 }
-

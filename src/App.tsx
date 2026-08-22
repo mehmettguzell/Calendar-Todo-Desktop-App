@@ -18,7 +18,6 @@ import { ReminderAlerts } from "@/ui/components/ReminderAlerts";
 import { QuickAdd } from "@/ui/task/QuickAdd";
 import { TaskPanel } from "@/ui/task/TaskPanel";
 import { NotePanel } from "@/ui/task/NotePanel";
-import { ActivityView } from "@/ui/views/ActivityView";
 import {
   CalendarView,
   calendarTitle,
@@ -31,7 +30,6 @@ import { PlansView } from "@/ui/views/PlansView";
 import { NotesView } from "@/ui/views/NotesView";
 import { TodayView } from "@/ui/views/TodayView";
 import { AuthModal } from "@/ui/components/AuthModal";
-import { AuthGate } from "@/ui/components/AuthGate";
 import { useAuthStore } from "@/state/authStore";
 import { initSyncEngine } from "@/state/syncEngine";
 import { useApplyTheme, useShortcuts } from "@/ui/hooks";
@@ -54,7 +52,6 @@ const VIEW_TITLES: Record<ViewId, string> = {
   plans: "Plans",
   notes: "Notes",
   focus: "Focus",
-  activity: "Activity",
 };
 
 export function App() {
@@ -113,22 +110,13 @@ export function App() {
     return toInstance(task, date, occurrence, now);
   }, [selection, tasks, occurrences, now]);
 
-  const authUser = useAuthStore((s) => s.user);
-  const authInitialized = useAuthStore((s) => s.initialized);
-  const isConfigured = useAuthStore((s) => s.isConfigured);
-
-  if (!ready || !authInitialized) {
+  if (!ready) {
     return (
-      <div className="auth-gate-loading">
-        <div className="auth-gate-spinner" />
+      <div className="loading">
+        <span className="spinner" />
+        Loading your tasks…
       </div>
     );
-  }
-
-  // Force login before using the application
-  const isTest = import.meta.env.MODE === "test";
-  if (!authUser && isConfigured && !isTest) {
-    return <AuthGate />;
   }
 
   const openInstance = (instance: TaskInstance) =>
@@ -216,7 +204,10 @@ export function App() {
           ) : null}
 
           {view === "notes" ? (
-            <NotesView selectedKey={selected?.key ?? null} onOpen={openInstance} />
+            <NotesView
+              selectedKey={selected?.key ?? null}
+              onOpen={openInstance}
+            />
           ) : null}
 
           {view === "focus" ? (
@@ -226,17 +217,12 @@ export function App() {
               onOpen={openInstance}
             />
           ) : null}
-
-          {view === "activity" ? <ActivityView /> : null}
         </div>
       </main>
 
       {selected ? (
         selected.task.tags.includes("note") ? (
-          <NotePanel
-            instance={selected}
-            onClose={() => setSelection(null)}
-          />
+          <NotePanel instance={selected} onClose={() => setSelection(null)} />
         ) : (
           <TaskPanel
             instance={selected}

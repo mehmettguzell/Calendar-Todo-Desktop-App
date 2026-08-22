@@ -53,6 +53,8 @@ export interface Task {
   priority: Priority;
   /** `null` means unscheduled: visible in Todo, absent from the calendar. */
   dueDate: LocalDate | null;
+  /** Optional multi-day or deadline end date (`YYYY-MM-DD`). */
+  endDate?: LocalDate | null;
   allDay: boolean;
   startTime: LocalTime | null;
   endTime: LocalTime | null;
@@ -152,6 +154,7 @@ export interface Category {
 
 export interface Settings {
   theme: "system" | "light" | "dark";
+  language?: "tr" | "en";
   /** 0 = Sunday, 1 = Monday. */
   weekStartsOn: 0 | 1;
   /** Default RELATIVE reminder offset offered in the editor. */

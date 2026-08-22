@@ -8,9 +8,7 @@ import {
   Clock,
   Flame,
   Plus,
-  Star,
   Sun,
-  Timer,
 } from "lucide-react";
 import { addDaysLocal, formatTracked, toLocalDate } from "@/domain/datetime";
 import { getMotivationalMessage } from "@/domain/gamification";
@@ -27,13 +25,13 @@ import {
   type Filters,
 } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
-import { Checkbox, Empty } from "@/ui/components/primitives";
+import { Empty } from "@/ui/components/primitives";
 import { ProgressRing } from "@/ui/components/ProgressRing";
 import { WeeklyBarChart } from "@/ui/components/WeeklyBarChart";
 import { TaskRow } from "@/ui/task/TaskRow";
 
 /**
- * Today: Command center with progress ring, daily highlight, inline quick add,
+ * Today: Command center with progress ring, inline quick add,
  * structured timed vs all-day tasks, overdue work, and weekly trends.
  */
 export function TodayView({
@@ -48,13 +46,13 @@ export function TodayView({
   const now = useNow();
   const today = toLocalDate(now);
   const groups = useTodoGroups(filters);
-  const upcoming = useInstancesInRange(addDaysLocal(today, 1), addDaysLocal(today, 3), filters);
+  const upcoming = useInstancesInRange(
+    addDaysLocal(today, 1),
+    addDaysLocal(today, 3),
+    filters,
+  );
   const sessions = useFocusSessions();
   const createTask = useStore((s) => s.createTask);
-  const updateTask = useStore((s) => s.updateTask);
-  const toggleComplete = useStore((s) => s.toggleComplete);
-  const startFocus = useStore((s) => s.startFocus);
-  const runningFocus = useStore((s) => s.runningFocus);
   const { streaks } = useGamificationStats();
   const weeklyStats = useWeeklyStatsHook(7);
 
@@ -64,7 +62,10 @@ export function TodayView({
 
   const overdue = groups.find((g) => g.id === "overdue")?.instances ?? [];
   // Today always shows what was finished today, whatever the global filter says.
-  const todayFilters = useMemo(() => ({ ...filters, showCompleted: true }), [filters]);
+  const todayFilters = useMemo(
+    () => ({ ...filters, showCompleted: true }),
+    [filters],
+  );
   const todays = useInstancesInRange(today, today, todayFilters);
 
   const focusedToday = useMemo(
@@ -81,12 +82,18 @@ export function TodayView({
 
   // Timed vs All-day vs Completed separation
   const timedTasks = useMemo(
-    () => sorted.filter((t) => t.storedStatus !== "COMPLETED" && t.startsAt !== null),
+    () =>
+      sorted.filter(
+        (t) => t.storedStatus !== "COMPLETED" && t.startsAt !== null,
+      ),
     [sorted],
   );
 
   const allDayTasks = useMemo(
-    () => sorted.filter((t) => t.storedStatus !== "COMPLETED" && t.startsAt === null),
+    () =>
+      sorted.filter(
+        (t) => t.storedStatus !== "COMPLETED" && t.startsAt === null,
+      ),
     [sorted],
   );
 
@@ -94,26 +101,6 @@ export function TodayView({
     () => sorted.filter((t) => t.storedStatus === "COMPLETED"),
     [sorted],
   );
-
-  // Daily Highlight (pinned or highest priority open task)
-  const dailyHighlight = useMemo(() => {
-    // 1. Explicitly pinned with tag #highlight
-    const tagged = sorted.find((t) => t.task.tags.includes("highlight"));
-    if (tagged) return tagged;
-    // 2. Or highest priority open task
-    const openHigh = sorted.find((t) => t.storedStatus !== "COMPLETED" && t.task.priority === "HIGH");
-    if (openHigh) return openHigh;
-    // 3. Or first open task if any
-    return sorted.find((t) => t.storedStatus !== "COMPLETED") ?? null;
-  }, [sorted]);
-
-  const toggleHighlight = (taskInstance: TaskInstance) => {
-    const isCurrentlyTagged = taskInstance.task.tags.includes("highlight");
-    const nextTags = isCurrentlyTagged
-      ? taskInstance.task.tags.filter((t) => t !== "highlight")
-      : [...taskInstance.task.tags, "highlight"];
-    updateTask(taskInstance.task.id, { tags: nextTags });
-  };
 
   // Dynamic motivational message
   const motivation = useMemo(
@@ -170,7 +157,10 @@ export function TodayView({
                 {motivation.emoji} {motivation.title}
               </span>
               {streaks.currentStreak > 0 && (
-                <span className="today-streak-badge" title={`${streaks.currentStreak} günlük seri`}>
+                <span
+                  className="today-streak-badge"
+                  title={`${streaks.currentStreak} günlük seri`}
+                >
                   <Flame size={12} /> {streaks.currentStreak} gün seri
                 </span>
               )}
@@ -211,49 +201,6 @@ export function TodayView({
         </div>
       </div>
 
-      {/* Daily Highlight Spotlight Card (Günün Ana Odağı) */}
-      {dailyHighlight && (
-        <div className={cn("today-highlight-card section", dailyHighlight.storedStatus === "COMPLETED" && "is-done")}>
-          <div className="today-highlight-badge-row">
-            <span className="today-highlight-pill">
-              <Star size={12} fill="currentColor" /> Günün Ana Odağı
-            </span>
-            <span className="grow" />
-            <button
-              type="button"
-              className="btn ghost sm"
-              onClick={() => toggleHighlight(dailyHighlight)}
-              title="Odağı değiştir veya kaldır"
-            >
-              {dailyHighlight.task.tags.includes("highlight") ? "Odağı Kaldır" : "Sabitle"}
-            </button>
-          </div>
-
-          <div className="today-highlight-main">
-            <div style={{ paddingTop: 2 }}>
-              <Checkbox
-                done={dailyHighlight.storedStatus === "COMPLETED"}
-                onToggle={() => toggleComplete(dailyHighlight)}
-              />
-            </div>
-            <div className="grow truncate cursor-pointer" onClick={() => onOpen(dailyHighlight)}>
-              <div className="today-highlight-title">{dailyHighlight.task.title}</div>
-              {dailyHighlight.task.description && (
-                <div className="today-highlight-desc truncate faint">{dailyHighlight.task.description}</div>
-              )}
-            </div>
-            <button
-              type="button"
-              className="btn sm"
-              title="Bu göreve odaklan"
-              onClick={() => startFocus(dailyHighlight)}
-            >
-              <Timer size={13} /> {runningFocus?.taskId === dailyHighlight.task.id ? "Odaklanılıyor" : "Focus"}
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Inline Fast Add for Today */}
       <div className="today-fast-add-bar section">
         <input
@@ -268,9 +215,14 @@ export function TodayView({
         <div className="row" style={{ gap: 4 }}>
           <button
             type="button"
-            className={cn("btn sm ghost", quickPriority === "HIGH" && "active prio-high-active")}
+            className={cn(
+              "btn sm ghost",
+              quickPriority === "HIGH" && "active prio-high-active",
+            )}
             title="Yüksek Öncelik"
-            onClick={() => setQuickPriority(quickPriority === "HIGH" ? "NONE" : "HIGH")}
+            onClick={() =>
+              setQuickPriority(quickPriority === "HIGH" ? "NONE" : "HIGH")
+            }
           >
             🔥 Yüksek
           </button>
@@ -287,7 +239,12 @@ export function TodayView({
 
       {/* Overdue Section */}
       {overdue.length > 0 ? (
-        <Section title="Geciken Görevler" count={overdue.length} alert icon={<CircleAlert size={14} />}>
+        <Section
+          title="Geciken Görevler"
+          count={overdue.length}
+          alert
+          icon={<CircleAlert size={14} />}
+        >
           {overdue.map((instance) => (
             <TaskRow
               key={instance.key}
@@ -301,7 +258,11 @@ export function TodayView({
 
       {/* Timed Tasks Section */}
       {timedTasks.length > 0 ? (
-        <Section title="Saatli & Randevulu Görevler" count={timedTasks.length} icon={<Clock size={14} />}>
+        <Section
+          title="Saatli & Randevulu Görevler"
+          count={timedTasks.length}
+          icon={<Clock size={14} />}
+        >
           {timedTasks.map((instance) => (
             <TaskRow
               key={instance.key}
@@ -315,7 +276,11 @@ export function TodayView({
       ) : null}
 
       {/* All-Day / Flexible Tasks Section */}
-      <Section title="Bugünün Görevleri" count={allDayTasks.length} icon={<Sun size={14} />}>
+      <Section
+        title="Bugünün Görevleri"
+        count={allDayTasks.length}
+        icon={<Sun size={14} />}
+      >
         {allDayTasks.length === 0 && timedTasks.length === 0 ? (
           <Empty
             icon={<CalendarCheck size={28} />}
@@ -343,7 +308,11 @@ export function TodayView({
             style={{ cursor: "pointer", userSelect: "none" }}
             onClick={() => setShowCompletedSection((v) => !v)}
           >
-            {showCompletedSection ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {showCompletedSection ? (
+              <ChevronDown size={14} />
+            ) : (
+              <ChevronRight size={14} />
+            )}
             <CheckCircle2 size={14} style={{ color: "var(--success)" }} />
             <h2>Bugün Tamamlananlar</h2>
             <span className="count">{completedTodayTasks.length}</span>

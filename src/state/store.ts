@@ -1,13 +1,14 @@
 import { useMemo } from "react";
 import { create } from "zustand";
 import { createRepository } from "@/data/createRepository";
-import { emptyDatabase, type Database } from "@/data/db";
+import { deduplicateCategories, emptyDatabase, type Database } from "@/data/db";
 import type { Repository } from "@/data/repository";
 import { nowInstant, toInstant, toLocalDate } from "@/domain/datetime";
 import { historyEntry } from "@/domain/history";
 import { createId, occurrenceId } from "@/domain/ids";
 import { toInstance } from "@/domain/task";
 import { resolveSnooze, type SnoozePresetId } from "@/domain/snooze";
+import { syncDeleteTaskToCloud, syncTaskToCloud } from "./syncEngine";
 import type {
   Category,
   FocusSession,
@@ -29,6 +30,7 @@ export interface TaskDraft {
   description?: string;
   priority?: Priority;
   dueDate?: LocalDate | null;
+  endDate?: LocalDate | null;
   allDay?: boolean;
   startTime?: string | null;
   endTime?: string | null;
@@ -46,6 +48,7 @@ export type TaskPatch = Partial<
     | "description"
     | "priority"
     | "dueDate"
+    | "endDate"
     | "allDay"
     | "startTime"
     | "endTime"
@@ -130,7 +133,7 @@ let repository: Repository | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Debounced write-behind: the UI never waits on the disk. */
-function persist(db: Database) {
+export function persist(db: Database) {
   if (!repository) return;
   if (saveTimer) clearTimeout(saveTimer);
   const repo = repository;
@@ -188,15 +191,36 @@ export const useStore = create<StoreState>((set, get) => {
         console.error("[tempo] load failed", error);
         return null;
       });
-      const db = loaded ?? emptyDatabase();
-      set({ db, ready: true, now: Date.now() });
-      if (!loaded) persist(db);
+      const rawDb = loaded ?? emptyDatabase();
+      const { categories: cleanCategories, tasks: cleanTasks } = deduplicateCategories(
+        rawDb.categories,
+        rawDb.tasks,
+      );
+      const nowMs = Date.now();
+      const cutoff = new Date(nowMs - 3 * 24 * 60 * 60 * 1000).toISOString();
+      const validTasks = cleanTasks.filter(
+        (t) => t.deletedAt === null || t.deletedAt >= cutoff,
+      );
+
+      const db: Database = {
+        ...rawDb,
+        categories: cleanCategories,
+        tasks: validTasks,
+      };
+      set({ db, ready: true, now: nowMs });
+      if (
+        !loaded ||
+        cleanCategories.length !== rawDb.categories.length ||
+        validTasks.length !== rawDb.tasks.length
+      ) {
+        persist(db);
+      }
     },
 
     tick() {
       const state = get();
       const nowMs = Date.now();
-      const cutoff = new Date(nowMs - 24 * 60 * 60 * 1000).toISOString();
+      const cutoff = new Date(nowMs - 3 * 24 * 60 * 60 * 1000).toISOString();
 
       const toPurge = state.db.tasks
         .filter((t) => t.deletedAt !== null && t.deletedAt < cutoff)
@@ -228,6 +252,7 @@ export const useStore = create<StoreState>((set, get) => {
         status: "TODO",
         priority: draft.priority ?? "NONE",
         dueDate: draft.dueDate ?? null,
+        endDate: draft.endDate ?? null,
         allDay: draft.allDay ?? true,
         startTime: draft.startTime ?? null,
         endTime: draft.endTime ?? null,
@@ -253,6 +278,7 @@ export const useStore = create<StoreState>((set, get) => {
           }),
         ),
       );
+      void syncTaskToCloud(task);
       return task;
     },
 
@@ -311,6 +337,8 @@ export const useStore = create<StoreState>((set, get) => {
           ...entries,
         );
       });
+      const updated = get().db.tasks.find((t) => t.id === taskId);
+      if (updated) void syncTaskToCloud(updated);
     },
 
     deleteTask(taskId) {
@@ -330,6 +358,8 @@ export const useStore = create<StoreState>((set, get) => {
           ...entries,
         );
       });
+      const updated = get().db.tasks.find((t) => t.id === taskId);
+      if (updated) void syncTaskToCloud(updated);
     },
 
     restoreTask(taskId) {
@@ -346,6 +376,8 @@ export const useStore = create<StoreState>((set, get) => {
           ...ids.map((id) => historyEntry({ taskId: id, kind: "RESTORED" })),
         );
       });
+      const updated = get().db.tasks.find((t) => t.id === taskId);
+      if (updated) void syncTaskToCloud(updated);
     },
 
     /** Hard delete. History rows survive: they are the record that it existed. */
@@ -359,10 +391,13 @@ export const useStore = create<StoreState>((set, get) => {
           reminders: db.reminders.filter((r) => !ids.includes(r.taskId)),
         };
       });
+      void syncDeleteTaskToCloud(taskId);
     },
 
     setStatus(ref, status) {
       commit((db) => applyStatus(db, ref, status));
+      const updated = get().db.tasks.find((t) => t.id === ref.taskId);
+      if (updated) void syncTaskToCloud(updated);
     },
 
     toggleComplete(instance) {
@@ -370,6 +405,8 @@ export const useStore = create<StoreState>((set, get) => {
       const next: StoredStatus =
         instance.storedStatus === "COMPLETED" ? "TODO" : "COMPLETED";
       commit((db) => applyStatus(db, ref, next));
+      const updated = get().db.tasks.find((t) => t.id === ref.taskId);
+      if (updated) void syncTaskToCloud(updated);
     },
 
     reschedule(taskId, dueDate, startTime) {
@@ -632,9 +669,19 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     addCategory(name, color) {
+      const trimmed = name.trim();
+      const existing = trimmed
+        ? get().db.categories.find(
+            (c) => c.name.toLowerCase() === trimmed.toLowerCase(),
+          )
+        : null;
+      if (existing) {
+        get().updateCategory(existing.id, { color });
+        return existing;
+      }
       const category: Category = {
         id: createId("c"),
-        name: name.trim(),
+        name: trimmed || "New Category",
         color,
         order: get().db.categories.length,
       };
@@ -706,11 +753,11 @@ export const useStore = create<StoreState>((set, get) => {
 
     /** Purge every trashed task at once; the same hard delete as purgeTask. */
     emptyTrash() {
+      const trashed = get().db.tasks.filter((t) => t.deletedAt !== null);
+      const ids = trashed.map((t) => t.id);
+      if (ids.length === 0) return;
+
       commit((db) => {
-        const ids = db.tasks
-          .filter((t) => t.deletedAt !== null)
-          .map((t) => t.id);
-        if (ids.length === 0) return db;
         return {
           ...db,
           tasks: db.tasks.filter((t) => !ids.includes(t.id)),
@@ -718,6 +765,10 @@ export const useStore = create<StoreState>((set, get) => {
           reminders: db.reminders.filter((r) => !ids.includes(r.taskId)),
         };
       });
+
+      for (const id of ids) {
+        void syncDeleteTaskToCloud(id);
+      }
     },
 
     /**

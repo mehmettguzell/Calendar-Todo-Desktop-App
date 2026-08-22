@@ -1345,6 +1345,18 @@
   margin-top: 8px;
 }
 
+.plan-today-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
 .plan-subtask-item {
   display: flex;
   align-items: center;
@@ -1367,6 +1379,36 @@
 
 .plan-subtask-label {
   cursor: pointer;
+}
+
+.plan-subtask-today-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  flex: none;
+}
+
+.plan-subtask-today-btn {
+  opacity: 0.45;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+  flex: none;
+}
+
+.plan-subtask-item:hover .plan-subtask-today-btn {
+  opacity: 1;
+}
+
+.plan-subtask-today-btn.active {
+  opacity: 1;
+  color: #f59e0b;
 }
 
 .plan-subtask-add-row {

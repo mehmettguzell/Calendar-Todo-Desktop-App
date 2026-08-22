@@ -9,6 +9,7 @@ import {
   type UserSubscription,
 } from "@/domain/auth";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { formatErrorMessage } from "@/lib/errors";
 
 export type AuthModalView =
   | "login"
@@ -88,8 +89,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         data: { session },
       } = await supabase.auth.getSession();
 
+      set({ session });
+
       if (session?.user) {
-        set({ session });
         await Promise.all([
           get().fetchProfile(session.user.id),
           get().fetchSubscription(session.user.id),
@@ -118,13 +120,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   fetchProfile: async (userId: string) => {
     if (!supabase) return;
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", userId)
-        .single();
+        .maybeSingle();
 
-      if (error) throw error;
       if (data) {
         set({
           user: {
@@ -136,9 +137,43 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             updatedAt: data.updated_at,
           },
         });
+      } else {
+        // Fallback: If profile row is missing in public.profiles table, create it immediately
+        // so that foreign key constraints on public.tasks (user_id -> profiles.id) succeed!
+        const session = get().session;
+        const authUser = session?.user;
+        const email = authUser?.email ?? "";
+        const fullName =
+          (authUser?.user_metadata?.full_name as string) ??
+          email.split("@")[0] ??
+          "User";
+        const now = new Date().toISOString();
+
+        const profileRecord = {
+          id: userId,
+          email,
+          full_name: fullName,
+          avatar_url: (authUser?.user_metadata?.avatar_url as string) ?? null,
+          created_at: authUser?.created_at ?? now,
+          updated_at: now,
+        };
+
+        await supabase
+          .from("profiles")
+          .upsert(profileRecord, { onConflict: "id" });
+        set({
+          user: {
+            id: profileRecord.id,
+            email: profileRecord.email,
+            fullName: profileRecord.full_name,
+            avatarUrl: profileRecord.avatar_url ?? undefined,
+            createdAt: profileRecord.created_at,
+            updatedAt: profileRecord.updated_at,
+          },
+        });
       }
     } catch (err) {
-      console.warn("Could not fetch user profile:", err);
+      console.warn("Could not fetch or create user profile:", err);
     }
   },
 
@@ -197,7 +232,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       if (data.session) {
-        set({ session: data.session, authModalOpen: false, loading: false });
+        const authUser = data.session.user;
+        const initialUser: UserProfile = {
+          id: authUser.id,
+          email: authUser.email ?? "",
+          fullName:
+            (authUser.user_metadata?.full_name as string) ??
+            authUser.email?.split("@")[0] ??
+            "User",
+          avatarUrl: (authUser.user_metadata?.avatar_url as string) ?? null,
+          createdAt: authUser.created_at,
+          updatedAt: new Date().toISOString(),
+        };
+        set({
+          session: data.session,
+          user: initialUser,
+          authModalOpen: false,
+          loading: false,
+        });
         await Promise.all([
           get().fetchProfile(data.session.user.id),
           get().fetchSubscription(data.session.user.id),
@@ -207,10 +259,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return false;
     } catch (err: unknown) {
       set({
-        errorMessage:
-          err instanceof Error
-            ? err.message
-            : "Giriş yapılırken bir hata oluştu.",
+        errorMessage: formatErrorMessage(err),
         loading: false,
       });
       return false;
@@ -250,7 +299,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       if (data.session) {
-        set({ session: data.session, authModalOpen: false, loading: false });
+        const authUser = data.session.user;
+        const initialUser: UserProfile = {
+          id: authUser.id,
+          email: authUser.email ?? "",
+          fullName: fullName || authUser.email?.split("@")[0] || "User",
+          avatarUrl: (authUser.user_metadata?.avatar_url as string) ?? null,
+          createdAt: authUser.created_at,
+          updatedAt: new Date().toISOString(),
+        };
+        set({
+          session: data.session,
+          user: initialUser,
+          authModalOpen: false,
+          loading: false,
+        });
         await Promise.all([
           get().fetchProfile(data.session.user.id),
           get().fetchSubscription(data.session.user.id),
@@ -263,8 +326,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { success: true, needsEmailConfirmation: true };
     } catch (err: unknown) {
       set({
-        errorMessage:
-          err instanceof Error ? err.message : "Kayıt olurken bir hata oluştu.",
+        errorMessage: formatErrorMessage(err),
         loading: false,
       });
       return { success: false };
@@ -294,10 +356,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     } catch (err: unknown) {
       set({
-        errorMessage:
-          err instanceof Error
-            ? err.message
-            : "Google ile giriş yapılırken bir hata oluştu.",
+        errorMessage: formatErrorMessage(err),
         loading: false,
       });
     }
@@ -324,10 +383,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return true;
     } catch (err: unknown) {
       set({
-        errorMessage:
-          err instanceof Error
-            ? err.message
-            : "Şifre sıfırlama bağlantısı gönderilemedi.",
+        errorMessage: formatErrorMessage(err),
         loading: false,
       });
       return false;
@@ -390,8 +446,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return true;
     } catch (err: unknown) {
       set({
-        errorMessage:
-          err instanceof Error ? err.message : "Profil güncellenemedi.",
+        errorMessage: formatErrorMessage(err),
         loading: false,
       });
       return false;
