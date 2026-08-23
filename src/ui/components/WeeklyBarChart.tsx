@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { BarChart2, CheckCircle2, Timer } from "lucide-react";
 import type { WeeklyDayStat } from "@/domain/gamification";
+import { useI18n } from "@/lib/i18n";
 import { formatTracked } from "@/domain/datetime";
 
 export interface WeeklyBarChartProps {
@@ -8,6 +9,7 @@ export interface WeeklyBarChartProps {
 }
 
 export function WeeklyBarChart({ stats }: WeeklyBarChartProps) {
+  const { t } = useI18n();
   const [metric, setMetric] = useState<"tasks" | "focus">("tasks");
 
   const maxTasks = Math.max(1, ...stats.map((s) => s.tasksDone));
@@ -39,7 +41,7 @@ export function WeeklyBarChart({ stats }: WeeklyBarChartProps) {
             className={`btn-toggle sm ${metric === "focus" ? "active" : ""}`}
             onClick={() => setMetric("focus")}
           >
-            <Timer size={12} /> Focus ({formatTracked(totalFocusSecInWeek)})
+            <Timer size={12} /> {t("navFocus")} ({formatTracked(totalFocusSecInWeek)})
           </button>
         </div>
       </div>

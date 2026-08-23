@@ -1,3 +1,4 @@
+import { setDateLocale } from "@/domain/datetime";
 import { useStore } from "@/state/store";
 
 export type Language = "tr" | "en";
@@ -25,6 +26,150 @@ export const DICTIONARY = {
     navPlans: "Planlar",
     navNotes: "Notlar",
     navFocus: "Odaklanma",
+    navBudget: "Bütçe",
+    paletteTitle: "Komut paleti",
+    palettePlaceholder: "Ara veya bir komut yaz…",
+    paletteNoResults: "Sonuç yok.",
+    paletteNewTask: "Yeni görev",
+    paletteNavigate: "gez",
+    paletteOpen: "aç",
+    rollOver: "Bugüne taşı",
+    rollOverDone: "taşındı",
+    rollOverHint: "Dünden kalan tamamlanmamış işleri bugüne taşı",
+
+    // Today
+    todayOverdue: "Geciken görevler",
+    todayTimed: "Saatli görevler",
+    todayAllDay: "Bugünün görevleri",
+    todayCompleted: "Tamamlananlar",
+    todayQuickAdd: "Bugün için hızlı görev ekle… (Enter)",
+    todayWeeklyActivity: "Haftalık aktivite (son 7 gün)",
+    todayOpen: "açık",
+    todayDone: "tamamlandı",
+    todayLate: "geciken",
+
+    // Tasks
+    tasksOpen: "Açık görev",
+    tasksHighPriority: "Yüksek öncelik",
+    tasksOverdue: "Geciken",
+    tasksCompleted: "Tamamlanan",
+    tasksNone: "Görev yok",
+
+    // Focus
+    focusToday: "Bugün odaklanılan",
+    focusAllTime: "Toplam",
+    focusSessions: "Seans sayısı",
+    focusTodaysTasks: "Bugünün görevleri",
+    focusRecent: "Son seanslar",
+
+    // Task form
+    formNewTask: "Yeni görev",
+    formTitle: "Başlık",
+    formNotes: "Notlar",
+    formNotesHint: "İsteğe bağlı ayrıntılar",
+    formStartDate: "Başlangıç tarihi",
+    formEndDate: "Bitiş tarihi",
+    formPriority: "Öncelik",
+    formStart: "Başlangıç",
+    formEnd: "Bitiş",
+    formCategory: "Kategori",
+    formTags: "Etiketler",
+    formTagsHint: "Virgülle ayırın",
+    formRepeat: "Tekrar",
+    formNone: "Yok",
+    formCreateTask: "Görev oluştur",
+    formRemindBefore: "Başlamadan önce hatırlat",
+    formEstimate: "Tahmini süre",
+    formFocus: "Odaklanma",
+    formStartTimer: "Zamanlayıcıyı başlat",
+    formStopTimer: "Durdur",
+    formReminders: "Hatırlatıcılar",
+    formSubtasks: "Alt görevler",
+    formHistory: "Geçmiş",
+    calMonth: "Ay",
+    calWeek: "Hafta",
+    calDay: "Gün",
+    statusTODO: "Yapılacak",
+    statusIN_PROGRESS: "Devam ediyor",
+    statusCOMPLETED: "Tamamlandı",
+    statusSNOOZED: "Ertelendi",
+    statusOVERDUE: "Gecikti",
+
+    // Desktop
+    desktopSection: "Masaüstü",
+    runInBackground: "Arka planda çalışsın",
+    runInBackgroundHint:
+      "Pencereyi kapatmak Tempo'yu kapatmaz — sistem tepsisinde kalır ve hatırlatıcılar çalışmaya devam eder. Tamamen çıkmak için tepsi menüsünden Çıkış.",
+    startWithWindows: "Windows ile başlat",
+    startWithWindowsHint: "Oturum açıldığında Tempo tepsiden sessizce başlar",
+    startWithWindowsFailed: "Başlangıç ayarı değiştirilemedi.",
+    quickCaptureShortcut: "Hızlı görev kısayolu",
+    quickCaptureShortcutHint:
+      "Tempo kapalıyken bile her yerden görev ekler. Başka bir uygulama bu kısayolu kullanıyorsa çalışmaz.",
+    quitApp: "Tempo'dan çık",
+
+    // Undo
+    undo: "Geri al",
+    undoneTaskDeleted: "Görev silindi",
+    undoneTaskCompleted: "Görev tamamlandı",
+    undoneTaskReopened: "Görev yeniden açıldı",
+    undoneRolledOver: "görev bugüne taşındı",
+    undoneTransactionDeleted: "Kayıt silindi",
+    undoneCategoryRemoved: "Kategori silindi",
+    budgetRepeat: "Tekrar",
+    budgetRepeatNone: "Tekrarlamaz",
+    budgetRepeatMonthly: "Her ay",
+    budgetRepeatWeekly: "Her hafta",
+    budgetRepeatYearly: "Her yıl",
+    budgetRepeating: "tekrarlıyor",
+    budgetGenerated: "otomatik",
+    budgetGeneratedCount: "düzenli kayıt eklendi",
+    budgetLimit: "Limit",
+    budgetSetLimit: "Aylık limit belirle",
+    budgetLimitOver: "limit aşıldı",
+    budgetLimitClose: "limite yaklaşıldı",
+
+    // Export
+    exportSection: "Dışa aktar",
+    exportHint: "Verileriniz sizin. İstediğiniz zaman indirin — hesap veya bağlantı gerekmez.",
+    exportJson: "Tümü (JSON yedek)",
+    exportIcs: "Takvim (.ics)",
+    exportTasksCsv: "Görevler (CSV)",
+    exportBudgetCsv: "Bütçe (CSV)",
+
+    // Undo
+
+    // Undo
+    formEvery: "Her",
+    formEndsOn: "Bitiş tarihi",
+    formOnDays: "Günler",
+    formNoRepeat: "Tekrarlamaz",
+    formRemindAtStart: "Başlangıç saatinde hatırlat",
+    formRemindAt: "Şu saatte hatırlat:",
+    formRemindMinutesBefore: "dk önce hatırlat",
+    previous: "Önceki",
+    next: "Sonraki",
+
+    // Budget
+    budgetDay: "Gün",
+    budgetWeek: "Hafta",
+    budgetMonth: "Ay",
+    budgetYear: "Yıl",
+    budgetIncome: "Gelir",
+    budgetExpense: "Gider",
+    budgetInvestment: "Yatırım",
+    budgetSurplus: "Bu dönem artıda",
+    budgetDeficit: "Bu dönem ekside",
+    budgetPerDay: "Günlük ortalama çıkış:",
+    budgetWhereItWent: "Nereye gitti",
+    budgetMovements: "Hareketler",
+    budgetNothingYet: "Bu dönemde kayıt yok.",
+    budgetUncategorised: "Kategorisiz",
+    budgetAmount: "Tutar",
+    budgetCategory: "Kategori",
+    budgetNote: "Açıklama (isteğe bağlı)",
+    budgetAmountInvalid: "Geçerli bir tutar girin.",
+    budgetCurrency: "Para birimi",
     navSettings: "Ayarlar",
 
     // Categories
@@ -85,6 +230,15 @@ export const DICTIONARY = {
     syncSuccess: "Eşitleme tamamlandı:",
     syncLoginRequired: "Sunucuyla eşitlemek için lütfen önce giriş yapın.",
     syncOfflineNotice: "İnternet bağlantısı yok. Görevleriniz yerelde güvende saklanıyor.",
+    syncFailed: "Eşitleme başarısız oldu.",
+    syncTasksUp: "görev yüklendi",
+    syncTasksDown: "görev indirildi",
+    syncCatsUp: "kategori yüklendi",
+    syncCatsDown: "kategori indirildi",
+    syncPendingHint: "bekleyen değişiklik",
+    syncLastAt: "Son eşitleme",
+    syncNeverYet: "Henüz eşitlenmedi",
+    syncLive: "Canlı bağlı",
     searchTasksPlaceholder: "Görevlerde ara…",
     newTaskBtn: "Yeni görev",
 
@@ -123,6 +277,15 @@ export const DICTIONARY = {
     syncSuccess: "Sync completed:",
     syncLoginRequired: "Please sign in to sync with the server.",
     syncOfflineNotice: "No internet connection. Your tasks are safely saved locally.",
+    syncFailed: "Sync failed.",
+    syncTasksUp: "tasks uploaded",
+    syncTasksDown: "tasks downloaded",
+    syncCatsUp: "categories uploaded",
+    syncCatsDown: "categories downloaded",
+    syncPendingHint: "pending changes",
+    syncLastAt: "Last synced",
+    syncNeverYet: "Not synced yet",
+    syncLive: "Live",
     searchTasksPlaceholder: "Search tasks…",
     newTaskBtn: "New task",
 
@@ -133,6 +296,150 @@ export const DICTIONARY = {
     navPlans: "Plans",
     navNotes: "Notes",
     navFocus: "Focus",
+    navBudget: "Budget",
+    paletteTitle: "Command palette",
+    palettePlaceholder: "Search, or type a command…",
+    paletteNoResults: "No results.",
+    paletteNewTask: "New task",
+    paletteNavigate: "navigate",
+    paletteOpen: "open",
+    rollOver: "Move to today",
+    rollOverDone: "moved",
+    rollOverHint: "Move yesterday's unfinished work to today",
+
+    // Today
+    todayOverdue: "Overdue",
+    todayTimed: "Scheduled",
+    todayAllDay: "Today's tasks",
+    todayCompleted: "Completed",
+    todayQuickAdd: "Quick add for today… (Enter)",
+    todayWeeklyActivity: "Weekly activity (last 7 days)",
+    todayOpen: "open",
+    todayDone: "done",
+    todayLate: "overdue",
+
+    // Tasks
+    tasksOpen: "Open tasks",
+    tasksHighPriority: "High priority",
+    tasksOverdue: "Overdue",
+    tasksCompleted: "Completed",
+    tasksNone: "No tasks",
+
+    // Focus
+    focusToday: "Focused today",
+    focusAllTime: "All time",
+    focusSessions: "Sessions logged",
+    focusTodaysTasks: "Today's tasks",
+    focusRecent: "Recent sessions",
+
+    // Task form
+    formNewTask: "New task",
+    formTitle: "Title",
+    formNotes: "Notes",
+    formNotesHint: "Optional details",
+    formStartDate: "Start date",
+    formEndDate: "End date",
+    formPriority: "Priority",
+    formStart: "Start",
+    formEnd: "End",
+    formCategory: "Category",
+    formTags: "Tags",
+    formTagsHint: "Comma separated",
+    formRepeat: "Repeat",
+    formNone: "None",
+    formCreateTask: "Create task",
+    formRemindBefore: "Remind me before it starts",
+    formEstimate: "Estimate",
+    formFocus: "Focus",
+    formStartTimer: "Start focus timer",
+    formStopTimer: "Stop timer",
+    formReminders: "Reminders",
+    formSubtasks: "Subtasks",
+    formHistory: "History",
+    calMonth: "Month",
+    calWeek: "Week",
+    calDay: "Day",
+    statusTODO: "To do",
+    statusIN_PROGRESS: "In progress",
+    statusCOMPLETED: "Completed",
+    statusSNOOZED: "Snoozed",
+    statusOVERDUE: "Overdue",
+
+    // Desktop
+    desktopSection: "Desktop",
+    runInBackground: "Keep running in the background",
+    runInBackgroundHint:
+      "Closing the window does not quit Tempo — it stays in the system tray and reminders keep firing. Use Quit in the tray menu to leave for real.",
+    startWithWindows: "Start with Windows",
+    startWithWindowsHint: "Tempo starts quietly in the tray when you log in",
+    startWithWindowsFailed: "The startup setting could not be changed.",
+    quickCaptureShortcut: "Quick capture shortcut",
+    quickCaptureShortcutHint:
+      "Adds a task from anywhere, even when Tempo is closed. Will not work if another app already owns this shortcut.",
+    quitApp: "Quit Tempo",
+
+    // Undo
+    undo: "Undo",
+    undoneTaskDeleted: "Task deleted",
+    undoneTaskCompleted: "Task completed",
+    undoneTaskReopened: "Task reopened",
+    undoneRolledOver: "tasks moved to today",
+    undoneTransactionDeleted: "Entry deleted",
+    undoneCategoryRemoved: "Category deleted",
+    budgetRepeat: "Repeat",
+    budgetRepeatNone: "Does not repeat",
+    budgetRepeatMonthly: "Every month",
+    budgetRepeatWeekly: "Every week",
+    budgetRepeatYearly: "Every year",
+    budgetRepeating: "repeating",
+    budgetGenerated: "auto",
+    budgetGeneratedCount: "recurring entries added",
+    budgetLimit: "Limit",
+    budgetSetLimit: "Set a monthly limit",
+    budgetLimitOver: "over limit",
+    budgetLimitClose: "near limit",
+
+    // Export
+    exportSection: "Export",
+    exportHint: "Your data is yours. Download it any time — no account or connection needed.",
+    exportJson: "Everything (JSON backup)",
+    exportIcs: "Calendar (.ics)",
+    exportTasksCsv: "Tasks (CSV)",
+    exportBudgetCsv: "Budget (CSV)",
+
+    // Undo
+
+    // Undo
+    formEvery: "Every",
+    formEndsOn: "Ends on",
+    formOnDays: "On days",
+    formNoRepeat: "Does not repeat",
+    formRemindAtStart: "Remind me at the start time",
+    formRemindAt: "Remind me at",
+    formRemindMinutesBefore: "min before",
+    previous: "Previous",
+    next: "Next",
+
+    // Budget
+    budgetDay: "Day",
+    budgetWeek: "Week",
+    budgetMonth: "Month",
+    budgetYear: "Year",
+    budgetIncome: "Income",
+    budgetExpense: "Expenses",
+    budgetInvestment: "Investment",
+    budgetSurplus: "Surplus this period",
+    budgetDeficit: "Deficit this period",
+    budgetPerDay: "Average outflow per day:",
+    budgetWhereItWent: "Where it went",
+    budgetMovements: "Movements",
+    budgetNothingYet: "Nothing recorded in this period.",
+    budgetUncategorised: "Uncategorised",
+    budgetAmount: "Amount",
+    budgetCategory: "Category",
+    budgetNote: "Note (optional)",
+    budgetAmountInvalid: "Enter a valid amount.",
+    budgetCurrency: "Currency",
     navSettings: "Settings",
 
     // Categories
@@ -209,6 +516,11 @@ export type TranslationKey = keyof typeof DICTIONARY.tr;
 export function useI18n() {
   const language = useStore((s) => (s.db.settings.language ?? "tr") as Language);
   const dict = DICTIONARY[language] ?? DICTIONARY.tr;
+
+  // Month and weekday names come from date-fns rather than the dictionary, so
+  // the two have to be told about a language change together — otherwise the
+  // labels switch and the dates stay behind.
+  setDateLocale(language);
 
   const t = (key: TranslationKey, fallback?: string): string => {
     return (dict as Record<string, string>)[key] ?? fallback ?? key;

@@ -1,14 +1,38 @@
 import { useMemo } from "react";
 import { create } from "zustand";
 import { createRepository } from "@/data/createRepository";
-import { deduplicateCategories, emptyDatabase, type Database } from "@/data/db";
+import {
+  deduplicateCategories,
+  emptyDatabase,
+  pruneTombstones,
+  tombstone,
+  type Database,
+} from "@/data/db";
+import {
+  ANONYMOUS_NAMESPACE,
+  activeNamespace,
+  anonymousClaimedBy,
+  markAnonymousClaimed,
+  namespaceFor,
+  setActiveNamespace,
+} from "@/data/namespace";
 import type { Repository } from "@/data/repository";
 import { nowInstant, toInstant, toLocalDate } from "@/domain/datetime";
 import { historyEntry } from "@/domain/history";
 import { createId, occurrenceId } from "@/domain/ids";
 import { toInstance } from "@/domain/task";
 import { resolveSnooze, type SnoozePresetId } from "@/domain/snooze";
-import { syncDeleteTaskToCloud, syncTaskToCloud } from "./syncEngine";
+import type { BudgetCategory, MoneyFlow, Transaction } from "@/domain/money";
+import {
+  BUDGET_CATEGORY_COLORS,
+  dueRecurringTransactions,
+} from "@/domain/money";
+import {
+  syncDeleteCategoryToCloud,
+  syncDeleteTaskToCloud,
+  syncTaskToCloud,
+} from "./syncEngine";
+import { useUndoStore } from "./undoStore";
 import type {
   Category,
   FocusSession,
@@ -38,6 +62,7 @@ export interface TaskDraft {
   tags?: string[];
   parentId?: string | null;
   recurrence?: Recurrence | null;
+  estimateMinutes?: number | null;
 }
 
 /** Fields a user may edit; everything else is bookkeeping owned by the store. */
@@ -55,8 +80,25 @@ export type TaskPatch = Partial<
     | "categoryId"
     | "tags"
     | "recurrence"
+    | "estimateMinutes"
     | "order"
     | "parentId"
+  >
+>;
+
+export interface TransactionDraft {
+  date: LocalDate;
+  amountMinor: number;
+  flow: MoneyFlow;
+  categoryId: string | null;
+  note?: string;
+  recurrence?: Recurrence | null;
+}
+
+export type TransactionPatch = Partial<
+  Pick<
+    Transaction,
+    "date" | "amountMinor" | "flow" | "categoryId" | "note" | "recurrence"
   >
 >;
 
@@ -70,11 +112,15 @@ export interface RunningFocus {
 interface StoreState {
   ready: boolean;
   db: Database;
+  /** Which account's local document is loaded. See `data/namespace.ts`. */
+  namespace: string;
   /** Ticks once a minute so derived statuses (OVERDUE) stay honest. */
   now: number;
   runningFocus: RunningFocus | null;
 
   hydrate(): Promise<void>;
+  /** Swap the whole local document for the one belonging to `userId`. */
+  switchAccount(userId: string | null): Promise<void>;
   tick(): void;
 
   createTask(draft: TaskDraft): Task;
@@ -100,7 +146,7 @@ interface StoreState {
   addReminder(
     reminder: Omit<
       Reminder,
-      "id" | "createdAt" | "status" | "snoozedUntil" | "lastFiredFor"
+      "id" | "createdAt" | "updatedAt" | "status" | "snoozedUntil" | "lastFiredFor"
     >,
   ): void;
   removeReminder(reminderId: string): void;
@@ -122,6 +168,32 @@ interface StoreState {
 
   reorderSubtasks(parentId: string, orderedIds: string[]): void;
 
+  /** Pull unfinished, past-due tasks onto a new date. Returns how many moved. */
+  rollOverTo(taskIds: string[], date: LocalDate): number;
+
+  /* Budget ---------------------------------------------------------- */
+  addTransaction(draft: TransactionDraft): Transaction;
+  updateTransaction(id: string, patch: TransactionPatch): void;
+  deleteTransaction(id: string): void;
+  restoreTransaction(id: string): void;
+  /** Find a budget category by name, or create it. Names are the identity. */
+  ensureBudgetCategory(name: string, flow: MoneyFlow): BudgetCategory;
+  updateBudgetCategory(
+    id: string,
+    patch: Partial<
+      Pick<
+        BudgetCategory,
+        "name" | "color" | "icon" | "flow" | "monthlyLimitMinor"
+      >
+    >,
+  ): void;
+  removeBudgetCategory(id: string): void;
+  /**
+   * Turn every repeating entry that has come due into a real one.
+   * Returns how many were created.
+   */
+  materialiseRecurringTransactions(through: LocalDate): number;
+
   updateSettings(patch: Partial<Settings>): void;
 
   clearHistory(): void;
@@ -131,17 +203,63 @@ interface StoreState {
 
 let repository: Repository | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingSave: { repo: Repository; db: Database } | null = null;
+
+/**
+ * How long writes are coalesced before touching the disk.
+ *
+ * The whole document is rewritten on every save, so a burst of edits — a drag
+ * across ten rows, a plan template creating five subtasks — must cost one write
+ * rather than ten. Anything longer than a keystroke gap is wasted latency;
+ * anything much longer risks losing more work to a crash.
+ */
+const SAVE_DEBOUNCE_MS = 400;
+
+/** How long a trashed task stays recoverable before it is purged for good. */
+const TRASH_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 
 /** Debounced write-behind: the UI never waits on the disk. */
 export function persist(db: Database) {
   if (!repository) return;
+  pendingSave = { repo: repository, db };
   if (saveTimer) clearTimeout(saveTimer);
-  const repo = repository;
   saveTimer = setTimeout(() => {
-    void repo
-      .save(db)
-      .catch((error) => console.error("[tempo] save failed", error));
-  }, 250);
+    saveTimer = null;
+    void flushPersist();
+  }, SAVE_DEBOUNCE_MS);
+}
+
+/**
+ * Write anything still queued, right now.
+ *
+ * Called when the window is hidden or closing: a debounced write that never
+ * fires is indistinguishable, to the user, from an edit that never happened.
+ */
+export async function flushPersist(): Promise<void> {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  const queued = pendingSave;
+  pendingSave = null;
+  if (!queued) return;
+  await queued.repo
+    .save(queued.db)
+    .catch((error) => console.error("[tempo] save failed", error));
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") void flushPersist();
+  });
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => void flushPersist());
+}
+
+/** The namespace every cloud write and local save is currently bound to. */
+export function currentNamespace(): string {
+  return repository?.namespace ?? ANONYMOUS_NAMESPACE;
 }
 
 /**
@@ -157,6 +275,7 @@ async function persistNow(db: Database): Promise<void> {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
+  pendingSave = null;
   if (!repository) return;
   await repository.save(db);
 }
@@ -179,62 +298,140 @@ export const useStore = create<StoreState>((set, get) => {
     history: [...db.history, ...entries],
   });
 
+  /**
+   * Load one namespace's document into the store.
+   *
+   * Trashed tasks past the retention window are purged here, and each purge
+   * leaves a tombstone: without one, the next sync sees a row the cloud still
+   * has and this device does not, and helpfully restores it.
+   */
+  const openNamespace = async (namespace: string): Promise<Database> => {
+    repository = createRepository(namespace);
+    const loaded = await repository.load().catch((error) => {
+      console.error("[tempo] load failed", error);
+      return null;
+    });
+    const rawDb = loaded ?? emptyDatabase();
+    const { categories: cleanCategories, tasks: cleanTasks } =
+      deduplicateCategories(rawDb.categories, rawDb.tasks);
+    const nowMs = Date.now();
+    const at = new Date(nowMs).toISOString();
+    const cutoff = new Date(nowMs - TRASH_RETENTION_MS).toISOString();
+
+    const expired = cleanTasks.filter(
+      (t) => t.deletedAt !== null && t.deletedAt < cutoff,
+    );
+    const validTasks = cleanTasks.filter(
+      (t) => t.deletedAt === null || t.deletedAt >= cutoff,
+    );
+
+    const db: Database = {
+      ...rawDb,
+      categories: cleanCategories,
+      tasks: validTasks,
+      tombstones: pruneTombstones(
+        [
+          ...(rawDb.tombstones ?? []),
+          ...expired.map((t) => tombstone("task", t.id, at)),
+        ],
+        new Date(nowMs),
+      ),
+    };
+
+    set({ db, namespace, ready: true, now: nowMs });
+    setActiveNamespace(namespace);
+    if (
+      !loaded ||
+      expired.length > 0 ||
+      cleanCategories.length !== rawDb.categories.length
+    ) {
+      persist(db);
+    }
+    return db;
+  };
+
   return {
     ready: false,
     db: emptyDatabase(),
+    namespace: ANONYMOUS_NAMESPACE,
     now: Date.now(),
     runningFocus: null,
 
     async hydrate() {
-      repository = createRepository();
-      const loaded = await repository.load().catch((error) => {
-        console.error("[tempo] load failed", error);
-        return null;
-      });
-      const rawDb = loaded ?? emptyDatabase();
-      const { categories: cleanCategories, tasks: cleanTasks } = deduplicateCategories(
-        rawDb.categories,
-        rawDb.tasks,
-      );
-      const nowMs = Date.now();
-      const cutoff = new Date(nowMs - 3 * 24 * 60 * 60 * 1000).toISOString();
-      const validTasks = cleanTasks.filter(
-        (t) => t.deletedAt === null || t.deletedAt >= cutoff,
-      );
+      await openNamespace(activeNamespace());
+    },
 
-      const db: Database = {
-        ...rawDb,
-        categories: cleanCategories,
-        tasks: validTasks,
-      };
-      set({ db, ready: true, now: nowMs });
+    /**
+     * Point the store at another account's document.
+     *
+     * The first account to sign in on a device *adopts* whatever was created
+     * while signed out — otherwise trying the app before registering silently
+     * throws that work away. Every account after that gets a clean namespace,
+     * because handing the same local document to a second person is the exact
+     * leak this separation exists to prevent.
+     */
+    async switchAccount(userId) {
+      const target = namespaceFor(userId);
+      if (repository && repository.namespace === target) return;
+
+      // The document on screen belongs to the namespace we are leaving.
+      await flushPersist();
+
+      const previous = repository;
       if (
-        !loaded ||
-        cleanCategories.length !== rawDb.categories.length ||
-        validTasks.length !== rawDb.tasks.length
+        userId &&
+        previous?.namespace === ANONYMOUS_NAMESPACE &&
+        anonymousClaimedBy() === null
       ) {
-        persist(db);
+        const carried = get().db;
+        const hasWork = carried.tasks.length > 0 || carried.history.length > 0;
+        if (hasWork) {
+          const incoming = createRepository(target);
+          const existing = await incoming.load().catch(() => null);
+          if (!existing || existing.tasks.length === 0) {
+            repository = incoming;
+            await incoming.save(carried);
+            markAnonymousClaimed(userId);
+            await previous.clear().catch(() => undefined);
+            set({ db: carried, namespace: target });
+            setActiveNamespace(target);
+            return;
+          }
+        }
+        markAnonymousClaimed(userId);
       }
+
+      set({ ready: false });
+      await openNamespace(target);
     },
 
     tick() {
       const state = get();
       const nowMs = Date.now();
-      const cutoff = new Date(nowMs - 3 * 24 * 60 * 60 * 1000).toISOString();
+      const cutoff = new Date(nowMs - TRASH_RETENTION_MS).toISOString();
 
-      const toPurge = state.db.tasks
-        .filter((t) => t.deletedAt !== null && t.deletedAt < cutoff)
-        .map((t) => t.id);
+      const toPurge = new Set(
+        state.db.tasks
+          .filter((t) => t.deletedAt !== null && t.deletedAt < cutoff)
+          .map((t) => t.id),
+      );
 
-      if (toPurge.length > 0) {
+      if (toPurge.size > 0) {
+        const at = new Date(nowMs).toISOString();
         commit((db) => ({
           ...db,
-          tasks: db.tasks.filter((t) => !toPurge.includes(t.id)),
-          occurrences: db.occurrences.filter(
-            (o) => !toPurge.includes(o.taskId),
+          tasks: db.tasks.filter((t) => !toPurge.has(t.id)),
+          occurrences: db.occurrences.filter((o) => !toPurge.has(o.taskId)),
+          reminders: db.reminders.filter((r) => !toPurge.has(r.taskId)),
+          tombstones: pruneTombstones(
+            [
+              ...db.tombstones,
+              ...[...toPurge].map((id) => tombstone("task", id, at)),
+            ],
+            new Date(nowMs),
           ),
-          reminders: db.reminders.filter((r) => !toPurge.includes(r.taskId)),
         }));
+        for (const id of toPurge) void syncDeleteTaskToCloud(id);
       }
 
       set({ now: nowMs });
@@ -260,6 +457,7 @@ export const useStore = create<StoreState>((set, get) => {
         tags: draft.tags ?? [],
         parentId: draft.parentId ?? null,
         recurrence: draft.recurrence ?? null,
+        estimateMinutes: draft.estimateMinutes ?? null,
         snoozedUntil: null,
         order: siblings.length,
         createdAt: at,
@@ -290,6 +488,7 @@ export const useStore = create<StoreState>((set, get) => {
         const entries: HistoryEntry[] = [];
         const scheduleChanged =
           ("dueDate" in patch && patch.dueDate !== task.dueDate) ||
+          ("endDate" in patch && patch.endDate !== task.endDate) ||
           ("startTime" in patch && patch.startTime !== task.startTime) ||
           ("endTime" in patch && patch.endTime !== task.endTime) ||
           ("allDay" in patch && patch.allDay !== task.allDay);
@@ -312,6 +511,7 @@ export const useStore = create<StoreState>((set, get) => {
           "priority",
           "categoryId",
           "recurrence",
+          "estimateMinutes",
           "tags",
         ] as const;
         for (const field of tracked) {
@@ -360,6 +560,12 @@ export const useStore = create<StoreState>((set, get) => {
       });
       const updated = get().db.tasks.find((t) => t.id === taskId);
       if (updated) void syncTaskToCloud(updated);
+
+      // The reversal is the ordinary restore, so the trail records both the
+      // delete and the undo rather than quietly rewinding to before either.
+      useUndoStore
+        .getState()
+        .push("undoneTaskDeleted", () => get().restoreTask(taskId));
     },
 
     restoreTask(taskId) {
@@ -382,16 +588,23 @@ export const useStore = create<StoreState>((set, get) => {
 
     /** Hard delete. History rows survive: they are the record that it existed. */
     purgeTask(taskId) {
+      const purged = collectSubtree(get().db.tasks, taskId);
+      const at = nowInstant();
       commit((db) => {
-        const ids = collectSubtree(db.tasks, taskId);
+        const ids = new Set(purged);
         return {
           ...db,
-          tasks: db.tasks.filter((t) => !ids.includes(t.id)),
-          occurrences: db.occurrences.filter((o) => !ids.includes(o.taskId)),
-          reminders: db.reminders.filter((r) => !ids.includes(r.taskId)),
+          tasks: db.tasks.filter((t) => !ids.has(t.id)),
+          occurrences: db.occurrences.filter((o) => !ids.has(o.taskId)),
+          reminders: db.reminders.filter((r) => !ids.has(r.taskId)),
+          tombstones: pruneTombstones([
+            ...db.tombstones,
+            ...purged.map((id) => tombstone("task", id, at)),
+          ]),
         };
       });
-      void syncDeleteTaskToCloud(taskId);
+      // The whole subtree went, not just the row that was clicked.
+      for (const id of purged) void syncDeleteTaskToCloud(id);
     },
 
     setStatus(ref, status) {
@@ -402,11 +615,20 @@ export const useStore = create<StoreState>((set, get) => {
 
     toggleComplete(instance) {
       const ref = refOf(instance);
-      const next: StoredStatus =
-        instance.storedStatus === "COMPLETED" ? "TODO" : "COMPLETED";
+      const previous = instance.storedStatus;
+      const next: StoredStatus = previous === "COMPLETED" ? "TODO" : "COMPLETED";
       commit((db) => applyStatus(db, ref, next));
       const updated = get().db.tasks.find((t) => t.id === ref.taskId);
       if (updated) void syncTaskToCloud(updated);
+
+      // Ticking the wrong row off a dense list is the single easiest mistake to
+      // make in this app, and the one most likely to go unnoticed.
+      useUndoStore
+        .getState()
+        .push(
+          next === "COMPLETED" ? "undoneTaskCompleted" : "undoneTaskReopened",
+          () => get().setStatus(ref, previous),
+        );
     },
 
     reschedule(taskId, dueDate, startTime) {
@@ -509,13 +731,15 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     addReminder(input) {
+      const at = nowInstant();
       const reminder: Reminder = {
         ...input,
         id: createId("r"),
         status: "PENDING",
         snoozedUntil: null,
         lastFiredFor: null,
-        createdAt: nowInstant(),
+        createdAt: at,
+        updatedAt: at,
       };
       commit((db) =>
         appendHistory(
@@ -530,7 +754,14 @@ export const useStore = create<StoreState>((set, get) => {
         const reminder = db.reminders.find((r) => r.id === reminderId);
         if (!reminder) return db;
         return appendHistory(
-          { ...db, reminders: db.reminders.filter((r) => r.id !== reminderId) },
+          {
+            ...db,
+            reminders: db.reminders.filter((r) => r.id !== reminderId),
+            tombstones: pruneTombstones([
+              ...db.tombstones,
+              tombstone("reminder", reminderId, nowInstant()),
+            ]),
+          },
           historyEntry({ taskId: reminder.taskId, kind: "REMINDER_REMOVED" }),
         );
       });
@@ -548,6 +779,7 @@ export const useStore = create<StoreState>((set, get) => {
           status: recurring ? "PENDING" : "FIRED",
           lastFiredFor: occurrenceDate ?? reminder.lastFiredFor,
           snoozedUntil: null,
+          updatedAt: nowInstant(),
         };
         return appendHistory(
           {
@@ -570,7 +802,12 @@ export const useStore = create<StoreState>((set, get) => {
         ...db,
         reminders: db.reminders.map((r) =>
           r.id === reminderId
-            ? { ...r, snoozedUntil: until, status: "PENDING" as const }
+            ? {
+                ...r,
+                snoozedUntil: until,
+                status: "PENDING" as const,
+                updatedAt: nowInstant(),
+              }
             : r,
         ),
       }));
@@ -580,7 +817,9 @@ export const useStore = create<StoreState>((set, get) => {
       commit((db) => ({
         ...db,
         reminders: db.reminders.map((r) =>
-          r.id === reminderId ? { ...r, status: "DISMISSED" as const } : r,
+          r.id === reminderId
+            ? { ...r, status: "DISMISSED" as const, updatedAt: nowInstant() }
+            : r,
         ),
       }));
     },
@@ -699,13 +938,19 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     removeCategory(id) {
+      const at = nowInstant();
       commit((db) => ({
         ...db,
         categories: db.categories.filter((c) => c.id !== id),
         tasks: db.tasks.map((t) =>
-          t.categoryId === id ? { ...t, categoryId: null } : t,
+          t.categoryId === id ? { ...t, categoryId: null, updatedAt: at } : t,
         ),
+        tombstones: pruneTombstones([
+          ...db.tombstones,
+          tombstone("category", id, at),
+        ]),
       }));
+      void syncDeleteCategoryToCloud(id);
     },
 
     /**
@@ -735,6 +980,304 @@ export const useStore = create<StoreState>((set, get) => {
       });
     },
 
+    /* Budget ---------------------------------------------------------- */
+
+    addTransaction(draft) {
+      const at = nowInstant();
+      const transaction: Transaction = {
+        id: createId("x"),
+        date: draft.date,
+        // The sign lives in `flow`, never in the number: a negative "expense"
+        // would quietly become income in every total.
+        amountMinor: Math.abs(Math.round(draft.amountMinor)),
+        flow: draft.flow,
+        categoryId: draft.categoryId,
+        note: draft.note?.trim() ?? "",
+        recurrence: draft.recurrence ?? null,
+        recurrenceSourceId: null,
+        lastGeneratedFor: null,
+        createdAt: at,
+        updatedAt: at,
+        deletedAt: null,
+      };
+      commit((db) => ({ ...db, transactions: [...db.transactions, transaction] }));
+      return transaction;
+    },
+
+    updateTransaction(id, patch) {
+      commit((db) => ({
+        ...db,
+        transactions: db.transactions.map((t) =>
+          t.id === id
+            ? {
+                ...t,
+                ...patch,
+                amountMinor:
+                  patch.amountMinor === undefined
+                    ? t.amountMinor
+                    : Math.abs(Math.round(patch.amountMinor)),
+                updatedAt: nowInstant(),
+              }
+            : t,
+        ),
+      }));
+    },
+
+    /**
+     * Soft delete, like a task.
+     *
+     * A month's totals are a record of what happened. Erasing a row outright
+     * would silently rewrite last month's number with no way to notice.
+     */
+    deleteTransaction(id) {
+      const at = nowInstant();
+      commit((db) => ({
+        ...db,
+        transactions: db.transactions.map((t) =>
+          t.id === id ? { ...t, deletedAt: at, updatedAt: at } : t,
+        ),
+      }));
+      useUndoStore
+        .getState()
+        .push("undoneTransactionDeleted", () => get().restoreTransaction(id));
+    },
+
+    restoreTransaction(id) {
+      const at = nowInstant();
+      commit((db) => ({
+        ...db,
+        transactions: db.transactions.map((t) =>
+          t.id === id ? { ...t, deletedAt: null, updatedAt: at } : t,
+        ),
+      }));
+    },
+
+    /**
+     * The "enum that grows".
+     *
+     * A category the user types is looked up by name first, so typing "Kahve"
+     * twice files both entries under one label instead of creating a second
+     * identical row. What they type once becomes a permanent choice for them.
+     */
+    ensureBudgetCategory(name, flow) {
+      const trimmed = name.trim();
+      const existing = trimmed
+        ? get().db.budgetCategories.find(
+            (c) => c.name.toLowerCase() === trimmed.toLowerCase(),
+          )
+        : null;
+      if (existing) return existing;
+
+      const all = get().db.budgetCategories;
+      const category: BudgetCategory = {
+        id: createId("b"),
+        name: trimmed || "Diğer",
+        flow,
+        color:
+          BUDGET_CATEGORY_COLORS[all.length % BUDGET_CATEGORY_COLORS.length] ??
+          "#64748b",
+        icon: flow === "INCOME" ? "💰" : flow === "INVESTMENT" ? "📈" : "🏷️",
+        builtIn: false,
+        order: all.length,
+        updatedAt: nowInstant(),
+      };
+      commit((db) => ({
+        ...db,
+        budgetCategories: [...db.budgetCategories, category],
+      }));
+      return category;
+    },
+
+    updateBudgetCategory(id, patch) {
+      commit((db) => ({
+        ...db,
+        budgetCategories: db.budgetCategories.map((c) =>
+          c.id === id
+            ? { ...c, ...patch, name: (patch.name ?? c.name).trim(), updatedAt: nowInstant() }
+            : c,
+        ),
+      }));
+    },
+
+    /** Transactions filed under it keep their history, minus the label. */
+    removeBudgetCategory(id) {
+      const at = nowInstant();
+      const removed = get().db.budgetCategories.find((c) => c.id === id);
+      const filedUnderIt = get()
+        .db.transactions.filter((t) => t.categoryId === id)
+        .map((t) => t.id);
+      commit((db) => ({
+        ...db,
+        budgetCategories: db.budgetCategories.filter((c) => c.id !== id),
+        transactions: db.transactions.map((t) =>
+          t.categoryId === id ? { ...t, categoryId: null, updatedAt: at } : t,
+        ),
+        tombstones: pruneTombstones([
+          ...db.tombstones,
+          tombstone("category", id, at),
+        ]),
+      }));
+
+      if (removed) {
+        // Putting the label back is not enough — the entries that were filed
+        // under it have to find their way home too.
+        const orphaned = new Set(filedUnderIt);
+        useUndoStore.getState().push("undoneCategoryRemoved", () => {
+          const at2 = nowInstant();
+          commit((db) => ({
+            ...db,
+            budgetCategories: [
+              ...db.budgetCategories,
+              { ...removed, updatedAt: at2 },
+            ],
+            transactions: db.transactions.map((t) =>
+              orphaned.has(t.id) ? { ...t, categoryId: id, updatedAt: at2 } : t,
+            ),
+            tombstones: db.tombstones.filter(
+              (stone) => !(stone.kind === "category" && stone.id === id),
+            ),
+          }));
+        });
+      }
+    },
+
+    /**
+     * Move unfinished work forward instead of letting it rot in the past.
+     *
+     * The most common way a task list dies is that yesterday's undone items sit
+     * there accusing the user until they stop opening the app. Rolling them
+     * forward is a deliberate, one-click act — never automatic, because a task
+     * that silently moves itself is a task whose real due date you can no
+     * longer trust — and every move is written to history like any reschedule.
+     *
+     * A recurring series is skipped: its dates come from its rule, and dragging
+     * the anchor would move every future occurrence too.
+     */
+    rollOverTo(taskIds, date) {
+      const wanted = new Set(taskIds);
+      const eligible = get().db.tasks.filter(
+        (t) =>
+          wanted.has(t.id) &&
+          t.deletedAt === null &&
+          t.recurrence === null &&
+          t.status !== "COMPLETED" &&
+          t.dueDate !== null &&
+          t.dueDate < date,
+      );
+      if (eligible.length === 0) return 0;
+
+      const movedIds = new Set(eligible.map((t) => t.id));
+      const at = nowInstant();
+
+      commit((db) => {
+        const entries: HistoryEntry[] = [];
+        const tasks = db.tasks.map((task) => {
+          if (!movedIds.has(task.id)) return task;
+          const moved: Task = {
+            ...task,
+            dueDate: date,
+            // A run that never finished restarts today rather than keeping an
+            // end date that is now behind its own start.
+            endDate:
+              task.endDate && task.endDate < date ? null : (task.endDate ?? null),
+            snoozedUntil: null,
+            updatedAt: at,
+          };
+          entries.push(
+            historyEntry({
+              taskId: task.id,
+              kind: "RESCHEDULED",
+              field: "schedule",
+              from: describeSchedule(task),
+              to: describeSchedule(moved),
+              note: "Rolled over",
+            }),
+          );
+          return moved;
+        });
+        return appendHistory({ ...db, tasks }, ...entries);
+      });
+
+      for (const task of get().db.tasks) {
+        if (movedIds.has(task.id)) void syncTaskToCloud(task);
+      }
+
+      // Remember where each one came from: a bulk move is exactly the kind of
+      // action people want back the second they see what it did.
+      const before = new Map(eligible.map((t) => [t.id, t.dueDate]));
+      useUndoStore.getState().push("undoneRolledOver", () => {
+        const at2 = nowInstant();
+        commit((db) => ({
+          ...db,
+          tasks: db.tasks.map((task) => {
+            const original = before.get(task.id);
+            return original === undefined
+              ? task
+              : { ...task, dueDate: original, updatedAt: at2 };
+          }),
+        }));
+        for (const task of get().db.tasks) {
+          if (before.has(task.id)) void syncTaskToCloud(task);
+        }
+      });
+
+      return movedIds.size;
+    },
+
+    /**
+     * Catch the budget up on everything its templates owe.
+     *
+     * Run on open rather than on a timer: the app may have been closed for a
+     * month, and the answer has to be the same either way. Producing them one
+     * at a time through the same code path an ordinary entry takes means a
+     * generated entry is in no way special — it can be edited, deleted or
+     * recategorised like any other.
+     */
+    materialiseRecurringTransactions(through) {
+      const due = dueRecurringTransactions(get().db.transactions, through);
+      if (due.length === 0) return 0;
+
+      const at = nowInstant();
+      const created: Transaction[] = due.map(({ source, date }) => ({
+        id: createId("x"),
+        date,
+        amountMinor: source.amountMinor,
+        flow: source.flow,
+        categoryId: source.categoryId,
+        note: source.note,
+        // The copy is a plain entry: only the template carries the rule, so a
+        // generated entry can never start generating entries of its own.
+        recurrence: null,
+        recurrenceSourceId: source.id,
+        lastGeneratedFor: null,
+        createdAt: at,
+        updatedAt: at,
+        deletedAt: null,
+      }));
+
+      // Remember how far each template has got, or the next run repeats itself.
+      const advancedTo = new Map<string, LocalDate>();
+      for (const { source, date } of due) {
+        const current = advancedTo.get(source.id);
+        if (!current || date > current) advancedTo.set(source.id, date);
+      }
+
+      commit((db) => ({
+        ...db,
+        transactions: [
+          ...db.transactions.map((t) => {
+            const mark = advancedTo.get(t.id);
+            return mark === undefined
+              ? t
+              : { ...t, lastGeneratedFor: mark, updatedAt: at };
+          }),
+          ...created,
+        ],
+      }));
+
+      return created.length;
+    },
+
     updateSettings(patch) {
       commit((db) => ({ ...db, settings: { ...db.settings, ...patch } }));
     },
@@ -757,12 +1300,18 @@ export const useStore = create<StoreState>((set, get) => {
       const ids = trashed.map((t) => t.id);
       if (ids.length === 0) return;
 
+      const at = nowInstant();
       commit((db) => {
+        const idSet = new Set(ids);
         return {
           ...db,
-          tasks: db.tasks.filter((t) => !ids.includes(t.id)),
-          occurrences: db.occurrences.filter((o) => !ids.includes(o.taskId)),
-          reminders: db.reminders.filter((r) => !ids.includes(r.taskId)),
+          tasks: db.tasks.filter((t) => !idSet.has(t.id)),
+          occurrences: db.occurrences.filter((o) => !idSet.has(o.taskId)),
+          reminders: db.reminders.filter((r) => !idSet.has(r.taskId)),
+          tombstones: pruneTombstones([
+            ...db.tombstones,
+            ...ids.map((id) => tombstone("task", id, at)),
+          ]),
         };
       });
 
@@ -832,6 +1381,7 @@ function applyStatus(
       completedAt,
       snoozedUntil:
         status === "COMPLETED" ? null : (existing?.snoozedUntil ?? null),
+      updatedAt: at,
     };
     return {
       ...db,
@@ -877,8 +1427,9 @@ function writeSnoozeUntil(
   if (task.recurrence && ref.occurrenceDate) {
     const id = occurrenceId(task.id, ref.occurrenceDate);
     const existing = db.occurrences.find((o) => o.id === id);
+    const at = nowInstant();
     const occurrence: Occurrence = existing
-      ? { ...existing, snoozedUntil: until }
+      ? { ...existing, snoozedUntil: until, updatedAt: at }
       : {
           id,
           taskId: task.id,
@@ -886,6 +1437,7 @@ function writeSnoozeUntil(
           status: "TODO",
           completedAt: null,
           snoozedUntil: until,
+          updatedAt: at,
         };
     return {
       ...db,
@@ -920,13 +1472,17 @@ function collectSubtree(tasks: Task[], rootId: string): string[] {
 }
 
 function describeSchedule(
-  task: Pick<Task, "dueDate" | "allDay" | "startTime" | "endTime">,
+  task: Pick<Task, "dueDate" | "endDate" | "allDay" | "startTime" | "endTime">,
 ): string {
   if (!task.dueDate) return "no date";
-  if (task.allDay || !task.startTime) return `${task.dueDate} (all-day)`;
+  const days =
+    task.endDate && task.endDate > task.dueDate
+      ? `${task.dueDate} → ${task.endDate}`
+      : task.dueDate;
+  if (task.allDay || !task.startTime) return `${days} (all-day)`;
   return task.endTime
-    ? `${task.dueDate} ${task.startTime}-${task.endTime}`
-    : `${task.dueDate} ${task.startTime}`;
+    ? `${days} ${task.startTime}-${task.endTime}`
+    : `${days} ${task.startTime}`;
 }
 
 function serialise(value: unknown): string {

@@ -36,8 +36,8 @@ export const SNOOZE_PRESETS: SnoozePreset[] = [
 ];
 
 export interface SnoozeOutcome {
-  /** When the task/reminder becomes active again. */
-  until: Instant;
+  /** When the task/reminder becomes active again; `null` when nothing is left to wait for. */
+  until: Instant | null;
   /**
    * Set when the task's own schedule has to move, i.e. the snooze target
    * lands on a different calendar day (spec §8: "Tomorrow" → Aug 25 14:00
@@ -65,23 +65,43 @@ export function resolveSnooze(
   const anchorDate = instance.date;
   const targetDate = toLocalDate(target);
 
+  // Suppressing a task until a moment that has already passed suppresses
+  // nothing, and leaving a stale instant behind makes the row claim to be
+  // SNOOZED for one render and then flip. A target in the past means "no
+  // postponement", only the move below.
+  const until = target.getTime() > now.getTime() ? toInstant(target) : null;
+
   // A recurring series is never moved by a snooze: shifting the anchor would
   // silently drag every future occurrence with it. Postpone this occurrence
   // and leave the rule alone.
-  if (instance.isRecurring) return { until: toInstant(target), reschedule: null };
+  if (instance.isRecurring) return { until, reschedule: null };
 
   const crossesDay = anchorDate === null || targetDate !== anchorDate;
-  if (!crossesDay) return { until: toInstant(target), reschedule: null };
+  if (!crossesDay) return { until, reschedule: null };
 
   // Keep the clock time the task already had; only the day moves.
   const keepsTime = !instance.task.allDay && instance.task.startTime !== null;
   return {
-    until: toInstant(target),
+    until,
     reschedule: {
       date: targetDate,
       startTime: keepsTime ? instance.task.startTime : null,
     },
   };
+}
+
+/**
+ * The date a preset would move `instance` to, or `null` when it only postpones
+ * the reminder. Lets the menu label each option with the day it will produce.
+ */
+export function snoozePreviewDate(
+  instance: TaskInstance,
+  preset: SnoozePresetId,
+  settings: Settings,
+  now: Date,
+  customTarget?: Date,
+): LocalDate {
+  return toLocalDate(snoozeTarget(instance, preset, settings, now, customTarget));
 }
 
 function snoozeTarget(
@@ -109,11 +129,19 @@ function snoozeTarget(
   }
 }
 
-/** Day-jumping presets move relative to the task's own day, not the clock. */
+/**
+ * Day-jumping presets move relative to the task's own day, never the clock.
+ *
+ * "Tomorrow" on a task scheduled for the 25th means the 26th, whether today is
+ * the 20th, the 25th or the 28th. Anchoring on the clock instead made the
+ * distance depend on when the menu happened to be opened, so the same choice
+ * moved an overdue task by one day and a stale one by nine.
+ *
+ * A task with no date has nothing to count from, so it falls back to today.
+ */
 function dayAnchor(instance: TaskInstance, now: Date): Date {
   if (!instance.date) return startOfDay(now);
-  const taskDay = fromLocalDate(instance.date);
-  return taskDay.getTime() < startOfDay(now).getTime() ? startOfDay(now) : taskDay;
+  return fromLocalDate(instance.date);
 }
 
 function addDaysTo(date: Date, days: number): Date {
@@ -132,6 +160,11 @@ function sameTimeOn(day: Date, instance: TaskInstance, settings: Settings): Date
 }
 
 export function describeSnooze(outcome: SnoozeOutcome): string {
+  if (outcome.until === null) {
+    return outcome.reschedule
+      ? `moved to ${outcome.reschedule.date}`
+      : "nothing to postpone";
+  }
   const until = fromInstant(outcome.until);
   const when = `${toLocalDate(until)} ${toLocalTime(until)}`;
   return outcome.reschedule ? `moved to ${when}` : `reminder postponed to ${when}`;

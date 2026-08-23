@@ -15,8 +15,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `tray-icon` is what lets the app keep running with no window on screen, which
+# is the only way a reminder can fire after the user has closed it.
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-notification = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2"
 # Used directly for the one notification path that has to report its errors;
 # the plugin delivers on a detached task and discards the result.
 notify-rust = "4"

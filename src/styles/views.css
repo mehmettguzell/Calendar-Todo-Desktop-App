@@ -1127,8 +1127,15 @@
 /* Plans Grid */
 .plans-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  /* auto-fit collapses the empty tracks auto-fill would keep reserved, so two
+     plans share the row instead of hanging beside a phantom third column. */
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: var(--space-4);
+  /* Cards stretch to a shared row height, which is what keeps the bottom edges
+     aligned instead of ragged. Safe only because the checklist preview caps how
+     tall any one card can grow; without that cap a twenty-subtask plan would
+     inflate every card beside it. */
+  align-items: stretch;
 }
 
 .plan-card {
@@ -1281,15 +1288,6 @@
   gap: 4px;
 }
 
-.plan-progress-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11.5px;
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
 .plan-progress-track {
   width: 100%;
   height: 6px;
@@ -1341,8 +1339,7 @@
 .plan-subtasks-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .plan-today-pill {
@@ -1357,19 +1354,47 @@
   color: #f59e0b;
 }
 
+/* Rows read as a list, not as a stack of boxes inside the card box. The
+   divider carries the separation that a filled background used to. Matches
+   the .budget-row pattern. */
 .plan-subtask-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--border);
   font-size: 12.5px;
   transition: background 120ms ease;
 }
 
+.plan-subtask-item:last-child {
+  border-bottom: none;
+}
+
 .plan-subtask-item:hover {
   background: var(--surface-hover);
+}
+
+/* Only the first few rows render; the rest sit behind this toggle so cards
+   stay close in height and no inner scrollbar is needed. */
+.plan-subtask-more {
+  align-self: flex-start;
+  padding: 6px 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: color 120ms ease;
+}
+
+.plan-subtask-more:hover {
+  color: var(--text);
+}
+
+.plan-card-count {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .plan-subtask-item.done .plan-subtask-label {
@@ -1415,7 +1440,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 /* ================================================================== */
@@ -1755,4 +1780,274 @@
   background: var(--danger-soft) !important;
   color: var(--danger) !important;
   font-weight: 700;
+}
+
+/* ==================================================================
+   Budget
+   Layout follows the one question the view answers: where do I stand,
+   then what explains it, then the raw ledger.
+   ================================================================== */
+
+.budget-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.budget-range {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.budget-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+.budget-stat {
+  --stat-tone: var(--text-faint);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "icon label"
+    "value value"
+    "hint hint";
+  align-items: center;
+  gap: 2px 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.budget-stat.income { --stat-tone: #22c55e; }
+.budget-stat.expense { --stat-tone: #ef4444; }
+.budget-stat.investment { --stat-tone: #3b82f6; }
+.budget-stat.positive { --stat-tone: #22c55e; }
+.budget-stat.negative { --stat-tone: #ef4444; }
+
+.budget-stat.emphasis {
+  border-color: color-mix(in srgb, var(--stat-tone) 45%, var(--border));
+  background: color-mix(in srgb, var(--stat-tone) 7%, var(--surface));
+}
+
+.budget-stat-icon {
+  grid-area: icon;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--stat-tone);
+  background: color-mix(in srgb, var(--stat-tone) 16%, transparent);
+}
+
+.budget-stat-label {
+  grid-area: label;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.budget-stat-value {
+  grid-area: value;
+  margin-top: 6px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--stat-tone);
+}
+
+.budget-stat-hint {
+  grid-area: hint;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* Entry row --------------------------------------------------------- */
+
+.budget-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+
+.budget-entry .budget-amount { flex: 0 0 118px; font-variant-numeric: tabular-nums; }
+.budget-entry .budget-date { flex: 0 0 150px; }
+/* The note takes whatever is left; everything else keeps its own width so the
+   row stays one line at normal window sizes and wraps predictably below. */
+.budget-entry .budget-category { flex: 0 0 168px; }
+.budget-entry .budget-note { flex: 1 1 200px; min-width: 160px; }
+
+.budget-entry-error {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* Breakdown & ledger ------------------------------------------------- */
+
+.budget-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 980px) {
+  .budget-columns { grid-template-columns: minmax(0, 1fr); }
+}
+
+.budget-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.budget-bar-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 150px) 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.budget-bar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.budget-bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.budget-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 200ms ease;
+}
+
+.budget-bar-value {
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.budget-row {
+  display: grid;
+  grid-template-columns: 56px 28px minmax(0, 1fr) auto 26px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.budget-row:last-child { border-bottom: none; }
+
+.budget-row-date { font-size: 11.5px; color: var(--text-faint); }
+
+.budget-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.budget-row-text { display: flex; flex-direction: column; min-width: 0; }
+.budget-row-title { font-size: 13px; font-weight: 550; }
+.budget-row-note { font-size: 11.5px; color: var(--text-faint); }
+
+.budget-row-amount { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.budget-row-amount.income { color: #22c55e; }
+.budget-row-amount.expense { color: var(--text); }
+.budget-row-amount.investment { color: #3b82f6; }
+
+/* Row actions stay out of the way until the row is under the pointer. */
+.budget-row-delete { opacity: 0; transition: opacity 120ms ease; }
+.budget-row:hover .budget-row-delete,
+.budget-row-delete:focus-visible { opacity: 0.75; }
+.budget-row-delete:hover { opacity: 1; color: var(--danger); }
+
+/* Budget: repeat picker, limits ------------------------------------------- */
+
+.budget-entry .budget-repeat { flex: 0 0 140px; }
+
+.budget-generated-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* The breakdown row gains a fourth column for the limit. */
+.budget-bar-row {
+  grid-template-columns: minmax(90px, 150px) 1fr auto auto;
+}
+
+.budget-limit-note { font-weight: 500; opacity: 0.75; }
+.budget-limit-note.close { color: #eab308; opacity: 1; }
+.budget-limit-note.over { color: var(--danger); opacity: 1; }
+
+/* Hidden until wanted: a view about where the money went should not read as a
+   form. An already-set limit stays visible. */
+.budget-limit-input {
+  width: 62px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+/* A limit that is set is already spelled out next to the amount ("845,50 /
+   900,00"), so the editor stays hidden until it is wanted — showing both is the
+   same number twice. */
+.budget-bar-row:hover .budget-limit-input,
+.budget-limit-input:focus {
+  opacity: 1;
+}
+
+.budget-limit-input:hover,
+.budget-limit-input:focus {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  outline: none;
 }

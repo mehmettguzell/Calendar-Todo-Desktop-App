@@ -46,14 +46,26 @@ export const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
  * far the calendar is scrolled.
  */
 export function expandOccurrences(
-  task: Pick<Task, "dueDate" | "recurrence">,
+  task: Pick<Task, "dueDate" | "recurrence"> & Partial<Pick<Task, "endDate">>,
   rangeStart: LocalDate,
   rangeEnd: LocalDate,
 ): LocalDate[] {
   const { dueDate, recurrence } = task;
   if (!dueDate) return [];
   if (!recurrence) {
-    return dueDate >= rangeStart && dueDate <= rangeEnd ? [dueDate] : [];
+    // A task with an `endDate` occupies every day of `[dueDate, endDate]`, so
+    // "August 25 - 28" shows up on all four days instead of only the first.
+    // A recurring rule keeps its own single-day occurrences: `recurrence.until`
+    // already bounds the series, and letting each repeat span days as well
+    // would make two independent controls fight over the same dates.
+    const last = task.endDate && task.endDate > dueDate ? task.endDate : dueDate;
+    if (last === dueDate) {
+      return dueDate >= rangeStart && dueDate <= rangeEnd ? [dueDate] : [];
+    }
+    return daysBetweenInclusive(
+      dueDate > rangeStart ? dueDate : rangeStart,
+      last < rangeEnd ? last : rangeEnd,
+    );
   }
 
   const anchor = fromLocalDate(dueDate);
@@ -143,4 +155,19 @@ function* iterate(anchor: Date, rule: Recurrence): Generator<Date> {
         break;
     }
   }
+}
+
+/** Every `YYYY-MM-DD` from `from` to `to`, inclusive. Empty when `from > to`. */
+function daysBetweenInclusive(from: LocalDate, to: LocalDate): LocalDate[] {
+  if (from > to) return [];
+  const out: LocalDate[] = [];
+  let cursor = fromLocalDate(from);
+  const end = fromLocalDate(to);
+  let steps = 0;
+  while (cursor.getTime() <= end.getTime() && steps < MAX_STEPS) {
+    out.push(toLocalDate(cursor));
+    cursor = addDays(cursor, 1);
+    steps += 1;
+  }
+  return out;
 }

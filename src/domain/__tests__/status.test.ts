@@ -102,6 +102,7 @@ describe("toInstance", () => {
         status: "COMPLETED",
         completedAt: "2026-08-26T10:00:00.000Z",
         snoozedUntil: null,
+        updatedAt: "2026-08-26T10:00:00.000Z",
       },
       atTime("2026-08-26", "18:00"),
     );

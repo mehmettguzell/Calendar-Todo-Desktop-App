@@ -52,13 +52,29 @@
 }
 
 .alert-card {
-  padding: var(--space-3);
+  /* The stripe is a positioned child rather than a border, so it can take the
+     task's own category colour without every card needing an inline border. */
+  --alert-accent: var(--accent);
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-3) var(--space-3) var(--space-3) calc(var(--space-3) + 3px);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
   animation: rise 180ms ease-out;
+}
+
+.alert-card.overdue {
+  --alert-accent: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.alert-stripe {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--alert-accent);
 }
 
 @keyframes rise {
@@ -66,10 +82,41 @@
   to { opacity: 1; transform: none; }
 }
 
-.alert-card .alert-title { font-weight: 600; }
-.alert-card .alert-when { margin-top: 1px; color: var(--text-muted); font-size: 12px; }
+.alert-head { display: flex; align-items: flex-start; gap: var(--space-2); }
+
+.alert-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--alert-accent);
+  background: color-mix(in srgb, var(--alert-accent) 16%, transparent);
+}
+
+.alert-icon.overdue { animation: alert-pulse 1.6s ease-in-out infinite; }
+
+@keyframes alert-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 45%, transparent); }
+  50% { box-shadow: 0 0 0 5px transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-card { animation: none; }
+  .alert-icon.overdue { animation: none; }
+}
+
+.alert-text { min-width: 0; flex: 1; }
+.alert-close { flex: none; margin: -2px -4px 0 0; opacity: 0.6; }
+.alert-close:hover { opacity: 1; }
+
+.alert-card .alert-title { font-weight: 600; line-height: 1.25; }
+.alert-card .alert-when { margin-top: 2px; color: var(--text-muted); font-size: 12px; }
+.alert-card.overdue .alert-when { color: var(--danger); font-weight: 600; }
 .alert-card .alert-actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
-.alert-card .alert-actions .btn { flex: 1; }
+.alert-card .alert-actions .btn { flex: 1; gap: 4px; justify-content: center; }
 
 .snooze-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-1); }
 
@@ -127,4 +174,208 @@
     height: 100%;
     box-shadow: var(--shadow-lg);
   }
+}
+
+/* ==================================================================
+   Command palette
+   Sits high in the viewport rather than centred: the eye is already
+   near the top of the screen when the shortcut is pressed.
+   ================================================================== */
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  justify-content: center;
+  padding-top: 12vh;
+  background: color-mix(in srgb, #000 42%, transparent);
+  backdrop-filter: blur(2px);
+  animation: fade-in 120ms ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(60vh, 520px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: rise 140ms ease-out;
+}
+
+.palette-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.palette-input input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.palette-list { padding: 6px; overflow-y: auto; }
+
+.palette-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  text-align: left;
+  color: var(--text);
+}
+
+.palette-row.active { background: var(--surface-hover); }
+
+.palette-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.palette-row.active .palette-icon { color: var(--accent); }
+
+.palette-label { flex: 1; min-width: 0; font-size: 13.5px; }
+
+.palette-meta {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.palette-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 17px;
+  height: 17px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 5px;
+  color: transparent;
+  cursor: pointer;
+}
+
+.palette-check:hover { border-color: var(--accent); color: var(--accent); }
+.palette-check.done { border-color: var(--accent); background: var(--accent); color: #fff; }
+
+.palette-empty { padding: 18px 12px; color: var(--text-faint); font-size: 13px; }
+
+.palette-foot {
+  display: flex;
+  gap: 14px;
+  padding: 7px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.palette kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  font-family: inherit;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ==================================================================
+   Undo toast
+   Bottom centre, away from the reminder cards: a reminder is
+   something to act on, this is something to dismiss.
+   ================================================================== */
+
+.undo-toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: calc(100vw - 32px);
+  padding: 9px 10px 9px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  animation: rise 160ms ease-out;
+}
+
+.undo-label {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.undo-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.undo-action:hover { filter: brightness(1.08); }
+
+.undo-action kbd {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.undo-close {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 50%;
+  color: var(--text-faint);
+}
+
+.undo-close:hover { color: var(--text); background: var(--surface-hover); }
+
+@media (prefers-reduced-motion: reduce) {
+  .undo-toast { animation: none; }
+}
+
+/* A verification code is read digit by digit; spacing it out makes that
+   possible without counting characters. */
+.auth-code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 18px;
+  letter-spacing: 0.32em;
+  text-align: center;
 }

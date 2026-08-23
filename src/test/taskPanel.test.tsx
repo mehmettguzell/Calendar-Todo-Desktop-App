@@ -41,8 +41,8 @@ describe("opening a task", () => {
     });
 
     // The panel owns these; if it threw, the tree would be empty.
-    expect(screen.getByText("Reminders")).toBeDefined();
-    expect(screen.getByText("Subtasks")).toBeDefined();
+    expect(screen.getByText(/Reminders|Hatırlatıcılar/)).toBeDefined();
+    expect(screen.getByText(/Subtasks|Alt görevler/)).toBeDefined();
     expect(screen.getByRole("button", { name: "Complete" })).toBeDefined();
   });
 

@@ -4,6 +4,7 @@ import { occurrenceId } from "@/domain/ids";
 import { toInstance } from "@/domain/task";
 import type { LocalDate, TaskInstance } from "@/domain/types";
 import { ensureNotificationPermission } from "@/services/notifications";
+import { QUICK_CAPTURE_EVENT, onDesktopEvent } from "@/services/desktop";
 import { useReminderScheduler } from "@/services/scheduler";
 import {
   EMPTY_FILTERS,
@@ -25,14 +26,19 @@ import {
   type CalendarMode,
 } from "@/ui/views/CalendarView";
 import { FocusView } from "@/ui/views/FocusView";
+import { BudgetView } from "@/ui/views/BudgetView";
 import { TasksView } from "@/ui/views/TasksView";
 import { PlansView } from "@/ui/views/PlansView";
 import { NotesView } from "@/ui/views/NotesView";
 import { TodayView } from "@/ui/views/TodayView";
 import { AuthModal } from "@/ui/components/AuthModal";
+import { CommandPalette } from "@/ui/components/CommandPalette";
+import { UndoToast } from "@/ui/components/UndoToast";
+import { useUndoStore } from "@/state/undoStore";
 import { useAuthStore } from "@/state/authStore";
 import { initSyncEngine } from "@/state/syncEngine";
 import { useApplyTheme, useShortcuts } from "@/ui/hooks";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 
 /** The selected task, remembered as a reference rather than a snapshot. */
 interface Selection {
@@ -45,13 +51,15 @@ interface QuickAddSeed {
   time: string | null;
 }
 
-const VIEW_TITLES: Record<ViewId, string> = {
-  today: "Today",
-  calendar: "Calendar",
-  tasks: "Tasks",
-  plans: "Plans",
-  notes: "Notes",
-  focus: "Focus",
+/** Page heading per view, resolved through the dictionary like the nav is. */
+const VIEW_TITLE_KEYS: Record<ViewId, TranslationKey> = {
+  today: "navToday",
+  calendar: "navCalendar",
+  tasks: "navTasks",
+  plans: "navPlans",
+  notes: "navNotes",
+  focus: "navFocus",
+  budget: "navBudget",
 };
 
 export function App() {
@@ -61,6 +69,7 @@ export function App() {
   const settings = useStore((s) => s.db.settings);
   const occurrences = useOccurrenceIndex();
   const now = useNow();
+  const { t } = useI18n();
 
   const [view, setView] = useState<ViewId>("today");
   const [mode, setMode] = useState<CalendarMode>("month");
@@ -71,18 +80,41 @@ export function App() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [quickAdd, setQuickAdd] = useState<QuickAddSeed | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   const { alerts, dismissAlert } = useReminderScheduler();
 
   useEffect(() => {
-    void hydrate();
-    void useAuthStore.getState().initAuth();
-    initSyncEngine();
+    // Order matters: the local document is opened first, so the sync engine
+    // never has to decide what to do with a store that is still empty — and an
+    // account switch it triggers has something concrete to switch away from.
+    void (async () => {
+      await hydrate();
+      initSyncEngine();
+      await useAuthStore.getState().initAuth();
+    })();
   }, [hydrate]);
 
   useEffect(() => {
     if (ready) void ensureNotificationPermission();
   }, [ready]);
+
+  // `Ctrl+Shift+Space` from anywhere, and the tray menu, both land here. The
+  // window has already been raised by the host by the time this fires.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void onDesktopEvent(QUICK_CAPTURE_EVENT, () =>
+      setQuickAdd({ date: toLocalDate(new Date()), time: null }),
+    ).then((off) => {
+      if (cancelled) off();
+      else unlisten = off;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   useApplyTheme(settings.theme);
   useShortcuts({
@@ -92,6 +124,8 @@ export function App() {
       setView("today");
     },
     onEscape: () => setSelection(null),
+    onPalette: () => setPaletteOpen((open) => !open),
+    onUndo: () => useUndoStore.getState().undo(),
   });
 
   /**
@@ -142,7 +176,7 @@ export function App() {
   const title =
     view === "calendar"
       ? calendarTitle(mode, anchor, settings.weekStartsOn)
-      : VIEW_TITLES[view];
+      : t(VIEW_TITLE_KEYS[view]);
 
   return (
     <div className={selected ? "app has-panel" : "app"}>
@@ -217,6 +251,8 @@ export function App() {
               onOpen={openInstance}
             />
           ) : null}
+
+          {view === "budget" ? <BudgetView /> : null}
         </div>
       </main>
 
@@ -245,10 +281,21 @@ export function App() {
         <SettingsModal onClose={() => setSettingsOpen(false)} />
       ) : null}
 
+      <UndoToast />
+
       <ReminderAlerts
         alerts={alerts}
         onDismiss={dismissAlert}
         onOpen={(taskId, occurrenceDate) => openTaskId(taskId, occurrenceDate)}
+      />
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onView={setView}
+        onNewTask={() => setQuickAdd({ date: anchor, time: null })}
+        onOpenTask={(taskId) => openTaskId(taskId)}
+        onSettings={() => setSettingsOpen(true)}
       />
 
       <AuthModal />

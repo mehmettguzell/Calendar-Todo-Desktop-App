@@ -11,6 +11,7 @@ import {
 import { describeWhen, formatTracked } from "@/domain/datetime";
 import type { TaskInstance } from "@/domain/types";
 import { cn } from "@/lib/cn";
+import { useI18n } from "@/lib/i18n";
 import {
   useCategoryIndex,
   useSubtasks,
@@ -38,6 +39,7 @@ export function TaskRow({
   showDate?: boolean;
 }) {
   const { task } = instance;
+  const { t } = useI18n();
   const toggleComplete = useStore((s) => s.toggleComplete);
   const deleteTask = useStore((s) => s.deleteTask);
   const startFocus = useStore((s) => s.startFocus);
@@ -99,7 +101,7 @@ export function TaskRow({
           ) : null}
           {time ? <span className="mono">{time}</span> : null}
           {task.allDay && instance.date ? (
-            <span className="tag">All-day</span>
+            <span className="tag">{t("allDay")}</span>
           ) : null}
           {category ? (
             <span className="row" style={{ gap: 5 }}>

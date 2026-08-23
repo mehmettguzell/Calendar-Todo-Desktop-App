@@ -52,7 +52,9 @@ describe("spec section 3 - one task, many views", () => {
 
     // Switch to the calendar: the same row, drawn as a chip.
     act(() => {
-      screen.getByRole("button", { name: /Calendar/ }).click();
+      // Language-agnostic on purpose: this test is about one task showing up
+      // in two views, not about which locale the app happens to default to.
+      screen.getByRole("button", { name: /Calendar|Takvim/ }).click();
     });
     expect(screen.getAllByText("Prepare project presentation").length).toBeGreaterThan(0);
   });

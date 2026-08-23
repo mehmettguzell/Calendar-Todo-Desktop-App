@@ -91,14 +91,23 @@ export function collectDueReminders(
       continue;
     }
 
+    const isSeries = task.recurrence !== null;
     const candidateDates = candidateOccurrenceDates(task, reminder, from, to);
     for (const date of candidateDates) {
-      // Already delivered for this occurrence, and not re-armed by a snooze.
+      // Already delivered, and not re-armed by a snooze.
+      //
+      // A one-off reminder is finished the moment it has FIRED — including a
+      // multi-day task, which now yields one candidate date per day it covers
+      // and would otherwise nag once for each of them. Only a recurring series
+      // needs the per-date check, because there its reminder stays PENDING for
+      // the next occurrence.
       const alreadyFired =
         reminder.snoozedUntil === null &&
-        (date === null
-          ? reminder.status === "FIRED"
-          : reminder.lastFiredFor !== null && date <= reminder.lastFiredFor);
+        (isSeries
+          ? date !== null &&
+            reminder.lastFiredFor !== null &&
+            date <= reminder.lastFiredFor
+          : reminder.status === "FIRED");
       if (alreadyFired) continue;
       const firesAt = reminderInstantFor(reminder, task, date, settings);
       if (!firesAt || firesAt.getTime() > now.getTime()) continue;

@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Sparkles } from "lucide-react";
 import { shiftTime, toLocalDate } from "@/domain/datetime";
+import { describeParse, parseQuickAdd } from "@/domain/naturalLanguage";
 import { PRIORITY_LABEL } from "@/domain/task";
 import {
   PRIORITIES,
@@ -7,6 +9,8 @@ import {
   type Priority,
   type Recurrence,
 } from "@/domain/types";
+import { CATEGORY_COLORS } from "@/data/db";
+import { useI18n } from "@/lib/i18n";
 import { useCategories } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
 import { Field, Modal, Switch } from "@/ui/components/primitives";
@@ -27,8 +31,10 @@ export function QuickAdd({
   onClose: () => void;
   onCreated?: (taskId: string) => void;
 }) {
+  const { t } = useI18n();
   const createTask = useStore((s) => s.createTask);
   const addReminder = useStore((s) => s.addReminder);
+  const addCategory = useStore((s) => s.addCategory);
   const settings = useStore((s) => s.db.settings);
   const categories = useCategories();
   const now = useNow();
@@ -51,9 +57,63 @@ export function QuickAdd({
   // is not wanted. Tasks with no date silently skip it (see submit).
   const [withReminder, setWithReminder] = useState(true);
 
+  /**
+   * What the title box understood, recomputed as it is typed.
+   *
+   * The parse only ever *fills in* fields — it never overwrites one the user
+   * has already touched by hand, which is what `touched` tracks. Typing a date
+   * and then correcting it in the date picker has to stick.
+   */
+  const parsed = useMemo(() => parseQuickAdd(title, now, settings.weekStartsOn), [
+    title,
+    now,
+    settings.weekStartsOn,
+  ]);
+  const chips = describeParse(parsed);
+  // "Touched" means the user edited the field, not that it started with a
+  // value. Seeding it from `defaultDate` — which the calendar always supplies —
+  // meant a parsed date was computed, shown in the preview, and then silently
+  // ignored by the field it was supposed to fill.
+  const touched = useRef({ date: false, time: false });
+
+  useEffect(() => {
+    if (parsed.dueDate && !touched.current.date) setDueDate(parsed.dueDate);
+    if (parsed.endDate && !touched.current.date) setEndDate(parsed.endDate);
+    if (parsed.startTime && !touched.current.time) {
+      setAllDay(false);
+      setStartTime(parsed.startTime);
+      if (parsed.endTime) setEndTime(parsed.endTime);
+    }
+    if (parsed.priority !== "NONE") setPriority(parsed.priority);
+    if (parsed.recurrence) setRecurrence(parsed.recurrence);
+    if (parsed.tags.length > 0) setTags(parsed.tags.join(", "));
+  }, [
+    parsed.dueDate,
+    parsed.endDate,
+    parsed.startTime,
+    parsed.endTime,
+    parsed.priority,
+    parsed.recurrence,
+    parsed.tags.join(","),
+  ]);
+
   const submit = () => {
-    const trimmed = title.trim();
+    // The stripped title is what gets saved: "yarın 14:00 sunum" becomes a task
+    // called "sunum" that is actually scheduled, not one whose name repeats its
+    // own due date back at the reader.
+    const trimmed = (parsed.title || title).trim();
     if (!trimmed) return;
+
+    // `#kategori` names a category, creating it when it is new.
+    let resolvedCategoryId = categoryId;
+    if (!resolvedCategoryId && parsed.categoryName) {
+      const wanted = parsed.categoryName.trim().toLowerCase();
+      const match = categories.find((c) => c.name.trim().toLowerCase() === wanted);
+      resolvedCategoryId =
+        match?.id ?? addCategory(parsed.categoryName, CATEGORY_COLORS[
+          categories.length % CATEGORY_COLORS.length
+        ] ?? "#64748b").id;
+    }
 
     const task = createTask({
       title: trimmed,
@@ -64,12 +124,13 @@ export function QuickAdd({
       startTime: allDay ? null : startTime || null,
       endTime: allDay || !endTime ? null : endTime,
       priority,
-      categoryId: categoryId || null,
+      categoryId: resolvedCategoryId || null,
       tags: tags
         .split(",")
         .map((t) => t.trim().replace(/^#/, ""))
         .filter(Boolean),
       recurrence,
+      estimateMinutes: parsed.estimateMinutes,
     });
 
     if (withReminder && dueDate) {
@@ -86,12 +147,12 @@ export function QuickAdd({
 
   return (
     <Modal
-      title="New task"
+      title={t("formNewTask")}
       onClose={onClose}
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("cancel")}
           </button>
           <button
             type="button"
@@ -99,43 +160,60 @@ export function QuickAdd({
             disabled={!title.trim()}
             onClick={submit}
           >
-            Create task
+            {t("formCreateTask")}
           </button>
         </>
       }
     >
-      <Field label="Title">
+      <Field label={t("formTitle")}>
         <input
           className="input"
           autoFocus
           value={title}
-          placeholder="Prepare project presentation"
+          placeholder="yarın 14:00 proje sunumu #iş !1"
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
+            else if (e.key === "Enter") submit();
           }}
         />
+        {chips.length > 0 ? (
+          // Showing what was understood is what makes the parsing safe to trust:
+          // a wrong guess is visible before the task is created, not after.
+          <div className="nlp-chips">
+            <Sparkles size={12} aria-hidden />
+            {chips.map((chip) => (
+              <span key={chip} className="nlp-chip">
+                {chip}
+              </span>
+            ))}
+            <span className="nlp-chip-title truncate">→ {parsed.title}</span>
+          </div>
+        ) : null}
       </Field>
 
-      <Field label="Notes">
+      <Field label={t("formNotes")}>
         <textarea
           className="textarea"
           value={description}
-          placeholder="Optional details"
+          placeholder={t("formNotesHint")}
           onChange={(e) => setDescription(e.target.value)}
         />
       </Field>
 
       <div className="field-row">
-        <Field label="Start Date">
+        <Field label={t("formStartDate")}>
           <input
             className="input"
             type="date"
             value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
+            onChange={(e) => {
+              touched.current.date = true;
+              setDueDate(e.target.value);
+            }}
           />
         </Field>
-        <Field label="End Date">
+        <Field label={t("formEndDate")}>
           <input
             className="input"
             type="date"
@@ -144,7 +222,7 @@ export function QuickAdd({
             onChange={(e) => setEndDate(e.target.value)}
           />
         </Field>
-        <Field label="Priority">
+        <Field label={t("formPriority")}>
           <select
             className="select"
             value={priority}
@@ -159,19 +237,22 @@ export function QuickAdd({
         </Field>
       </div>
 
-      <Switch checked={allDay} label="All-day" onChange={setAllDay} />
+      <Switch checked={allDay} label={t("allDay")} onChange={setAllDay} />
 
       {!allDay ? (
         <div className="field-row">
-          <Field label="Start">
+          <Field label={t("formStart")}>
             <input
               className="input"
               type="time"
               value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
+              onChange={(e) => {
+                touched.current.time = true;
+                setStartTime(e.target.value);
+              }}
             />
           </Field>
-          <Field label="End">
+          <Field label={t("formEnd")}>
             <input
               className="input"
               type="time"
@@ -183,13 +264,13 @@ export function QuickAdd({
       ) : null}
 
       <div className="field-row">
-        <Field label="Category">
+        <Field label={t("formCategory")}>
           <select
             className="select"
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
           >
-            <option value="">None</option>
+            <option value="">{t("formNone")}</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -197,7 +278,7 @@ export function QuickAdd({
             ))}
           </select>
         </Field>
-        <Field label="Tags" hint="Comma separated">
+        <Field label={t("formTags")} hint={t("formTagsHint")}>
           <input
             className="input"
             value={tags}

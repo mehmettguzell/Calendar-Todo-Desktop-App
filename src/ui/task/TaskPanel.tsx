@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AlarmClock, Play, Square, Trash2, X, ArrowLeft } from "lucide-react";
 import { formatTracked } from "@/domain/datetime";
+import { cn } from "@/lib/cn";
+import { useI18n } from "@/lib/i18n";
 import { PRIORITY_LABEL } from "@/domain/task";
 import { PRIORITIES, type Priority, type TaskInstance } from "@/domain/types";
 import {
@@ -45,7 +47,25 @@ export function TaskPanel({
   const runningFocus = useStore((s) => s.runningFocus);
   const categories = useCategories();
   const history = useTaskHistory(task.id);
+  const { t } = useI18n();
   const tracked = useTrackedSeconds(task.id);
+
+  /**
+   * How the estimate held up.
+   *
+   * Only shown once there is something to compare — an untouched timer would
+   * otherwise report every task as 100% under budget.
+   */
+  const estimateDelta = useMemo(() => {
+    const estimate = task.estimateMinutes ?? 0;
+    if (estimate <= 0 || tracked <= 0) return null;
+    const actual = Math.round(tracked / 60);
+    const ratio = Math.round((actual / estimate) * 100);
+    return {
+      over: actual > estimate,
+      label: `${actual}/${estimate} dk · %${ratio}`,
+    };
+  }, [task.estimateMinutes, tracked]);
   const parentTask = useTaskById(task.parentId);
 
   const [title, setTitle] = useState(task.title);
@@ -241,7 +261,7 @@ export function TaskPanel({
 
             <Switch
               checked={task.allDay}
-              label="All-day"
+              label={t("allDay")}
               onChange={(allDay) =>
                 updateTask(task.id, {
                   allDay,
@@ -287,7 +307,7 @@ export function TaskPanel({
           <div className="card-head">Organise</div>
           <div className="col" style={{ gap: 10 }}>
             <div className="field-row">
-              <Field label="Priority">
+              <Field label={t("formPriority")}>
                 <select
                   className="select"
                   value={task.priority}
@@ -304,7 +324,7 @@ export function TaskPanel({
                   ))}
                 </select>
               </Field>
-              <Field label="Category">
+              <Field label={t("formCategory")}>
                 <select
                   className="select"
                   value={task.categoryId ?? ""}
@@ -322,7 +342,7 @@ export function TaskPanel({
               </Field>
             </div>
 
-            <Field label="Tags" hint="Comma separated">
+            <Field label={t("formTags")} hint={t("formTagsHint")}>
               <input
                 className="input"
                 value={tagInput}
@@ -342,12 +362,12 @@ export function TaskPanel({
         </div>
 
         <div className="card">
-          <div className="card-head">Subtasks</div>
+          <div className="card-head">{t("formSubtasks")}</div>
           <SubtaskList parent={task} onOpen={onOpenTask} />
         </div>
 
         <div className="card">
-          <div className="card-head">Reminders</div>
+          <div className="card-head">{t("formReminders")}</div>
           <ReminderEditor task={task} />
         </div>
 
@@ -356,18 +376,54 @@ export function TaskPanel({
             Focus
             <span className="mono">{formatTracked(tracked)}</span>
           </div>
+
+          <Field label={t("formEstimate")}>
+            <div className="row" style={{ gap: 6 }}>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                step={5}
+                style={{ width: 96 }}
+                placeholder="—"
+                value={task.estimateMinutes ?? ""}
+                onChange={(e) =>
+                  updateTask(task.id, {
+                    estimateMinutes: e.target.value
+                      ? Math.max(0, Number(e.target.value))
+                      : null,
+                  })
+                }
+              />
+              <span className="faint" style={{ fontSize: 12 }}>
+                dk
+              </span>
+              {estimateDelta ? (
+                // Planned against actual, in one line. A record of how wrong
+                // the last twenty guesses were is the only thing that makes the
+                // next one better.
+                <span
+                  className={cn("estimate-delta", estimateDelta.over && "over")}
+                  title="Tahmin / gerçekleşen"
+                >
+                  {estimateDelta.label}
+                </span>
+              ) : null}
+            </div>
+          </Field>
+
           <button
             type="button"
             className={isFocused ? "btn danger" : "btn"}
             onClick={() => (isFocused ? stopFocus() : startFocus(instance))}
           >
             {isFocused ? <Square size={14} /> : <Play size={14} />}
-            {isFocused ? "Stop timer" : "Start focus timer"}
+            {isFocused ? t("formStopTimer") : t("formStartTimer")}
           </button>
         </div>
 
         <div className="card">
-          <div className="card-head">History</div>
+          <div className="card-head">{t("formHistory")}</div>
           <HistoryTimeline entries={history} />
         </div>
       </div>

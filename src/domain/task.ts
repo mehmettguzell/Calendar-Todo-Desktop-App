@@ -1,4 +1,4 @@
-import { atTime, fromInstant, toLocalDate } from "./datetime";
+import { atTime, daysBetween, fromInstant, toLocalDate } from "./datetime";
 import { instanceKey, occurrenceId } from "./ids";
 import { expandOccurrences } from "./recurrence";
 import type {
@@ -8,6 +8,7 @@ import type {
   StoredStatus,
   Task,
   TaskInstance,
+  TaskSpan,
   TaskStatus,
 } from "./types";
 
@@ -38,11 +39,40 @@ export function effectiveStatus(
  * The moment a task stops being "on time".
  * All-day tasks are late once the day is over, timed tasks once they end
  * (or start, when no end time is given).
+ *
+ * A multi-day task has ONE deadline — the end of its last day — shared by every
+ * date it is drawn on. Judging each day separately would paint the opening days
+ * of a still-running August 25-28 task as OVERDUE while it is perfectly on time.
  */
 export function deadlineOf(task: Task, date: LocalDate | null): Date | null {
   if (!date) return null;
-  if (task.allDay || !task.startTime) return atTime(date, "23:59");
-  return atTime(date, task.endTime ?? task.startTime);
+  const lastDay = spanEnd(task) ?? date;
+  const on = task.recurrence ? date : lastDay > date ? lastDay : date;
+  if (task.allDay || !task.startTime) return atTime(on, "23:59");
+  return atTime(on, task.endTime ?? task.startTime);
+}
+
+/** Last day a non-recurring task covers, or `null` when it covers only one. */
+export function spanEnd(task: Pick<Task, "dueDate" | "endDate" | "recurrence">): LocalDate | null {
+  if (task.recurrence || !task.dueDate) return null;
+  const end = task.endDate ?? null;
+  return end && end > task.dueDate ? end : null;
+}
+
+/** How this date sits inside the task's `dueDate`..`endDate` range. */
+export function spanOf(task: Task, date: LocalDate | null): TaskSpan {
+  const end = spanEnd(task);
+  if (!end || !date || !task.dueDate) {
+    return { length: 1, index: 0, isStart: true, isEnd: true };
+  }
+  const length = daysBetween(task.dueDate, end) + 1;
+  const index = daysBetween(task.dueDate, date);
+  return {
+    length,
+    index,
+    isStart: index <= 0,
+    isEnd: index >= length - 1,
+  };
 }
 
 /** Resolve one task on one date into the shape every view consumes. */
@@ -58,8 +88,12 @@ export function toInstance(
   const snoozedUntil = isRecurring && date ? (occurrence?.snoozedUntil ?? null) : task.snoozedUntil;
 
   const timed = !task.allDay && task.startTime !== null && date !== null;
+  const span = spanOf(task, date);
   return {
-    key: instanceKey(task.id, date, isRecurring),
+    // Every rendered day of a multi-day task needs its own React key, but the
+    // *mutation* target stays the single task row — see `refOf` in the store.
+    key: instanceKey(task.id, date, isRecurring || span.length > 1),
+    span,
     task,
     date,
     isRecurring,

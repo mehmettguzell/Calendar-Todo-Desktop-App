@@ -12,6 +12,7 @@ import {
   useInstancesInRange,
   type Filters,
 } from "@/state/selectors";
+import { useI18n } from "@/lib/i18n";
 import { useNow, useStore } from "@/state/store";
 import { useElapsedSeconds } from "@/services/scheduler";
 import { Empty } from "@/ui/components/primitives";
@@ -30,6 +31,7 @@ export function FocusView({
   selectedKey: string | null;
   onOpen: (instance: TaskInstance) => void;
 }) {
+  const { t } = useI18n();
   const runningFocus = useStore((s) => s.runningFocus);
   const stopFocus = useStore((s) => s.stopFocus);
   const cancelFocus = useStore((s) => s.cancelFocus);
@@ -78,21 +80,21 @@ export function FocusView({
       <div className="stat-grid section">
         <div className="stat">
           <div className="value">{formatTracked(totals.todaySec)}</div>
-          <div className="label">Focused today</div>
+          <div className="label">{t("focusToday")}</div>
         </div>
         <div className="stat">
           <div className="value">{formatTracked(totals.allSec)}</div>
-          <div className="label">All time</div>
+          <div className="label">{t("focusAllTime")}</div>
         </div>
         <div className="stat">
           <div className="value">{totals.count}</div>
-          <div className="label">Sessions logged</div>
+          <div className="label">{t("focusSessions")}</div>
         </div>
       </div>
 
       <section className="section">
         <div className="section-head">
-          <h2>Today&rsquo;s tasks</h2>
+          <h2>{t("focusTodaysTasks")}</h2>
           <span className="count">{todays.length}</span>
         </div>
         <div className="task-list">
@@ -114,7 +116,7 @@ export function FocusView({
 
       <section className="section">
         <div className="section-head">
-          <h2>Recent sessions</h2>
+          <h2>{t("focusRecent")}</h2>
           <span className="count grow">{sessions.length}</span>
           {sessions.length > 0 ? (
             <button

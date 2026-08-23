@@ -1,15 +1,22 @@
 import { createId } from "@/domain/ids";
+import {
+  seedBudgetCategories,
+  type BudgetCategory,
+  type Transaction,
+} from "@/domain/money";
 import type {
   Category,
   FocusSession,
   HistoryEntry,
+  Instant,
   Occurrence,
   Reminder,
   Settings,
   Task,
+  Tombstone,
 } from "@/domain/types";
 
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 /** The whole application state as it is written to disk: one document. */
 export interface Database {
@@ -20,13 +27,41 @@ export interface Database {
   categories: Category[];
   history: HistoryEntry[];
   focusSessions: FocusSession[];
+  /** Ids that were hard-deleted, so a later sync cannot bring them back. */
+  tombstones: Tombstone[];
+  /** Budget: money in, money out, money set aside. */
+  transactions: Transaction[];
+  budgetCategories: BudgetCategory[];
   settings: Settings;
+}
+
+/**
+ * How long a tombstone is kept.
+ *
+ * Long enough that a device left switched off over a holiday still learns the
+ * row is gone, short enough that the list never becomes a second task table.
+ */
+export const TOMBSTONE_TTL_DAYS = 90;
+
+export function pruneTombstones(
+  tombstones: Tombstone[],
+  now: Date = new Date(),
+): Tombstone[] {
+  const cutoff = new Date(
+    now.getTime() - TOMBSTONE_TTL_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  return tombstones.filter((t) => t.at >= cutoff);
+}
+
+export function tombstone(kind: Tombstone["kind"], id: string, at: Instant): Tombstone {
+  return { kind, id, at };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
-  language: "en",
+  language: "tr",
   weekStartsOn: 1,
+  currency: "TRY",
   defaultReminderOffset: 10,
   dayStartHour: 7,
   dayEndHour: 22,
@@ -54,8 +89,28 @@ export function emptyDatabase(): Database {
     categories: defaultCategories(),
     history: [],
     focusSessions: [],
+    tombstones: [],
+    transactions: [],
+    budgetCategories: defaultBudgetCategories(),
     settings: { ...DEFAULT_SETTINGS },
   };
+}
+
+/**
+ * The seeded budget labels.
+ *
+ * Created once, then owned by the user: renaming or deleting one is an ordinary
+ * edit, and anything they type becomes a permanent category of their own.
+ */
+export function defaultBudgetCategories(
+  language: "tr" | "en" = DEFAULT_SETTINGS.language ?? "en",
+): BudgetCategory[] {
+  const at = new Date().toISOString();
+  return seedBudgetCategories(language).map((seed) => ({
+    ...seed,
+    id: createId("b"),
+    updatedAt: at,
+  }));
 }
 
 function defaultCategories(): Category[] {
@@ -128,15 +183,76 @@ export function migrate(raw: unknown): Database {
     version: DB_VERSION,
     tasks: cleanTasks,
     occurrences: Array.isArray(doc.occurrences)
-      ? doc.occurrences
+      ? doc.occurrences.map(normaliseOccurrence)
       : base.occurrences,
-    reminders: Array.isArray(doc.reminders) ? doc.reminders : base.reminders,
+    reminders: Array.isArray(doc.reminders)
+      ? doc.reminders.map(normaliseReminder)
+      : base.reminders,
     categories: cleanCategories,
     history: Array.isArray(doc.history) ? doc.history : base.history,
     focusSessions: Array.isArray(doc.focusSessions)
       ? doc.focusSessions
       : base.focusSessions,
+    tombstones: Array.isArray(doc.tombstones)
+      ? pruneTombstones(doc.tombstones)
+      : base.tombstones,
+    transactions: Array.isArray(doc.transactions)
+      ? doc.transactions.map(normaliseTransaction)
+      : base.transactions,
+    // An older document has no budget yet, so it gets the seeded set. An empty
+    // array is a deliberate state (the user deleted them all) and is kept.
+    budgetCategories: Array.isArray(doc.budgetCategories)
+      ? doc.budgetCategories.map(normaliseBudgetCategory)
+      : defaultBudgetCategories(doc.settings?.language ?? "en"),
     settings: { ...DEFAULT_SETTINGS, ...(doc.settings ?? {}) },
+  };
+}
+
+/**
+ * Documents written before occurrences carried a timestamp get one now.
+ *
+ * The epoch is deliberate: a row with no recorded edit time must lose every
+ * conflict against a row that has one, rather than win by accident.
+ */
+const EPOCH = new Date(0).toISOString();
+
+function normaliseOccurrence(occurrence: Occurrence): Occurrence {
+  return { ...occurrence, updatedAt: occurrence.updatedAt ?? EPOCH };
+}
+
+function normaliseReminder(reminder: Reminder): Reminder {
+  return {
+    ...reminder,
+    updatedAt: reminder.updatedAt ?? reminder.createdAt ?? EPOCH,
+  };
+}
+
+function normaliseTransaction(t: Transaction): Transaction {
+  return {
+    ...t,
+    amountMinor: Math.round(Number(t.amountMinor) || 0),
+    note: t.note ?? "",
+    flow: t.flow ?? "EXPENSE",
+    categoryId: t.categoryId ?? null,
+    recurrence: t.recurrence ?? null,
+    recurrenceSourceId: t.recurrenceSourceId ?? null,
+    lastGeneratedFor: t.lastGeneratedFor ?? null,
+    deletedAt: t.deletedAt ?? null,
+    updatedAt: t.updatedAt ?? t.createdAt ?? EPOCH,
+  };
+}
+
+function normaliseBudgetCategory(c: BudgetCategory): BudgetCategory {
+  return {
+    ...c,
+    name: (c.name ?? "").trim(),
+    flow: c.flow ?? "EXPENSE",
+    icon: c.icon ?? "•",
+    builtIn: Boolean(c.builtIn),
+    order: typeof c.order === "number" ? c.order : 0,
+    monthlyLimitMinor:
+      typeof c.monthlyLimitMinor === "number" ? c.monthlyLimitMinor : null,
+    updatedAt: c.updatedAt ?? EPOCH,
   };
 }
 
@@ -152,6 +268,8 @@ function normaliseTask(task: Task): Task {
     parentId: task.parentId ?? null,
     categoryId: task.categoryId ?? null,
     recurrence: task.recurrence ?? null,
+    estimateMinutes:
+      typeof task.estimateMinutes === "number" ? task.estimateMinutes : null,
     snoozedUntil: task.snoozedUntil ?? null,
     completedAt: task.completedAt ?? null,
     deletedAt: task.deletedAt ?? null,

@@ -11,6 +11,7 @@ import {
   Target,
   StickyNote,
   Trash2,
+  Wallet,
 } from "lucide-react";
 import { addDaysLocal, toLocalDate } from "@/domain/datetime";
 import { CATEGORY_COLORS } from "@/data/db";
@@ -38,7 +39,8 @@ export type ViewId =
   | "tasks"
   | "plans"
   | "notes"
-  | "focus";
+  | "focus"
+  | "budget";
 
 const NAV: { id: ViewId; labelKey: TranslationKey; icon: typeof Sun }[] = [
   { id: "today", labelKey: "navToday", icon: Sun },
@@ -47,6 +49,7 @@ const NAV: { id: ViewId; labelKey: TranslationKey; icon: typeof Sun }[] = [
   { id: "plans", labelKey: "navPlans", icon: Target },
   { id: "notes", labelKey: "navNotes", icon: StickyNote },
   { id: "focus", labelKey: "navFocus", icon: Timer },
+  { id: "budget", labelKey: "navBudget", icon: Wallet },
 ];
 
 export function Sidebar({

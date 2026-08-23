@@ -131,7 +131,7 @@ export function TasksView({
       <div className="task-summary-banner section">
         <div className="task-summary-stat">
           <div className="task-summary-val">{stats.open}</div>
-          <div className="task-summary-lbl">Açık Görev</div>
+          <div className="task-summary-lbl">{t("tasksOpen")}</div>
         </div>
         <div className="task-summary-stat">
           <div
@@ -140,7 +140,7 @@ export function TasksView({
           >
             {stats.high}
           </div>
-          <div className="task-summary-lbl">Yüksek Öncelik 🔥</div>
+          <div className="task-summary-lbl">{t("tasksHighPriority")}</div>
         </div>
         <div className="task-summary-stat">
           <div
@@ -149,13 +149,13 @@ export function TasksView({
           >
             {stats.overdue}
           </div>
-          <div className="task-summary-lbl">Gecikenler ⚠️</div>
+          <div className="task-summary-lbl">{t("tasksOverdue")}</div>
         </div>
         <div className="task-summary-stat">
           <div className="task-summary-val" style={{ color: "var(--success)" }}>
             {stats.done}
           </div>
-          <div className="task-summary-lbl">Tamamlananlar ✅</div>
+          <div className="task-summary-lbl">{t("tasksCompleted")}</div>
         </div>
       </div>
 
@@ -412,6 +412,7 @@ function PriorityKanbanView({
   onOpen: (instance: TaskInstance) => void;
   now: Date;
 }) {
+  const { t } = useI18n();
   return (
     <div className="kanban-grid">
       {PRIORITY_COLUMNS.map((col) => {
@@ -426,7 +427,7 @@ function PriorityKanbanView({
 
             <div className="kanban-cards-list">
               {colTasks.length === 0 ? (
-                <div className="kanban-empty-slot">Görev yok</div>
+                <div className="kanban-empty-slot">{t("tasksNone")}</div>
               ) : (
                 colTasks.map((t) => {
                   const instance = toInstance(t, t.dueDate, null, now);
@@ -461,9 +462,10 @@ function CategoryKanbanView({
   onOpen: (instance: TaskInstance) => void;
   now: Date;
 }) {
+  const { t } = useI18n();
   const allColumns = [
     ...categories,
-    { id: "uncategorized", name: "Kategorisiz", color: "var(--border-strong)" },
+    { id: "uncategorized", name: t("budgetUncategorised"), color: "var(--border-strong)" },
   ];
 
   return (
@@ -483,7 +485,7 @@ function CategoryKanbanView({
 
             <div className="kanban-cards-list">
               {colTasks.length === 0 ? (
-                <div className="kanban-empty-slot">Görev yok</div>
+                <div className="kanban-empty-slot">{t("tasksNone")}</div>
               ) : (
                 colTasks.map((t) => {
                   const instance = toInstance(t, t.dueDate, null, now);

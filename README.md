@@ -4,6 +4,13 @@ A Tauri v2 + React + TypeScript desktop app built to the specification in
 [claude.md](claude.md). Calendar and Todo are two views of one `Task` record,
 never two record types.
 
+Also in the box: multi-day tasks, natural-language capture, a command palette,
+reminders that keep firing after you close the window, one-step undo,
+cross-device sync that survives being offline, and a budget ledger over the same
+document. Why each of those exists — and what was deliberately left out — is in
+[MARKET-GAPS.md](MARKET-GAPS.md); the calls behind the tricky ones are in
+[DECISIONS.md](DECISIONS.md).
+
 ## Setup
 
 ### Prerequisites
@@ -106,7 +113,7 @@ src/
   state/      the single zustand store, and read-side projections
   services/   desktop notifications, the reminder scheduler
   ui/         views and components, all reading the same projections
-src-tauri/    Rust host: window, notification plugin, store plugin
+src-tauri/    Rust host: window, notifications, per-account data files
 ```
 
 The dependency direction is strictly one-way: `ui → state → domain`, with
@@ -124,6 +131,7 @@ Every view calls the same projection functions in `state/selectors.ts`:
 | Tasks (Todo)    | `useTodoGroups()`                                 |
 | Search          | the same projections, with a `query` filter        |
 | Reminders       | `collectDueReminders()` over the same rows         |
+| Command palette | the same task list, filtered by the query          |
 
 None of them own data. Completing a task in the calendar and completing it in
 the Todo list are the same call into the same store, so the two cannot drift.
@@ -186,6 +194,66 @@ debounced, so the UI never waits on disk. The browser build swaps in a
 `localStorage` adapter. Moving to SQLite later means one new adapter and one
 changed line in `createRepository.ts`.
 
+### Sync
+
+One local document per account, and one stated rule for what happens when two
+devices moved the same row: **row-level last-write-wins on `updated_at`, ties to
+the cloud**, purges recorded as tombstones that always win. Local writes are the
+commit; the cloud is a replica that catches up, so being offline never blocks an
+edit and never signs anyone out. See [DECISIONS.md](DECISIONS.md) §11–§14.
+
+To enable it, run [supabase/schema.sql](supabase/schema.sql) in the Supabase SQL
+editor. It is re-runnable, so running it again after an update is how new tables
+and columns arrive. A project that has not run the latest version keeps working
+— the engine notices a missing table and syncs everything else rather than
+failing the whole pass.
+
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env`. Without them the
+app runs fully locally with sync switched off.
+
+**Password reset** uses the six-digit code from the recovery e-mail, because a
+browser cannot hand a session back to a desktop window. For it to work, add
+`{{ .Token }}` to the Supabase **Reset Password** e-mail template (Authentication
+→ Email Templates) — the default template only contains the link.
+
+### It keeps running after you close it
+
+Closing the window hides Tempo to the system tray rather than quitting it, so a
+reminder set this morning still arrives this evening. The tray menu opens it,
+captures a task, or quits for real. Settings can also start it with Windows.
+
+`Ctrl + Shift + Space` captures a task **from anywhere**, even when the window is
+closed — the natural-language parser is what makes that one keystroke and one
+line rather than a form.
+
+The reminder clock is driven by a native thread rather than a browser timer:
+WebView2 throttles timers in a hidden window, which is exactly when accuracy
+matters. See [DECISIONS.md](DECISIONS.md) §17.
+
+### Undo
+
+`Ctrl/Cmd + Z`, or the toast that appears for eight seconds, takes back the last
+delete, completion, roll-over or budget change. One step deep, deliberately —
+[DECISIONS.md](DECISIONS.md) §18.
+
+### Export
+
+Settings → Export writes the whole document as JSON, the calendar as `.ics`, and
+tasks or the budget ledger as CSV. No account and no connection needed.
+
+### Budget
+
+`domain/money.ts` holds income, expense and investment over the same store.
+Amounts are integer minor units (kuruş/cents) and never floats, because a
+monthly total that is a few kuruş out is a budget nobody trusts twice.
+Categories start as a seeded set and grow from whatever the user types, and each
+can carry a monthly ceiling that warns at 80% and flags going over.
+
+An entry can repeat — rent, salary, insurance. The rule makes it a template, and
+the entries it owes are produced as real, editable rows when the budget is
+opened, catching up on however long the app was closed. February's rent being
+different is then a one-field edit rather than a special case.
+
 ## Testing
 
 - `src/domain/__tests__/` — status derivation, snooze semantics, recurrence
@@ -197,7 +265,42 @@ changed line in `createRepository.ts`.
   completes it everywhere, and rescheduling records history.
 - `src/test/destructiveActions.test.ts` — that emptying the trash, clearing the
   activity trail and resetting each stop exactly where they are meant to.
+- `src/domain/__tests__/multiDay.test.ts` — a task with an end date lands on
+  every day it covers, as one row, and is not painted overdue mid-run.
+- `src/domain/__tests__/naturalLanguage.test.ts` — what the quick-add parser
+  understands in Turkish and English, and what it refuses to guess at.
+- `src/domain/__tests__/notification.test.ts` — what a reminder banner says, and
+  every case where it must stay silent.
+- `src/domain/__tests__/money.test.ts` — amount parsing in both decimal
+  conventions, period windows, and totals that never lose a kuruş.
+- `src/test/rollOver.test.ts` — moving yesterday's unfinished work forward, and
+  everything it must refuse to move.
+- `src/test/undo.test.ts` — that each reversal restores exactly the prior state,
+  through the ordinary store action, one step deep.
+- `src/test/syncMerge.test.ts` — the conflict rule itself: newer wins, ties go to
+  the cloud, tombstones are never overruled.
+- `src/test/accountIsolation.test.ts` — that a second account on the same machine
+  cannot see the first one's work.
+- `src/domain/__tests__/budgetRecurring.test.ts` — repeating entries are
+  idempotent, resume where they stopped, and never run ahead of today.
+- `src/domain/__tests__/export.test.ts` — valid iCalendar, and CSV that cannot
+  smuggle a formula into someone else's spreadsheet.
 
 ## Keyboard
 
-`n` new task · `t` jump to today · `Esc` close the detail panel
+`Ctrl/Cmd+K` command palette · `n` new task · `t` jump to today · `Esc` close
+
+### Quick add understands plain language
+
+Type it the way you would say it — Turkish and English, mixed freely:
+
+```
+yarın 14:00-16:00 proje sunumu hazırla #iş !1 @ofis ~90dk
+every monday standup at 9am #work
+25 Ağustos Berlin konferansı
+```
+
+`#` category · `@` tag · `!1`–`!4` or `!yüksek` priority · `~90dk` estimate ·
+`her salı` / `every week` recurrence. Whatever it understood is shown as chips
+before the task is created, and anything it does not understand is simply left
+in the title.

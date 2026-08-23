@@ -2,12 +2,33 @@ import {
   addDays,
   addMinutes,
   differenceInCalendarDays,
-  format,
+  format as formatDateFns,
   isValid,
   parse,
   startOfDay,
 } from "date-fns";
+import { enUS, tr } from "date-fns/locale";
 import type { Instant, LocalDate, LocalTime } from "./types";
+
+/**
+ * Month and weekday names follow the app's language.
+ *
+ * Held as module state rather than threaded through every call: date
+ * formatting happens in about forty places, and a locale parameter on each of
+ * them would be forty chances to forget one — which is exactly how an interface
+ * ends up half translated.
+ */
+const LOCALES = { tr, en: enUS } as const;
+let activeLocale: (typeof LOCALES)[keyof typeof LOCALES] = LOCALES.en;
+
+export function setDateLocale(language: "tr" | "en"): void {
+  activeLocale = LOCALES[language] ?? LOCALES.en;
+}
+
+/** `date-fns.format`, always with the active locale. */
+function format(date: Date, pattern: string): string {
+  return formatDateFns(date, pattern, { locale: activeLocale });
+}
 
 export const DATE_FMT = "yyyy-MM-dd";
 export const TIME_FMT = "HH:mm";
@@ -96,16 +117,22 @@ export function describeWhen(
 ): string {
   if (!date) return "No date";
   const diff = daysBetween(toLocalDate(reference), date);
+  const relative = RELATIVE_DAY_LABELS[activeLocale === LOCALES.tr ? "tr" : "en"];
   const dayLabel =
     diff === 0
-      ? "Today"
+      ? relative.today
       : diff === 1
-        ? "Tomorrow"
+        ? relative.tomorrow
         : diff === -1
-          ? "Yesterday"
+          ? relative.yesterday
           : format(fromLocalDate(date), Math.abs(diff) < 300 ? "EEE, d MMM" : "d MMM yyyy");
-  return time ? `${dayLabel} at ${time}` : dayLabel;
+  return time ? `${dayLabel} ${relative.at} ${time}` : dayLabel;
 }
+
+const RELATIVE_DAY_LABELS = {
+  tr: { today: "Bugün", tomorrow: "Yarın", yesterday: "Dün", at: "saat" },
+  en: { today: "Today", tomorrow: "Tomorrow", yesterday: "Yesterday", at: "at" },
+} as const;
 
 export function formatDate(date: LocalDate, pattern: string): string {
   return format(fromLocalDate(date), pattern);

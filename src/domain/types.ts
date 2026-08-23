@@ -65,6 +65,14 @@ export interface Task {
   recurrence: Recurrence | null;
   /** Suppresses the task from active lists/reminders until this instant. */
   snoozedUntil: Instant | null;
+  /**
+   * How long the user thinks this will take, in minutes.
+   *
+   * Paired with the focus timer, this is what turns time tracking into
+   * something useful: a record of how wrong the last twenty estimates were is
+   * the only thing that ever makes the next one better.
+   */
+  estimateMinutes?: number | null;
   /** Manual sort position within a day / list. */
   order: number;
   createdAt: Instant;
@@ -88,6 +96,8 @@ export interface Occurrence {
   status: StoredStatus;
   completedAt: Instant | null;
   snoozedUntil: Instant | null;
+  /** Conflict tie-breaker when two devices touch the same occurrence. */
+  updatedAt: Instant;
 }
 
 export type ReminderKind = "RELATIVE" | "ABSOLUTE";
@@ -107,6 +117,8 @@ export interface Reminder {
   /** Recurring series: the last occurrence date this reminder already fired for. */
   lastFiredFor: LocalDate | null;
   createdAt: Instant;
+  /** Conflict tie-breaker when two devices touch the same reminder. */
+  updatedAt: Instant;
 }
 
 export type HistoryKind =
@@ -157,6 +169,8 @@ export interface Settings {
   language?: "tr" | "en";
   /** 0 = Sunday, 1 = Monday. */
   weekStartsOn: 0 | 1;
+  /** ISO 4217 code the budget view formats amounts in. */
+  currency?: string;
   /** Default RELATIVE reminder offset offered in the editor. */
   defaultReminderOffset: number;
   /** Visible hour range in week/day grids. */
@@ -189,6 +203,38 @@ export interface TaskInstance {
   /** Resolved local datetimes, `null` for all-day or unscheduled tasks. */
   startsAt: Date | null;
   endsAt: Date | null;
+  /**
+   * Where this date sits inside a multi-day task (`dueDate`..`endDate`).
+   *
+   * A one-day task is `{ length: 1, index: 0 }`, so views can treat every
+   * instance the same and only branch on `length > 1` when they want to draw a
+   * continuation bar.
+   */
+  span: TaskSpan;
+}
+
+/** Position of one rendered date within a task's `dueDate`..`endDate` range. */
+export interface TaskSpan {
+  /** Total number of days the task covers. Always >= 1. */
+  length: number;
+  /** 0-based offset of this instance's date inside the range. */
+  index: number;
+  isStart: boolean;
+  isEnd: boolean;
+}
+
+/**
+ * A record of something that was hard-deleted.
+ *
+ * A soft delete travels as an ordinary field change, but a *purge* removes the
+ * row entirely — and a row that is simply absent is indistinguishable from one
+ * this device has never seen, so the next sync would download it straight back.
+ * The tombstone is what makes "gone" a fact rather than an absence.
+ */
+export interface Tombstone {
+  kind: "task" | "category" | "reminder" | "occurrence" | "transaction";
+  id: string;
+  at: Instant;
 }
 
 /** Identifies the mutation target: a task, optionally one of its occurrences. */

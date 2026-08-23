@@ -4,27 +4,37 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  CloudOff,
   Plus,
   RefreshCw,
   Search,
 } from "lucide-react";
 import { formatErrorMessage } from "@/lib/errors";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { useAuthStore } from "@/state/authStore";
 import type { Filters } from "@/state/selectors";
 import { syncDifferences } from "@/state/syncEngine";
+import { useSyncStore, type SyncPhase } from "@/state/syncStore";
 import type { CalendarMode } from "./views/CalendarView";
 import type { ViewId } from "./Sidebar";
 import { Switch } from "./components/primitives";
 
-const MODES: { id: CalendarMode; label: string }[] = [
-  { id: "month", label: "Month" },
-  { id: "week", label: "Week" },
-  { id: "day", label: "Day" },
+const MODES: { id: CalendarMode; labelKey: TranslationKey }[] = [
+  { id: "month", labelKey: "calMonth" },
+  { id: "week", labelKey: "calWeek" },
+  { id: "day", labelKey: "calDay" },
 ];
 
+/**
+ * "Sync with server", with the outcome always visible.
+ *
+ * Three things this has to get right, because they are the ways a sync button
+ * loses the user's trust: it must never spin forever (every request carries a
+ * timeout), it must say what went wrong rather than fail silently, and it must
+ * make clear that being offline is not data loss — local edits are already
+ * saved and will go up on their own.
+ */
 function SyncButton() {
-  const [syncing, setSyncing] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error" | "info";
     text: string;
@@ -32,7 +42,14 @@ function SyncButton() {
   const user = useAuthStore((s) => s.user);
   const session = useAuthStore((s) => s.session);
   const openAuthModal = useAuthStore((s) => s.openAuthModal);
+  const phase = useSyncStore((s) => s.phase);
+  const pending = useSyncStore((s) => s.pendingWrites);
+  const lastSyncedAt = useSyncStore((s) => s.lastSyncedAt);
+  const lastError = useSyncStore((s) => s.lastError);
+  const realtime = useSyncStore((s) => s.realtime);
   const { t } = useI18n();
+
+  const syncing = phase === "syncing";
 
   const handleSync = async () => {
     const isAuthed = Boolean(user || session?.user);
@@ -41,61 +58,48 @@ function SyncButton() {
       return;
     }
 
-    setSyncing(true);
     setFeedback(null);
+    // `syncDifferences` resolves with a report instead of throwing, and every
+    // request inside it is bounded, so there is no path where this never
+    // returns. The try/catch is for the impossible one.
     try {
       const report = await syncDifferences();
       if (!report.success) {
-        if (report.error === "OFFLINE") {
-          setFeedback({
-            type: "info",
-            text: t("syncOfflineNotice"),
-          });
-        } else {
-          setFeedback({
-            type: "error",
-            text: report.error || "Eşitleme başarısız oldu.",
-          });
-        }
+        setFeedback(
+          report.error === "OFFLINE"
+            ? { type: "info", text: t("syncOfflineNotice") }
+            : { type: "error", text: report.error || t("syncFailed") },
+        );
       } else if (report.totalDifferences === 0) {
-        setFeedback({
-          type: "success",
-          text: t("syncUpToDate"),
-        });
+        setFeedback({ type: "success", text: t("syncUpToDate") });
       } else {
         const parts: string[] = [];
-        if (report.uploadedTasks > 0) parts.push(`${report.uploadedTasks} görev yüklendi`);
-        if (report.downloadedTasks > 0) parts.push(`${report.downloadedTasks} görev indirildi`);
-        if (report.uploadedCategories > 0) parts.push(`${report.uploadedCategories} kategori yüklendi`);
-        if (report.downloadedCategories > 0) parts.push(`${report.downloadedCategories} kategori indirildi`);
-
-        setFeedback({
-          type: "success",
-          text: `${t("syncSuccess")} ${parts.join(", ")}`,
-        });
+        if (report.uploadedTasks > 0) parts.push(`${report.uploadedTasks} ${t("syncTasksUp")}`);
+        if (report.downloadedTasks > 0) parts.push(`${report.downloadedTasks} ${t("syncTasksDown")}`);
+        if (report.uploadedCategories > 0) parts.push(`${report.uploadedCategories} ${t("syncCatsUp")}`);
+        if (report.downloadedCategories > 0) parts.push(`${report.downloadedCategories} ${t("syncCatsDown")}`);
+        setFeedback({ type: "success", text: `${t("syncSuccess")} ${parts.join(", ")}` });
       }
     } catch (err: unknown) {
-      const errorMsg = formatErrorMessage(err);
-      setFeedback({
-        type: "error",
-        text: `Hata: ${errorMsg}`,
-      });
+      setFeedback({ type: "error", text: formatErrorMessage(err) });
     } finally {
-      setSyncing(false);
-      setTimeout(() => {
-        setFeedback(null);
-      }, 4000);
+      setTimeout(() => setFeedback(null), 5000);
     }
   };
+
+  const status = describeSyncStatus(
+    { phase, pending, lastSyncedAt, lastError, realtime },
+    t,
+  );
 
   return (
     <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
       <button
         type="button"
-        className="btn ghost sm"
+        className="btn ghost sm sync-btn"
         onClick={handleSync}
         disabled={syncing}
-        title={t("syncWithServer")}
+        title={status.tooltip}
         style={{
           gap: 6,
           fontWeight: 500,
@@ -104,13 +108,21 @@ function SyncButton() {
           borderRadius: "var(--radius-md)",
         }}
       >
+        <span
+          className="sync-dot"
+          aria-hidden
+          style={{ background: status.color }}
+        />
         <RefreshCw
           size={14}
-          style={{
-            animation: syncing ? "spin 1s linear infinite" : undefined,
-          }}
+          style={{ animation: syncing ? "spin 1s linear infinite" : undefined }}
         />
         <span>{syncing ? t("syncing") : t("syncWithServer")}</span>
+        {pending > 0 && !syncing ? (
+          <span className="sync-pending" title={t("syncPendingHint")}>
+            {pending}
+          </span>
+        ) : null}
       </button>
 
       {feedback && (
@@ -126,7 +138,7 @@ function SyncButton() {
             borderRadius: 8,
             padding: "8px 12px",
             fontSize: 12,
-            whiteSpace: "nowrap",
+            maxWidth: 340,
             boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
             display: "flex",
             alignItems: "center",
@@ -135,12 +147,55 @@ function SyncButton() {
           }}
         >
           {feedback.type === "success" && <Check size={14} color="#10b981" />}
-          {feedback.type === "error" && <AlertCircle size={14} />}
+          {feedback.type === "error" && <AlertCircle size={14} style={{ flex: "none" }} />}
+          {feedback.type === "info" && <CloudOff size={14} style={{ flex: "none" }} />}
           <span>{feedback.text}</span>
         </div>
       )}
     </div>
   );
+}
+
+/** One colour and one sentence for whatever the sync layer is doing. */
+function describeSyncStatus(
+  s: {
+    phase: SyncPhase;
+    pending: number;
+    lastSyncedAt: number | null;
+    lastError: string | null;
+    realtime: "connected" | "connecting" | "down";
+  },
+  t: (key: TranslationKey) => string,
+): { color: string; tooltip: string } {
+  const last =
+    s.lastSyncedAt !== null
+      ? `${t("syncLastAt")} ${new Date(s.lastSyncedAt).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`
+      : t("syncNeverYet");
+
+  switch (s.phase) {
+    case "syncing":
+      return { color: "#3b82f6", tooltip: t("syncing") };
+    case "offline":
+      return { color: "#f59e0b", tooltip: `${t("syncOfflineNotice")} · ${last}` };
+    case "error":
+      return {
+        color: "#ef4444",
+        tooltip: `${s.lastError ?? t("syncFailed")} · ${last}`,
+      };
+    case "disabled":
+      return { color: "var(--text-faint)", tooltip: t("syncLoginRequired") };
+    default:
+      return {
+        color: s.realtime === "connected" ? "#10b981" : "#94a3b8",
+        tooltip:
+          (s.realtime === "connected" ? `${t("syncLive")} · ` : "") +
+          last +
+          (s.pending > 0 ? ` · ${s.pending} ${t("syncPendingHint")}` : ""),
+      };
+  }
 }
 
 export function Topbar({
@@ -201,7 +256,7 @@ export function Topbar({
                 aria-pressed={mode === m.id}
                 onClick={() => onMode(m.id)}
               >
-                {m.label}
+                {t(m.labelKey)}
               </button>
             ))}
           </div>

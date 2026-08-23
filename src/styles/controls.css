@@ -199,3 +199,116 @@
 
 .popover button.menu-item:hover { background: var(--surface-hover); }
 .popover hr { margin: var(--space-1) 0; border: none; border-top: 1px solid var(--border); }
+
+/* Sync button ------------------------------------------------------------- */
+/* The dot carries the state at a glance; the tooltip carries the detail. */
+.sync-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.sync-pending {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.sync-btn:disabled {
+  opacity: 0.75;
+  cursor: progress;
+}
+
+/* Natural-language quick add ---------------------------------------------- */
+/* What the parser understood, shown before the task is created rather than
+   discovered afterwards. */
+.nlp-chips {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.nlp-chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 15%, transparent));
+  color: var(--accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.nlp-chip-title {
+  max-width: 100%;
+  color: var(--text-faint);
+}
+
+/* Planned vs actual ------------------------------------------------------- */
+.estimate-delta {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #22c55e 16%, transparent);
+  color: #22c55e;
+  font-size: 11.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.estimate-delta.over {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+
+/* Desktop settings -------------------------------------------------------- */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.settings-heading {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.shortcut-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.export-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.export-buttons .btn { gap: 5px; }

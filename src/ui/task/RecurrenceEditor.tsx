@@ -1,5 +1,6 @@
 import { describeRecurrence, WEEKDAY_SHORT } from "@/domain/recurrence";
 import type { Recurrence, RecurrenceFreq } from "@/domain/types";
+import { useI18n } from "@/lib/i18n";
 import { Field } from "@/ui/components/primitives";
 
 const FREQS: { id: RecurrenceFreq; label: string }[] = [
@@ -23,6 +24,7 @@ export function RecurrenceEditor({
   value: Recurrence | null;
   onChange: (next: Recurrence | null) => void;
 }) {
+  const { t } = useI18n();
   const rule = value;
 
   const patch = (changes: Partial<Recurrence>) => {
@@ -31,7 +33,7 @@ export function RecurrenceEditor({
 
   return (
     <div className="col" style={{ gap: 10 }}>
-      <Field label="Repeat">
+      <Field label={t("formRepeat")}>
         <select
           className="select"
           value={rule?.freq ?? "NONE"}
@@ -41,7 +43,7 @@ export function RecurrenceEditor({
               : patch({ freq: e.target.value as RecurrenceFreq })
           }
         >
-          <option value="NONE">Does not repeat</option>
+          <option value="NONE">{t("formNoRepeat")}</option>
           {FREQS.map((f) => (
             <option key={f.id} value={f.id}>
               {f.label}
@@ -53,7 +55,7 @@ export function RecurrenceEditor({
       {rule ? (
         <>
           <div className="field-row">
-            <Field label="Every">
+            <Field label={t("formEvery")}>
               <input
                 className="input"
                 type="number"
@@ -63,7 +65,7 @@ export function RecurrenceEditor({
                 onChange={(e) => patch({ interval: Math.max(1, Number(e.target.value) || 1) })}
               />
             </Field>
-            <Field label="Ends on">
+            <Field label={t("formEndsOn")}>
               <input
                 className="input"
                 type="date"
@@ -74,7 +76,7 @@ export function RecurrenceEditor({
           </div>
 
           {rule.freq === "WEEKLY" ? (
-            <Field label="On days">
+            <Field label={t("formOnDays")}>
               <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
                 {WEEKDAY_SHORT.map((label, index) => {
                   const active = rule.byWeekday?.includes(index) ?? false;

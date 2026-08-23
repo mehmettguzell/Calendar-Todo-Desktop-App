@@ -96,6 +96,32 @@
 .chip.done { opacity: 0.55; }
 .chip.done .chip-title { text-decoration: line-through; }
 .chip.overdue .chip-title { color: var(--danger); font-weight: 600; }
+/* Multi-day tasks: one bar per covered day, with the outer corners opened up
+   on the sides that continue so the run reads as a single stretch. */
+.chip.spanning { position: relative; }
+.chip.span-continued { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.chip.span-continues { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.chip.span-continued::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.5;
+}
+.chip .chip-span-count {
+  margin-left: auto;
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
 .chip-more { padding: 1px 5px; color: var(--text-muted); font-size: 11px; font-weight: 600; text-align: left; }
 .chip-more:hover { color: var(--text); }
 

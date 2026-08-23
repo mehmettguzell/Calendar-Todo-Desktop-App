@@ -1,10 +1,25 @@
 import { useEffect, useState } from "react";
-import { BellRing } from "lucide-react";
+import { BellRing, Download, Power } from "lucide-react";
 import { databasePath } from "@/data/fileStore";
 import { isTauri } from "@/lib/env";
 import { useI18n, type Language } from "@/lib/i18n";
 import { notify } from "@/services/notifications";
-import { useStore } from "@/state/store";
+import { CURRENCIES } from "@/domain/money";
+import { addDaysLocal, toLocalDate } from "@/domain/datetime";
+import {
+  exportBudgetCsv,
+  exportIcs,
+  exportJson,
+  exportTasksCsv,
+} from "@/domain/export";
+import { downloadFile } from "@/services/download";
+import {
+  isAutostartEnabled,
+  quitApp,
+  setAutostart as setAutostartEnabled,
+  QUICK_CAPTURE_SHORTCUT,
+} from "@/services/desktop";
+import { useNow, useStore } from "@/state/store";
 import { ConfirmButton, Field, Modal, Switch } from "./components/primitives";
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
@@ -60,6 +75,20 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         label={t("weekStartsOnMonday")}
         onChange={(monday) => updateSettings({ weekStartsOn: monday ? 1 : 0 })}
       />
+
+      <Field label={t("budgetCurrency")}>
+        <select
+          className="input"
+          value={settings.currency ?? "TRY"}
+          onChange={(e) => updateSettings({ currency: e.target.value })}
+        >
+          {CURRENCIES.map((code) => (
+            <option key={code} value={code}>
+              {code}
+            </option>
+          ))}
+        </select>
+      </Field>
 
       <div className="field-row">
         <Field label={t("dayStarts")} hint={t("dayStartsHint")}>
@@ -125,6 +154,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       <Field label={t("notifications")} hint={t("notificationsHint")}>
         <NotificationCheck />
       </Field>
+
+      <ExportSection />
+
+      <DesktopSection />
 
       <Field label={t("dataFile")} hint={t("dataFileHint")}>
         <input
@@ -216,9 +249,118 @@ function NotificationCheck() {
   );
 }
 
+/**
+ * Four buttons, no dialog.
+ *
+ * "Is my data mine?" is asked before someone commits to an app, not after, and
+ * the answer has to be demonstrable rather than promised — so it is one click
+ * from Settings with nothing in the way.
+ */
+function ExportSection() {
+  const { t } = useI18n();
+  const db = useStore((s) => s.db);
+  const now = useNow();
+  const today = toLocalDate(now);
+
+  // Ten years back and two forward: enough that no real calendar is clipped,
+  // bounded so a malformed rule cannot expand forever.
+  const range = { from: addDaysLocal(today, -3650), to: addDaysLocal(today, 730) };
+
+  const files = [
+    { key: "exportJson", build: () => exportJson(db, today) },
+    { key: "exportIcs", build: () => exportIcs(db, today, range) },
+    { key: "exportTasksCsv", build: () => exportTasksCsv(db, today) },
+    { key: "exportBudgetCsv", build: () => exportBudgetCsv(db, today) },
+  ] as const;
+
+  return (
+    <section className="settings-section">
+      <h3 className="settings-heading">{t("exportSection")}</h3>
+      <p className="faint" style={{ fontSize: 12, lineHeight: 1.5 }}>
+        {t("exportHint")}
+      </p>
+      <div className="export-buttons">
+        {files.map((file) => (
+          <button
+            key={file.key}
+            type="button"
+            className="btn sm"
+            onClick={() => downloadFile(file.build())}
+          >
+            <Download size={13} /> {t(file.key)}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Desktop-only behaviour, and the one place it is explained.
+ *
+ * "Closing the window does not quit" is surprising the first time it happens,
+ * so it is stated here rather than left to be discovered when the app does not
+ * disappear.
+ */
+function DesktopSection() {
+  const { t } = useI18n();
+  const [autostart, setAutostart] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void isAutostartEnabled().then((on) => !cancelled && setAutostart(on));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!isTauri()) return null;
+
+  return (
+    <section className="settings-section">
+      <h3 className="settings-heading">{t("desktopSection")}</h3>
+
+      <p className="faint" style={{ fontSize: 12, lineHeight: 1.5 }}>
+        {t("runInBackgroundHint")}
+      </p>
+
+      <Switch
+        checked={autostart}
+        label={t("startWithWindows")}
+        onChange={(next) => {
+          setFailed(false);
+          // Trust what actually happened, not what was asked for: the registry
+          // write can fail, and a switch that flips while nothing changed on
+          // disk is worse than one that refuses to move.
+          void setAutostartEnabled(next).then(
+            (actual) => {
+              setAutostart(actual);
+              setFailed(actual !== next);
+            },
+            () => setFailed(true),
+          );
+        }}
+      />
+      <p className="faint" style={{ fontSize: 11.5 }}>
+        {failed ? t("startWithWindowsFailed") : t("startWithWindowsHint")}
+      </p>
+
+      <Field label={t("quickCaptureShortcut")} hint={t("quickCaptureShortcutHint")}>
+        <kbd className="shortcut-chip">{QUICK_CAPTURE_SHORTCUT}</kbd>
+      </Field>
+
+      <button type="button" className="btn" onClick={() => void quitApp()}>
+        <Power size={13} /> {t("quitApp")}
+      </button>
+    </section>
+  );
+}
+
 /** Ask the Rust side where it is actually writing, rather than guessing. */
 function useStoragePath(): string {
   const [path, setPath] = useState("Loading…");
+  const namespace = useStore((s) => s.namespace);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -228,13 +370,13 @@ function useStoragePath(): string {
       return;
     }
     let cancelled = false;
-    void databasePath()
+    void databasePath(namespace)
       .then((value) => !cancelled && setPath(value))
       .catch(() => !cancelled && setPath("Unavailable"));
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [namespace]);
 
   return path;
 }

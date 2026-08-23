@@ -31,6 +31,8 @@ export function AuthModal() {
   const signUpWithEmail = useAuthStore((s) => s.signUpWithEmail);
   const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle);
   const resetPassword = useAuthStore((s) => s.resetPassword);
+  const completePasswordReset = useAuthStore((s) => s.completePasswordReset);
+  const updatePassword = useAuthStore((s) => s.updatePassword);
   const updateProfile = useAuthStore((s) => s.updateProfile);
   const signOut = useAuthStore((s) => s.signOut);
 
@@ -38,6 +40,11 @@ export function AuthModal() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [successInfo, setSuccessInfo] = useState<string | null>(null);
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordAgain, setNewPasswordAgain] = useState("");
+  // Client-side complaints (mismatch, too short) that never reach the server.
+  const [localError, setLocalError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -63,9 +70,38 @@ export function AuthModal() {
     if (!email.trim()) return;
     const ok = await resetPassword(email.trim());
     if (ok) {
-      setSuccessInfo(
-        "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.",
-      );
+      // Straight on to the code screen: sending the mail is a step, not a
+      // destination, and leaving the user on a "check your inbox" dead end is
+      // where this flow used to stop.
+      setSuccessInfo("6 haneli kodu e-postanıza gönderdik.");
+      setView("new_password");
+    }
+  };
+
+  const handleNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      setLocalError("Şifre en az 6 karakter olmalı.");
+      return;
+    }
+    if (newPassword !== newPasswordAgain) {
+      setLocalError("Şifreler eşleşmiyor.");
+      return;
+    }
+    setLocalError(null);
+
+    // With a code: verify it, then set the password. Without one, the session
+    // is already recovered (the link came back to this window) and the update
+    // is all that is left.
+    const ok = recoveryCode.trim()
+      ? await completePasswordReset(email.trim(), recoveryCode, newPassword)
+      : await updatePassword(newPassword);
+
+    if (ok) {
+      setSuccessInfo("Şifreniz güncellendi. Yeni şifrenizle giriş yapabilirsiniz.");
+      setRecoveryCode("");
+      setNewPassword("");
+      setNewPasswordAgain("");
     }
   };
 
@@ -83,6 +119,7 @@ export function AuthModal() {
     login: "Giriş Yap",
     register: "Hesap Oluştur",
     forgot_password: "Şifremi Unuttum",
+    new_password: "Yeni Şifre Belirle",
     profile: "Hesabım & Profil",
     pricing: "Abonelik & Pro Plan",
   };
@@ -336,6 +373,107 @@ export function AuthModal() {
                 onClick={() => setView("login")}
               >
                 ← Giriş Ekranına Dön
+              </button>
+            </div>
+          </div>
+        )}
+
+        {view === "new_password" && (
+          <div className="col" style={{ gap: 14 }}>
+            <p className="faint" style={{ fontSize: 13, lineHeight: 1.5 }}>
+              E-postanıza gelen 6 haneli kodu girin ve yeni şifrenizi belirleyin.
+              Kod gelmediyse spam klasörünü kontrol edin.
+            </p>
+
+            <form onSubmit={handleNewPassword} className="col" style={{ gap: 10 }}>
+              <div className="field">
+                <label className="field-label">E-posta</label>
+                <div className="input-icon-wrap">
+                  <Mail size={15} className="input-icon" />
+                  <input
+                    type="email"
+                    className="input auth-input"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="field">
+                <label className="field-label">Doğrulama kodu</label>
+                <input
+                  className="input auth-input auth-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={8}
+                  placeholder="123456"
+                  autoFocus
+                  value={recoveryCode}
+                  onChange={(e) => setRecoveryCode(e.target.value)}
+                />
+              </div>
+
+              <div className="field">
+                <label className="field-label">Yeni şifre</label>
+                <div className="input-icon-wrap">
+                  <KeyRound size={15} className="input-icon" />
+                  <input
+                    type="password"
+                    className="input auth-input"
+                    placeholder="En az 6 karakter"
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="field">
+                <label className="field-label">Yeni şifre (tekrar)</label>
+                <div className="input-icon-wrap">
+                  <KeyRound size={15} className="input-icon" />
+                  <input
+                    type="password"
+                    className="input auth-input"
+                    required
+                    value={newPasswordAgain}
+                    onChange={(e) => setNewPasswordAgain(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {localError ? (
+                <p style={{ color: "var(--danger)", fontSize: 12.5, margin: 0 }}>
+                  {localError}
+                </p>
+              ) : null}
+
+              <button
+                type="submit"
+                className="btn primary auth-submit-btn"
+                disabled={loading || !newPassword}
+              >
+                {loading ? "Kaydediliyor…" : "Şifreyi Güncelle"}
+              </button>
+            </form>
+
+            <div className="auth-footer-text">
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => void resetPassword(email.trim())}
+                disabled={loading || !email.trim()}
+              >
+                Kodu tekrar gönder
+              </button>
+              {" · "}
+              <button
+                type="button"
+                className="link-btn bold"
+                onClick={() => setView("login")}
+              >
+                Giriş Ekranı
               </button>
             </div>
           </div>

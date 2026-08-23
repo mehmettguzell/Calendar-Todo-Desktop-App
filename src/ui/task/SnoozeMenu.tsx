@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { atTime, toLocalDate, toLocalTime } from "@/domain/datetime";
-import { resolveSnooze, SNOOZE_PRESETS, type SnoozePresetId } from "@/domain/snooze";
+import {
+  resolveSnooze,
+  snoozePreviewDate,
+  SNOOZE_PRESETS,
+  type SnoozePresetId,
+} from "@/domain/snooze";
 import type { TaskInstance } from "@/domain/types";
 import { useNow, useStore } from "@/state/store";
 import { Field, Modal, Popover } from "@/ui/components/primitives";
@@ -57,6 +62,13 @@ export function SnoozeMenu({
           preset.id === "custom"
             ? null
             : resolveSnooze(instance, preset.id, settings, now);
+        // Day-jumping presets count from the task's own day, so the resulting
+        // date is not something the label can be read off. Show it.
+        const targetDate =
+          preset.id === "custom"
+            ? null
+            : snoozePreviewDate(instance, preset.id, settings, now);
+        const clock = preview?.until ? toLocalTime(new Date(preview.until)) : null;
         return (
           <button
             key={preset.id}
@@ -65,11 +77,11 @@ export function SnoozeMenu({
             onClick={() => apply(preset.id)}
           >
             <span className="grow">{preset.label}</span>
-            {preview ? (
+            {targetDate ? (
               <span className="faint mono" style={{ fontSize: 11 }}>
-                {preview.reschedule
-                  ? `${preview.reschedule.date.slice(5)} ${toLocalTime(new Date(preview.until))}`
-                  : toLocalTime(new Date(preview.until))}
+                {preview?.reschedule
+                  ? `${targetDate.slice(5)}${clock ? ` ${clock}` : ""}`
+                  : (clock ?? targetDate.slice(5))}
               </span>
             ) : null}
           </button>
@@ -77,7 +89,8 @@ export function SnoozeMenu({
       })}
       <hr />
       <div style={{ padding: "2px 8px 4px", fontSize: 11, color: "var(--text-faint)" }}>
-        Day-jumping options move the task and are recorded in its history.
+        Day-jumping options count from the task&apos;s own date, move the task, and
+        are recorded in its history.
       </div>
     </Popover>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { STATUS_LABEL } from "@/domain/task";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 import type { TaskStatus } from "@/domain/types";
 
 export function Field({
@@ -41,7 +41,12 @@ export function Switch({
 }
 
 export function StatusBadge({ status }: { status: TaskStatus }) {
-  return <span className={cn("badge", status.toLowerCase())}>{STATUS_LABEL[status]}</span>;
+  const { t } = useI18n();
+  return (
+    <span className={cn("badge", status.toLowerCase())}>
+      {t(`status${status}` as TranslationKey)}
+    </span>
+  );
 }
 
 export function Checkbox({

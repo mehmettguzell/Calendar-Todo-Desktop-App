@@ -15,6 +15,7 @@ import { getMotivationalMessage } from "@/domain/gamification";
 import type { Priority, TaskInstance } from "@/domain/types";
 import { fireConfetti } from "@/lib/confetti";
 import { cn } from "@/lib/cn";
+import { useI18n } from "@/lib/i18n";
 import {
   compareInstances,
   useFocusSessions,
@@ -48,14 +49,22 @@ export function TodayView({
   const groups = useTodoGroups(filters);
   const sessions = useFocusSessions();
   const createTask = useStore((s) => s.createTask);
+  const rollOverTo = useStore((s) => s.rollOverTo);
+  const { t } = useI18n();
   const { streaks } = useGamificationStats();
   const weeklyStats = useWeeklyStatsHook(7);
 
   const [quickTitle, setQuickTitle] = useState("");
   const [quickPriority, setQuickPriority] = useState<Priority>("NONE");
   const [showCompletedSection, setShowCompletedSection] = useState(true);
+  const [rolled, setRolled] = useState(0);
 
   const overdue = groups.find((g) => g.id === "overdue")?.instances ?? [];
+  // A recurring series is driven by its rule, so it is never rolled forward.
+  const rollable = useMemo(
+    () => overdue.filter((i) => !i.isRecurring && i.date !== null && i.date < today),
+    [overdue, today],
+  );
   // Today always shows what was finished today, whatever the global filter says.
   const todayFilters = useMemo(
     () => ({ ...filters, showCompleted: true }),
@@ -235,10 +244,32 @@ export function TodayView({
       {/* Overdue Section */}
       {overdue.length > 0 ? (
         <Section
-          title="Geciken Görevler"
+          title={t("todayOverdue")}
           count={overdue.length}
           alert
           icon={<CircleAlert size={14} />}
+          action={
+            rollable.length > 0 ? (
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() => {
+                  const moved = rollOverTo(
+                    rollable.map((i) => i.task.id),
+                    today,
+                  );
+                  if (moved > 0) setRolled(moved);
+                }}
+                title={t("rollOverHint")}
+              >
+                <CalendarCheck size={13} /> {t("rollOver")}
+              </button>
+            ) : rolled > 0 ? (
+              <span className="faint" style={{ fontSize: 12 }}>
+                {rolled} {t("rollOverDone")}
+              </span>
+            ) : null
+          }
         >
           {overdue.map((instance) => (
             <TaskRow
@@ -254,7 +285,7 @@ export function TodayView({
       {/* Timed Tasks Section */}
       {timedTasks.length > 0 ? (
         <Section
-          title="Saatli & Randevulu Görevler"
+          title={t("todayTimed")}
           count={timedTasks.length}
           icon={<Clock size={14} />}
         >
@@ -272,7 +303,7 @@ export function TodayView({
 
       {/* All-Day / Flexible Tasks Section */}
       <Section
-        title="Bugünün Görevleri"
+        title={t("todayAllDay")}
         count={allDayTasks.length}
         icon={<Sun size={14} />}
       >
@@ -337,12 +368,15 @@ function Section({
   count,
   alert,
   icon,
+  action,
   children,
 }: {
   title: string;
   count: number;
   alert?: boolean;
   icon?: React.ReactNode;
+  /** Optional control on the right of the heading, e.g. "roll these over". */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -351,6 +385,12 @@ function Section({
         {icon}
         <h2>{title}</h2>
         <span className="count">{count}</span>
+        {action ? (
+          <>
+            <span className="grow" />
+            {action}
+          </>
+        ) : null}
       </div>
       <div className="task-list">{children}</div>
     </section>

@@ -41,8 +41,8 @@ describe("resolveSnooze", () => {
     );
 
     expect(outcome.reschedule).toEqual({ date: "2026-08-26", startTime: "14:00" });
-    expect(toLocalDate(new Date(outcome.until))).toBe("2026-08-26");
-    expect(toLocalTime(new Date(outcome.until))).toBe("14:00");
+    expect(toLocalDate(new Date(outcome.until!))).toBe("2026-08-26");
+    expect(toLocalTime(new Date(outcome.until!))).toBe("14:00");
   });
 
   it("postpones the reminder only when the snooze stays inside the day", () => {
@@ -51,7 +51,7 @@ describe("resolveSnooze", () => {
 
     // Snooze is not a reschedule: the task keeps its date.
     expect(outcome.reschedule).toBeNull();
-    expect(toLocalTime(new Date(outcome.until))).toBe("15:00");
+    expect(toLocalTime(new Date(outcome.until!))).toBe("15:00");
   });
 
   it("also moves the task when a short snooze crosses midnight", () => {
@@ -66,7 +66,7 @@ describe("resolveSnooze", () => {
     const outcome = resolveSnooze(instanceOf(presentation(), now), "monday", DEFAULT_SETTINGS, now);
 
     expect(outcome.reschedule?.date).toBe("2026-08-31");
-    expect(toLocalTime(new Date(outcome.until))).toBe("14:00");
+    expect(toLocalTime(new Date(outcome.until!))).toBe("14:00");
   });
 
   it("gives an all-day task the configured clock time", () => {
@@ -75,10 +75,10 @@ describe("resolveSnooze", () => {
     const outcome = resolveSnooze(instanceOf(allDay, now), "tomorrow", DEFAULT_SETTINGS, now);
 
     expect(outcome.reschedule).toEqual({ date: "2026-08-26", startTime: null });
-    expect(toLocalTime(new Date(outcome.until))).toBe(DEFAULT_SETTINGS.allDayReminderTime);
+    expect(toLocalTime(new Date(outcome.until!))).toBe(DEFAULT_SETTINGS.allDayReminderTime);
   });
 
-  it("moves an overdue task forward from today, not from its stale date", () => {
+  it("counts 'tomorrow' from the task's own day even when that day has passed", () => {
     const now = atTime("2026-08-28", "10:00");
     const outcome = resolveSnooze(
       instanceOf(presentation(), now),
@@ -87,7 +87,37 @@ describe("resolveSnooze", () => {
       now,
     );
 
-    expect(outcome.reschedule?.date).toBe("2026-08-29");
+    // The task sits on the 25th, so "tomorrow" is the 26th regardless of the
+    // clock: the distance a preset moves a task must not depend on when the
+    // menu happened to be opened.
+    expect(outcome.reschedule?.date).toBe("2026-08-26");
+  });
+
+  it("does not leave a snooze pointing at an instant that already passed", () => {
+    const now = atTime("2026-08-28", "10:00");
+    const outcome = resolveSnooze(
+      instanceOf(presentation(), now),
+      "tomorrow",
+      DEFAULT_SETTINGS,
+      now,
+    );
+
+    // Moving to the 26th cannot also suppress the task until the 26th — that
+    // moment is behind us. The move stands; the postponement does not.
+    expect(outcome.until).toBeNull();
+  });
+
+  it("counts 'tomorrow' from a future task's day, not from today", () => {
+    const now = atTime("2026-08-20", "09:00");
+    const outcome = resolveSnooze(
+      instanceOf(presentation(), now),
+      "tomorrow",
+      DEFAULT_SETTINGS,
+      now,
+    );
+
+    expect(outcome.reschedule?.date).toBe("2026-08-26");
+    expect(toLocalDate(new Date(outcome.until!))).toBe("2026-08-26");
   });
 
   it("honours a custom target", () => {
@@ -101,7 +131,7 @@ describe("resolveSnooze", () => {
     );
 
     expect(outcome.reschedule?.date).toBe("2026-09-01");
-    expect(toLocalTime(new Date(outcome.until))).toBe("08:30");
+    expect(toLocalTime(new Date(outcome.until!))).toBe("08:30");
   });
 });
 
@@ -115,6 +145,6 @@ describe("resolveSnooze on a recurring series", () => {
 
     // The reminder waits until tomorrow, but the rule still starts on the 25th.
     expect(outcome.reschedule).toBeNull();
-    expect(toLocalDate(new Date(outcome.until))).toBe("2026-08-26");
+    expect(toLocalDate(new Date(outcome.until!))).toBe("2026-08-26");
   });
 });

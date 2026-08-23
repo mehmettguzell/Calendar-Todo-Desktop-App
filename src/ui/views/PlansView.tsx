@@ -24,6 +24,9 @@ import { cn } from "@/lib/cn";
 
 type PlanFilter = "ALL" | "ACTIVE" | "COMPLETED";
 
+/** Rows a plan card shows before the rest fold behind "+N daha". */
+const SUBTASK_PREVIEW_COUNT = 5;
+
 interface PlanStarter {
   id: string;
   title: string;
@@ -356,6 +359,7 @@ function PlanCard({
   const categories = useCategoryIndex();
 
   const [expanded, setExpanded] = useState(true);
+  const [showAllSubtasks, setShowAllSubtasks] = useState(false);
   const [newSubtask, setNewSubtask] = useState("");
 
   const today = toLocalDate(now);
@@ -382,6 +386,13 @@ function PlanCard({
       : isPlanCompleted
         ? 100
         : 0;
+
+  // Cards stay close in height when long checklists collapse behind a
+  // "+N more" row, which beats an inner scrollbar inside a card.
+  const visibleSubtasks = showAllSubtasks
+    ? subtasks
+    : subtasks.slice(0, SUBTASK_PREVIEW_COUNT);
+  const hiddenSubtaskCount = subtasks.length - visibleSubtasks.length;
 
   const handleAddSubtask = () => {
     const trimmed = newSubtask.trim();
@@ -414,6 +425,11 @@ function PlanCard({
             )}
           />
           <h3 className="plan-card-title truncate">{plan.title}</h3>
+          {totalSubtasks > 0 && (
+            <span className="plan-card-count mono">
+              {doneSubtasks}/{totalSubtasks}
+            </span>
+          )}
         </div>
 
         <div className="plan-card-actions">
@@ -481,12 +497,6 @@ function PlanCard({
 
       {/* Plan Progress */}
       <div className="plan-card-progress-section">
-        <div className="plan-progress-label-row">
-          <span>İlerleme</span>
-          <span className="mono">
-            {doneSubtasks}/{totalSubtasks} (%{progressPct})
-          </span>
-        </div>
         <div className="plan-progress-track">
           <div
             className={cn(
@@ -506,7 +516,7 @@ function PlanCard({
         >
           <span className="plan-subtasks-toggle-title">
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            Alt Hedefler ({subtasks.length})
+            Alt Hedefler
           </span>
         </div>
 
@@ -517,7 +527,7 @@ function PlanCard({
                 Henüz alt hedef eklenmemiş.
               </div>
             ) : (
-              subtasks.map((sub) => {
+              visibleSubtasks.map((sub) => {
                 const subDone = sub.status === "COMPLETED";
                 const subInstance = toInstance(sub, sub.dueDate, null, now);
                 const isSubToday = sub.dueDate === today;
@@ -566,6 +576,18 @@ function PlanCard({
                   </div>
                 );
               })
+            )}
+
+            {(hiddenSubtaskCount > 0 || showAllSubtasks) && (
+              <button
+                type="button"
+                className="btn ghost plan-subtask-more"
+                onClick={() => setShowAllSubtasks((v) => !v)}
+              >
+                {showAllSubtasks
+                  ? "Daha az göster"
+                  : `+${hiddenSubtaskCount} daha`}
+              </button>
             )}
 
             {/* Quick Add Subtask inline */}

@@ -15,6 +15,8 @@ export type AuthModalView =
   | "login"
   | "register"
   | "forgot_password"
+  /** Entering the code from the recovery e-mail, and a new password. */
+  | "new_password"
   | "profile"
   | "pricing";
 
@@ -44,10 +46,20 @@ interface AuthState {
   ) => Promise<{ success: boolean; needsEmailConfirmation?: boolean }>;
   signInWithGoogle: () => Promise<void>;
   resetPassword: (email: string) => Promise<boolean>;
+  /** Finish a reset with the 6-digit code from the recovery e-mail. */
+  completePasswordReset: (
+    email: string,
+    code: string,
+    newPassword: string,
+  ) => Promise<boolean>;
+  /** Set a new password for a session that is already recovered. */
+  updatePassword: (newPassword: string) => Promise<boolean>;
   signOut: () => Promise<void>;
   updateProfile: (fullName: string, avatarUrl?: string) => Promise<boolean>;
   fetchSubscription: (userId: string) => Promise<void>;
   fetchProfile: (userId: string) => Promise<void>;
+  /** Profile + subscription, fetched together and allowed to fail quietly. */
+  hydrateAccountDetails: (userId: string) => Promise<void>;
   initAuth: () => Promise<void>;
 }
 
@@ -78,6 +90,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ errorMessage: null });
   },
 
+  /**
+   * Restore the session, then enrich it in the background.
+   *
+   * Being offline is not being signed out. The session lives in local storage
+   * and is enough to identify the user, decide which local document to open and
+   * keep working; the profile and subscription rows are decoration that arrives
+   * when the network does. Awaiting them here is what used to hold the whole
+   * app on a spinner in a tunnel — and, when the fetch failed, leave it looking
+   * signed out over a perfectly valid session.
+   */
   initAuth: async () => {
     if (!supabase) {
       set({ initialized: true });
@@ -92,29 +114,48 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ session });
 
       if (session?.user) {
-        await Promise.all([
-          get().fetchProfile(session.user.id),
-          get().fetchSubscription(session.user.id),
-        ]);
+        // Deliberately not awaited: see above.
+        void get().hydrateAccountDetails(session.user.id);
       }
 
       // Listen for auth state changes (login, logout, refresh token)
-      supabase.auth.onAuthStateChange(async (_event, newSession) => {
-        set({ session: newSession });
-        if (newSession?.user) {
-          await Promise.all([
-            get().fetchProfile(newSession.user.id),
-            get().fetchSubscription(newSession.user.id),
-          ]);
-        } else {
-          set({ user: null, subscription: null });
+      supabase.auth.onAuthStateChange((event, newSession) => {
+        // A token refresh that could not reach the server is a network problem,
+        // not a sign-out. Only an explicit SIGNED_OUT — or Supabase deciding the
+        // refresh token itself is dead — clears the account.
+        if (event === "SIGNED_OUT") {
+          set({ session: null, user: null, subscription: null });
+          return;
         }
+        // The recovery link landed back in this window (browser build). The
+        // session it carries is only good for setting a password.
+        if (event === "PASSWORD_RECOVERY") {
+          set({
+            session: newSession,
+            authModalOpen: true,
+            authModalView: "new_password",
+          });
+          return;
+        }
+        if (!newSession) {
+          if (event === "INITIAL_SESSION") set({ session: null });
+          return;
+        }
+        set({ session: newSession });
+        void get().hydrateAccountDetails(newSession.user.id);
       });
     } catch (err) {
       console.error("Failed to initialize auth:", err);
     } finally {
       set({ initialized: true });
     }
+  },
+
+  hydrateAccountDetails: async (userId: string) => {
+    await Promise.allSettled([
+      get().fetchProfile(userId),
+      get().fetchSubscription(userId),
+    ]);
   },
 
   fetchProfile: async (userId: string) => {
@@ -250,10 +291,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           authModalOpen: false,
           loading: false,
         });
-        await Promise.all([
-          get().fetchProfile(data.session.user.id),
-          get().fetchSubscription(data.session.user.id),
-        ]);
+        void get().hydrateAccountDetails(data.session.user.id);
         return true;
       }
       return false;
@@ -314,10 +352,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           authModalOpen: false,
           loading: false,
         });
-        await Promise.all([
-          get().fetchProfile(data.session.user.id),
-          get().fetchSubscription(data.session.user.id),
-        ]);
+        void get().hydrateAccountDetails(data.session.user.id);
         return { success: true, needsEmailConfirmation: false };
       }
 
@@ -371,7 +406,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ loading: true, errorMessage: null });
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        // Sent so the link works where the app can receive it (the browser
+        // build). A desktop window cannot be redirected into from a browser,
+        // which is why the code path below exists alongside it.
+        redirectTo: window.location.origin,
       });
 
       if (error) {
@@ -390,11 +428,78 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
+  /**
+   * Sign out locally whatever the server says.
+   *
+   * `signOut()` revokes the refresh token, which needs a network. Offline it
+   * throws — and leaving the person signed in because the server could not be
+   * told is the wrong answer on a shared machine. The local session is cleared
+   * either way; a stale refresh token expires on its own.
+   */
+  /**
+   * Finish a reset without ever leaving the app.
+   *
+   * A recovery e-mail carries both a link and a six-digit code. The link opens
+   * in a browser, which cannot hand a session back to a desktop window — so the
+   * code is the path that actually works here. `verifyOtp` exchanges it for a
+   * recovered session, and the password change is an ordinary update on it.
+   */
+  completePasswordReset: async (email, code, newPassword) => {
+    if (!supabase) {
+      set({ errorMessage: "Supabase bağlantısı henüz yapılandırılmadı." });
+      return false;
+    }
+
+    set({ loading: true, errorMessage: null });
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: code.trim(),
+        type: "recovery",
+      });
+      if (error) {
+        set({
+          errorMessage:
+            /expired/i.test(error.message)
+              ? "Kodun süresi dolmuş. Yeni bir kod isteyin."
+              : "Kod doğrulanamadı. E-postadaki 6 haneli kodu kontrol edin.",
+          loading: false,
+        });
+        return false;
+      }
+      return await get().updatePassword(newPassword);
+    } catch (err: unknown) {
+      set({ errorMessage: formatErrorMessage(err), loading: false });
+      return false;
+    }
+  },
+
+  updatePassword: async (newPassword) => {
+    if (!supabase) return false;
+    set({ loading: true, errorMessage: null });
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        set({ errorMessage: error.message, loading: false });
+        return false;
+      }
+      set({ loading: false, authModalOpen: false, authModalView: "login" });
+      return true;
+    } catch (err: unknown) {
+      set({ errorMessage: formatErrorMessage(err), loading: false });
+      return false;
+    }
+  },
+
   signOut: async () => {
     if (!supabase) return;
     set({ loading: true });
     try {
       await supabase.auth.signOut();
+    } catch (err) {
+      console.warn("Sign out could not reach the server:", err);
+      await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+    } finally {
       set({
         session: null,
         user: null,
@@ -402,9 +507,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         authModalOpen: false,
         loading: false,
       });
-    } catch (err) {
-      console.error("Sign out error:", err);
-      set({ loading: false });
     }
   },
 

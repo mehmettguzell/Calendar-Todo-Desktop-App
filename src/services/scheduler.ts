@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { describeWhen } from "@/domain/datetime";
+import { HEARTBEAT_EVENT, onDesktopEvent } from "./desktop";
+import { reminderNotification } from "@/domain/notification";
 import { collectDueReminders } from "@/domain/reminders";
 import type { LocalDate, Reminder, TaskInstance } from "@/domain/types";
 import { useStore } from "@/state/store";
@@ -58,10 +59,12 @@ export function useReminderScheduler(): {
         // The card below is the delivery that always happens; the OS banner is
         // best effort, and a machine that refuses it must not take the reminder
         // down with it.
-        void notify({
-          title: instance.task.title,
-          body: describeWhen(instance.date, instance.task.allDay ? null : instance.task.startTime, now),
-        }).catch((error) => console.error("[tempo] the OS notification did not get through", error));
+        const category = instance.task.categoryId
+          ? (db.categories.find((c) => c.id === instance.task.categoryId) ?? null)
+          : null;
+        void notify(reminderNotification(instance, now, category)).catch((error) =>
+          console.error("[tempo] the OS notification did not get through", error),
+        );
 
         setAlerts((current) => [
           ...current.filter((a) => a.id !== deliveryKey),
@@ -72,9 +75,21 @@ export function useReminderScheduler(): {
 
     run();
     const handle = setInterval(run, TICK_MS);
+
+    // The interval is enough while the window is on screen. Once it is hidden
+    // in the tray the webview throttles timers, so the host process supplies a
+    // beat that is not subject to that — which is what keeps a reminder set
+    // this morning arriving this evening.
+    let unlisten: (() => void) | undefined;
+    void onDesktopEvent(HEARTBEAT_EVENT, run).then((off) => {
+      if (cancelled) off();
+      else unlisten = off;
+    });
+
     return () => {
       cancelled = true;
       clearInterval(handle);
+      unlisten?.();
     };
   }, []);
 
