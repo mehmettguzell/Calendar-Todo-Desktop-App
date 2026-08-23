@@ -15,11 +15,29 @@ export function useApplyTheme(theme: "system" | "light" | "dark") {
 }
 
 /**
+ * Stamp the app language on <html>.
+ *
+ * Not cosmetic: CSS `text-transform: uppercase` follows the document language,
+ * and Turkish capitalises "i" as "İ" rather than "I". Without this the panel
+ * headings read GEÇMIŞ instead of GEÇMİŞ — a misspelling produced by the
+ * stylesheet. Screen readers and spellcheckers key off the same attribute.
+ */
+export function useApplyLanguage(language: "tr" | "en") {
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
+}
+
+/**
  * n = new task, t = today, Escape = close panel, Ctrl/Cmd+K = command palette,
- * Ctrl/Cmd+Z = undo the last reversible action.
+ * Ctrl/Cmd+Z = undo, Ctrl/Cmd+C / X / V = copy, cut and paste a task.
  *
  * Everything but the palette is ignored while typing, and undo is additionally
  * left to the text field when the cursor is inside one.
+ *
+ * Copy, cut and paste report whether they did anything, and the keystroke is
+ * only swallowed when they did: with nothing selected, Ctrl+C has to go on
+ * meaning what it means everywhere else on the page.
  */
 export function useShortcuts({
   onNew,
@@ -27,12 +45,18 @@ export function useShortcuts({
   onEscape,
   onPalette,
   onUndo,
+  onCopy,
+  onCut,
+  onPaste,
 }: {
   onNew: () => void;
   onToday: () => void;
   onEscape: () => void;
   onPalette: () => void;
   onUndo: () => void;
+  onCopy: () => boolean;
+  onCut: () => boolean;
+  onPaste: () => boolean;
 }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -63,6 +87,21 @@ export function useShortcuts({
       }
       if (typing) return;
 
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        const key = e.key.toLowerCase();
+        if (key === "c" || key === "x" || key === "v") {
+          // Text the user highlighted on the page is theirs to copy; only an
+          // empty selection means "copy" can be about the selected task.
+          if (key !== "v" && (window.getSelection()?.toString() ?? "") !== "") {
+            return;
+          }
+          const handled =
+            key === "c" ? onCopy() : key === "x" ? onCut() : onPaste();
+          if (handled) e.preventDefault();
+          return;
+        }
+      }
+
       if (e.key === "n") {
         e.preventDefault();
         onNew();
@@ -74,5 +113,5 @@ export function useShortcuts({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onNew, onToday, onEscape, onPalette, onUndo]);
+  }, [onNew, onToday, onEscape, onPalette, onUndo, onCopy, onCut, onPaste]);
 }

@@ -340,7 +340,7 @@ function NewCategoryDialog({
           className="input"
           autoFocus
           value={name}
-          placeholder="Work"
+          placeholder={t("categoryExample")}
           onChange={(e) => setName(e.target.value)}
         />
       </Field>
@@ -408,7 +408,7 @@ function EditCategoryDialog({
           className="input"
           autoFocus
           value={name}
-          placeholder="Category name"
+          placeholder={t("categoryNamePlaceholder")}
           onChange={(e) => setName(e.target.value)}
         />
       </Field>

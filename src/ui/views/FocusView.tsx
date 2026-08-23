@@ -4,6 +4,7 @@ import {
   formatDuration,
   formatTracked,
   fromInstant,
+  localeTag,
   toLocalDate,
 } from "@/domain/datetime";
 import type { TaskInstance } from "@/domain/types";
@@ -62,7 +63,7 @@ export function FocusView({
             <div style={{ fontWeight: 600 }}>{runningTask.title}</div>
             <div className="muted" style={{ fontSize: 12 }}>
               Started{" "}
-              {fromInstant(runningFocus.startedAt).toLocaleTimeString([], {
+              {fromInstant(runningFocus.startedAt).toLocaleTimeString(localeTag(), {
                 timeStyle: "short",
               })}
             </div>
@@ -99,7 +100,7 @@ export function FocusView({
         </div>
         <div className="task-list">
           {todays.length === 0 ? (
-            <Empty icon={<Timer size={26} />} title="Nothing to focus on yet" />
+            <Empty icon={<Timer size={26} />} title={t("focusEmpty")} />
           ) : (
             todays.map((instance) => (
               <TaskRow
@@ -142,10 +143,10 @@ export function FocusView({
             return (
               <div key={session.id} className="row" style={{ fontSize: 13 }}>
                 <span className="grow truncate">
-                  {task?.title ?? "Deleted task"}
+                  {task?.title ?? t("deletedTask")}
                 </span>
                 <span className="faint" style={{ fontSize: 12 }}>
-                  {fromInstant(session.startedAt).toLocaleString([], {
+                  {fromInstant(session.startedAt).toLocaleString(localeTag(), {
                     dateStyle: "short",
                     timeStyle: "short",
                   })}

@@ -250,3 +250,34 @@
 .event.done { opacity: 0.55; }
 .event.done .event-title { text-decoration: line-through; }
 .event.overdue { border-left-color: var(--danger); }
+
+/* Clipboard & drag ---------------------------------------------------------- */
+/* The picked day has to be visible: it is the answer to "where does Ctrl+V go",
+   and an invisible answer is the same as no answer. It is drawn as an inset ring
+   rather than a fill so it can sit on top of "today" without erasing it. */
+.month-cell.day-selected,
+.time-head-day.day-selected {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* Where the dragged task would land. Stronger than the selection ring, because
+   this one is answering a question the pointer is asking right now. */
+.month-cell.drop-target,
+.time-col.drop-target,
+.allday-cell.drop-target {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* The task being carried stays in place, dimmed: removing it would reflow the
+   cell under the pointer mid-drag. */
+.chip-dragging { opacity: 0.4; }
+
+.time-head-day { width: 100%; }
+
+/* An all-day chip is already filled with its category colour, so painting the
+   title red to say "overdue" leaves red on blue — the one state that most needs
+   reading becomes the one that cannot be read. The fill keeps the colour and a
+   danger-coloured ring carries the warning instead. */
+.chip.allday.overdue .chip-title { color: #fff; }
+.chip.allday.overdue { box-shadow: inset 0 0 0 1.5px var(--danger); }

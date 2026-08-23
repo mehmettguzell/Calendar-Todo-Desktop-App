@@ -89,6 +89,8 @@ export function Modal({
   footer?: ReactNode;
   width?: number;
 }) {
+  const { t } = useI18n();
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -109,7 +111,7 @@ export function Modal({
       >
         <div className="modal-head">
           <h2>{title}</h2>
-          <button type="button" className="btn ghost icon" onClick={onClose} aria-label="Close">
+          <button type="button" className="btn ghost icon" onClick={onClose} aria-label={t("close")}>
             <X size={16} />
           </button>
         </div>

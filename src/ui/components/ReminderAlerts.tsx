@@ -7,6 +7,7 @@ import { useCategoryIndex } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
 import { SnoozeMenu } from "@/ui/task/SnoozeMenu";
 import { cn } from "@/lib/cn";
+import { useI18n } from "@/lib/i18n";
 
 /**
  * The in-app half of a reminder (spec section 7).
@@ -49,6 +50,7 @@ function AlertCard({
   onDismiss: (id: string) => void;
   onOpen: (taskId: string, occurrenceDate: string | null) => void;
 }) {
+  const { t } = useI18n();
   const toggleComplete = useStore((s) => s.toggleComplete);
   const categories = useCategoryIndex();
   const now = useNow();
@@ -81,7 +83,7 @@ function AlertCard({
         <button
           type="button"
           className="btn ghost icon sm alert-close"
-          aria-label="Dismiss"
+          aria-label={t("dismiss")}
           onClick={() => onDismiss(alert.id)}
         >
           <X size={14} />

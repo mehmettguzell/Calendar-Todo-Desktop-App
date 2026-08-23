@@ -43,7 +43,12 @@ describe("opening a task", () => {
     // The panel owns these; if it threw, the tree would be empty.
     expect(screen.getByText(/Reminders|Hatırlatıcılar/)).toBeDefined();
     expect(screen.getByText(/Subtasks|Alt görevler/)).toBeDefined();
-    expect(screen.getByRole("button", { name: "Complete" })).toBeDefined();
+    // The app ships in Turkish by default, so the panel is asserted in either
+    // language: what matters is that the button is there, not which dictionary
+    // is loaded.
+    expect(
+      screen.getByRole("button", { name: /^(Complete|Tamamla)$/ }),
+    ).toBeDefined();
   });
 
   it("still renders the panel once the task has a reminder", async () => {
@@ -65,6 +70,8 @@ describe("opening a task", () => {
       row.click();
     });
 
-    expect(screen.getByText("10 minutes before")).toBeDefined();
+    expect(
+      screen.getByText(/10 (minutes before|dakika önce)/),
+    ).toBeDefined();
   });
 });

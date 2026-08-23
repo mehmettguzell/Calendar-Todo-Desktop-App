@@ -8,11 +8,14 @@ import {
   startOfWeek,
 } from "date-fns";
 import { Plus } from "lucide-react";
-import { fromLocalDate, toLocalDate } from "@/domain/datetime";
+import { fromLocalDate, localeTag, toLocalDate } from "@/domain/datetime";
 import type { LocalDate, TaskInstance } from "@/domain/types";
 import { cn } from "@/lib/cn";
+import { useI18n } from "@/lib/i18n";
 import { useCategoryIndex } from "@/state/selectors";
+import { ContextMenu } from "@/ui/components/ContextMenu";
 import { TaskChip } from "./TaskChip";
+import { useCalendarInteractions } from "./calendarInteractions";
 
 const VISIBLE_PER_CELL = 3;
 
@@ -22,6 +25,8 @@ export function MonthGrid({
   today,
   weekStartsOn,
   instancesByDate,
+  selectedDate,
+  onSelectDate,
   onOpen,
   onQuickAdd,
 }: {
@@ -29,12 +34,20 @@ export function MonthGrid({
   today: LocalDate;
   weekStartsOn: 0 | 1;
   instancesByDate: Map<LocalDate, TaskInstance[]>;
+  /** The day keyboard paste lands on. Picked by clicking a cell. */
+  selectedDate: LocalDate | null;
+  onSelectDate: (date: LocalDate) => void;
   onOpen: (instance: TaskInstance) => void;
   onQuickAdd: (date: LocalDate) => void;
 }) {
   const categories = useCategoryIndex();
+  const { t, language } = useI18n();
   const [expanded, setExpanded] = useState<LocalDate | null>(null);
   const anchorDate = fromLocalDate(anchor);
+  const gestures = useCalendarInteractions({
+    onOpen,
+    onQuickAdd: (date) => onQuickAdd(date),
+  });
 
   const days = useMemo(() => {
     const start = startOfWeek(startOfMonth(anchorDate), { weekStartsOn });
@@ -45,11 +58,11 @@ export function MonthGrid({
   const headings = useMemo(
     () =>
       Array.from({ length: 7 }, (_, i) =>
-        new Date(2024, 0, 7 + ((i + weekStartsOn) % 7)).toLocaleDateString([], {
+        new Date(2024, 0, 7 + ((i + weekStartsOn) % 7)).toLocaleDateString(localeTag(), {
           weekday: "short",
         }),
       ),
-    [weekStartsOn],
+    [weekStartsOn, language],
   );
 
   return (
@@ -76,15 +89,38 @@ export function MonthGrid({
                 !isSameMonth(day, anchorDate) && "outside",
                 weekend && isSameMonth(day, anchorDate) && "weekend",
                 local === today && "today",
+                local === selectedDate && "day-selected",
+                gestures.dropTarget === local && "drop-target",
               )}
+              // Clicking a day picks it; that is the whole paste target model —
+              // "where does Ctrl+V go" has to have a visible answer.
+              onClick={() => onSelectDate(local)}
               onDoubleClick={() => onQuickAdd(local)}
+              onContextMenu={(e) => {
+                onSelectDate(local);
+                gestures.openDayMenu(e, local);
+              }}
+              onDragOver={(e) => {
+                if (!gestures.isDragging()) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect =
+                  e.ctrlKey || e.altKey || e.metaKey ? "copy" : "move";
+                if (gestures.dropTarget !== local) gestures.setDropTarget(local);
+              }}
+              onDragLeave={() => {
+                if (gestures.dropTarget === local) gestures.setDropTarget(null);
+              }}
+              onDrop={(e) => gestures.dropOn(e, local)}
             >
               <span className="month-daynum">{day.getDate()}</span>
               <button
                 type="button"
                 className="month-add"
-                title="Add task on this day"
-                onClick={() => onQuickAdd(local)}
+                title={t("addTaskOnDay")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onQuickAdd(local);
+                }}
               >
                 <Plus size={13} />
               </button>
@@ -99,6 +135,15 @@ export function MonthGrid({
                       : null
                   }
                   onOpen={onOpen}
+                  onContextMenu={gestures.openTaskMenu}
+                  // A series is laid out by its rule, so there is nothing here
+                  // to drag: dropping one occurrence somewhere else would move
+                  // every other one with it. Its copies are still one
+                  // right-click away.
+                  draggable={!instance.isRecurring}
+                  dragging={gestures.dragging?.key === instance.key}
+                  onDragStart={gestures.startDrag}
+                  onDragEnd={gestures.endDrag}
                 />
               ))}
 
@@ -106,15 +151,22 @@ export function MonthGrid({
                 <button
                   type="button"
                   className="chip-more"
-                  onClick={() => setExpanded(showAll ? null : local)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpanded(showAll ? null : local);
+                  }}
                 >
-                  {showAll ? "Show less" : `+${items.length - VISIBLE_PER_CELL} more`}
+                  {showAll
+                    ? t("showLess")
+                    : t("moreCount", { n: items.length - VISIBLE_PER_CELL })}
                 </button>
               ) : null}
             </div>
           );
         })}
       </div>
+
+      <ContextMenu state={gestures.menu} onClose={gestures.closeMenu} />
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { Cloud, Crown, LogIn } from "lucide-react";
 import { useAuthStore, useTrialStatus } from "@/state/authStore";
+import { useI18n } from "@/lib/i18n";
 
 export function UserProfileWidget() {
+  const { t } = useI18n();
   const user = useAuthStore((s) => s.user);
   const openAuthModal = useAuthStore((s) => s.openAuthModal);
   const trial = useTrialStatus();
@@ -13,15 +15,15 @@ export function UserProfileWidget() {
         onClick={() => openAuthModal("login")}
         role="button"
         tabIndex={0}
-        title="Giriş yap ve cihazlar arasında eşitle"
+        title={t("signInSync")}
       >
         <div className="sidebar-auth-guest-icon">
           <Cloud size={14} />
         </div>
         <div className="grow truncate">
-          <div className="sidebar-auth-guest-title">Giriş Yap / Kaydol</div>
+          <div className="sidebar-auth-guest-title">{t("authGuestTitle")}</div>
           <div className="sidebar-auth-guest-sub truncate">
-            Masaüstü & Mobil Eşitleme
+            {t("authGuestSub")}
           </div>
         </div>
         <LogIn size={13} className="faint" />
@@ -37,7 +39,7 @@ export function UserProfileWidget() {
       onClick={() => openAuthModal("profile")}
       role="button"
       tabIndex={0}
-      title="Profil & Abonelik Detayları"
+      title={t("profileDetails")}
     >
       <div className="sidebar-user-avatar">
         {user.avatarUrl ? (
@@ -67,7 +69,7 @@ export function UserProfileWidget() {
           ) : trial.isEarlyBirdEligible ? (
             <span
               className="sidebar-early-badge"
-              title="İlk hafta %40 indirim aktif!"
+              title={t("earlyBirdActive")}
             >
               %40 İndirim
             </span>
@@ -75,11 +77,11 @@ export function UserProfileWidget() {
         </div>
         <div className="sidebar-user-sub faint truncate">
           {user.role === "ADMIN"
-            ? "Yönetici & Lifetime Pro"
+            ? t("roleAdmin")
             : trial.isPro
-              ? "Tempo Pro"
+              ? t("rolePro")
               : trial.isExpired
-                ? "Deneme Süresi Bitti"
+                ? t("roleTrialOver")
                 : `${trial.daysLeftInTrial} gün deneme`}
         </div>
       </div>

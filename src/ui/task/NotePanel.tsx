@@ -14,6 +14,7 @@ import {
 import type { TaskInstance } from "@/domain/types";
 import { useStore } from "@/state/store";
 import { cn } from "@/lib/cn";
+import { useI18n } from "@/lib/i18n";
 import {
   NOTE_COLORS,
   NOTE_TAG,
@@ -44,6 +45,7 @@ export function NotePanel({
   onClose: () => void;
 }) {
   const { task } = instance;
+  const { t } = useI18n();
   const updateTask = useStore((s) => s.updateTask);
   const deleteTask = useStore((s) => s.deleteTask);
 
@@ -172,7 +174,7 @@ export function NotePanel({
         <button
           type="button"
           className={cn("btn ghost icon", pinned && "primary")}
-          title={pinned ? "Unpin note" : "Pin note"}
+          title={pinned ? t("notesUnpin") : t("notesPin")}
           aria-pressed={pinned}
           onClick={() => updateTask(task.id, { tags: withPinned(task.tags, !pinned) })}
         >
@@ -181,13 +183,13 @@ export function NotePanel({
         <button
           type="button"
           className="btn ghost icon"
-          title="Turn this note into a task"
+          title={t("notesToTask")}
           onClick={() => {
             updateTask(task.id, {
               tags: task.tags.filter(
                 (t) => t !== NOTE_TAG && !t.startsWith("note:"),
               ),
-              title: title.trim() || "Untitled",
+              title: title.trim() || t("notesUntitled"),
             });
             onClose();
           }}
@@ -197,7 +199,7 @@ export function NotePanel({
         <button
           type="button"
           className="btn ghost icon danger"
-          title="Delete note"
+          title={t("notesDelete")}
           onClick={() => {
             if (confirm("Delete this note?")) {
               deleteTask(task.id);
@@ -211,7 +213,7 @@ export function NotePanel({
           type="button"
           className="btn ghost icon"
           onClick={onClose}
-          aria-label="Close panel"
+          aria-label={t("closePanel")}
         >
           <X size={15} />
         </button>
@@ -227,7 +229,7 @@ export function NotePanel({
           style={{ fontSize: 22, fontWeight: 700, padding: "12px 16px 0" }}
           rows={1}
           value={title}
-          placeholder="Note title…"
+          placeholder={t("notesTitlePlaceholder")}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={commitTitle}
           onKeyDown={(e) => {
@@ -243,7 +245,7 @@ export function NotePanel({
           <button
             type="button"
             className="btn ghost icon"
-            title="Checklist item"
+            title={t("notesChecklistItem")}
             disabled={reading}
             onClick={() => prefixLine("- [ ] ")}
           >
@@ -252,7 +254,7 @@ export function NotePanel({
           <button
             type="button"
             className="btn ghost icon"
-            title="Bullet"
+            title={t("notesBullet")}
             disabled={reading}
             onClick={() => prefixLine("- ")}
           >
@@ -261,7 +263,7 @@ export function NotePanel({
           <button
             type="button"
             className="btn ghost icon"
-            title="Heading"
+            title={t("notesHeading")}
             disabled={reading}
             onClick={() => prefixLine("# ")}
           >
@@ -271,7 +273,7 @@ export function NotePanel({
           <button
             type="button"
             className="btn ghost icon"
-            title={reading ? "Edit the text" : "Read it back"}
+            title={reading ? t("notesEdit") : t("notesRead")}
             aria-pressed={reading}
             onClick={() => setReading(!reading)}
           >
@@ -294,7 +296,7 @@ export function NotePanel({
             ref={bodyRef}
             className="note-editor"
             value={description}
-            placeholder="Start typing. Use “- [ ]” for a checklist, “#” for a heading."
+            placeholder={t("notesBodyPlaceholder")}
             onChange={(e) => setDescription(e.target.value)}
             onKeyDown={continueList}
             onBlur={() => {

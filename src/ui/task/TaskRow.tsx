@@ -85,10 +85,10 @@ export function TaskRow({
             <StatusBadge status={instance.status} />
           ) : null}
           {task.recurrence ? (
-            <Repeat size={13} className="faint" aria-label="Repeats" />
+            <Repeat size={13} className="faint" aria-label={t("repeatsAria")} />
           ) : null}
           {hasReminder ? (
-            <AlarmClock size={13} className="faint" aria-label="Has reminder" />
+            <AlarmClock size={13} className="faint" aria-label={t("hasReminderAria")} />
           ) : null}
         </div>
 
@@ -139,7 +139,7 @@ export function TaskRow({
         <button
           type="button"
           className="btn ghost icon"
-          title={isFocused ? "Stop focus timer" : "Start focus timer"}
+          title={isFocused ? t("formStopTimer") : t("formStartTimer")}
           onClick={(e) => {
             e.stopPropagation();
             isFocused ? stopFocus() : startFocus(instance);
@@ -150,7 +150,7 @@ export function TaskRow({
         <button
           type="button"
           className="btn ghost icon"
-          title="Snooze"
+          title={t("snooze")}
           onClick={(e) => {
             e.stopPropagation();
             setSnoozeOpen((v) => !v);
@@ -161,7 +161,7 @@ export function TaskRow({
         <button
           type="button"
           className="btn ghost icon"
-          title="Move to trash"
+          title={t("menuDelete")}
           onClick={(e) => {
             e.stopPropagation();
             deleteTask(task.id);

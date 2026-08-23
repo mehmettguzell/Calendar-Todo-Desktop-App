@@ -26,7 +26,7 @@ export function WeeklyBarChart({ stats }: WeeklyBarChartProps) {
       <div className="weekly-chart-head">
         <div className="weekly-chart-title">
           <BarChart2 size={15} />
-          <span>Haftalık Aktivite (Son 7 Gün)</span>
+          <span>{t("weeklyActivityTitle")}</span>
         </div>
         <div className="weekly-chart-toggles">
           <button

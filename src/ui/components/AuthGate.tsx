@@ -9,8 +9,10 @@ import {
   User,
 } from "lucide-react";
 import { useAuthStore } from "@/state/authStore";
+import { useI18n } from "@/lib/i18n";
 
 export function AuthGate() {
+  const { t } = useI18n();
   const loading = useAuthStore((s) => s.loading);
   const errorMessage = useAuthStore((s) => s.errorMessage);
   const signInWithEmail = useAuthStore((s) => s.signInWithEmail);
@@ -38,7 +40,7 @@ export function AuthGate() {
     const res = await signUpWithEmail(email.trim(), password, fullName.trim());
     if (res.success && res.needsEmailConfirmation) {
       setInfoMessage(
-        "Kayıt başarılı! Lütfen e-posta adresinize gelen onay linkine tıklayın.",
+        t("authRegistered"),
       );
     }
   };
@@ -50,7 +52,7 @@ export function AuthGate() {
     const ok = await resetPassword(email.trim());
     if (ok) {
       setInfoMessage(
-        "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.",
+        t("authResetSent"),
       );
     }
   };
@@ -94,11 +96,11 @@ export function AuthGate() {
               onClick={() => signInWithGoogle()}
             >
               <GoogleIcon />
-              <span>Google ile Giriş Yap</span>
+              <span>{t("authGoogleLogin")}</span>
             </button>
 
             <div className="auth-divider">
-              <span>veya e-posta ile</span>
+              <span>{t("authOrEmail")}</span>
             </div>
 
             <form onSubmit={handleLogin} className="col" style={{ gap: 10 }}>
@@ -123,7 +125,7 @@ export function AuthGate() {
                   className="row"
                   style={{ justifyContent: "space-between" }}
                 >
-                  <label className="field-label">Şifre</label>
+                  <label className="field-label">{t("authPassword")}</label>
                   <button
                     type="button"
                     className="link-btn"
@@ -151,18 +153,18 @@ export function AuthGate() {
                 className="btn primary auth-submit-btn"
                 disabled={loading || !email || !password}
               >
-                {loading ? "Giriş yapılıyor…" : "Giriş Yap"}
+                {loading ? t("authLoggingIn") : t("authLogin")}
               </button>
             </form>
 
             <div className="auth-footer-text">
-              Hesabınız yok mu?{" "}
+              {t("authNoAccount")}{" "}
               <button
                 type="button"
                 className="link-btn bold"
                 onClick={() => setMode("register")}
               >
-                14 Gün Ücretsiz Başlayın
+                {t("authStartTrial")}
               </button>
             </div>
           </div>
@@ -174,13 +176,12 @@ export function AuthGate() {
             <div className="auth-trial-promo">
               <Sparkles size={16} className="auth-promo-icon" />
               <div>
-                <strong>14 Gün Ücretsiz Deneme!</strong>
+                <strong>{t("authTrialTitle")}</strong>
                 <p
                   className="faint"
                   style={{ fontSize: 11.5, margin: "2px 0 0 0" }}
                 >
-                  Masaüstü ve Mobil anlık eşitleme ve ilk 7 güne özel %40
-                  indirim avantajı.
+                  {t("authTrialBody")}
                 </p>
               </div>
             </div>
@@ -192,22 +193,22 @@ export function AuthGate() {
               onClick={() => signInWithGoogle()}
             >
               <GoogleIcon />
-              <span>Google ile Hızlı Kayıt Ol</span>
+              <span>{t("authGoogleRegister")}</span>
             </button>
 
             <div className="auth-divider">
-              <span>veya e-posta ile</span>
+              <span>{t("authOrEmail")}</span>
             </div>
 
             <form onSubmit={handleRegister} className="col" style={{ gap: 10 }}>
               <div className="field">
-                <label className="field-label">Ad Soyad</label>
+                <label className="field-label">{t("fullName")}</label>
                 <div className="input-icon-wrap">
                   <User size={15} className="input-icon" />
                   <input
                     type="text"
                     className="input auth-input"
-                    placeholder="Ahmet Yılmaz"
+                    placeholder={t("fullNamePlaceholder")}
                     autoFocus
                     required
                     value={fullName}
@@ -232,7 +233,7 @@ export function AuthGate() {
               </div>
 
               <div className="field">
-                <label className="field-label">Şifre (En az 6 karakter)</label>
+                <label className="field-label">{t("authPasswordMin")}</label>
                 <div className="input-icon-wrap">
                   <KeyRound size={15} className="input-icon" />
                   <input
@@ -252,12 +253,12 @@ export function AuthGate() {
                 className="btn primary auth-submit-btn"
                 disabled={loading || !email || !password || !fullName}
               >
-                {loading ? "Hesap oluşturuluyor…" : "14 Gün Ücretsiz Başla"}
+                {loading ? t("authCreating") : t("authStartFree")}
               </button>
             </form>
 
             <div className="auth-footer-text">
-              Zaten hesabınız var mı?{" "}
+              {t("authHaveAccount")}{" "}
               <button
                 type="button"
                 className="link-btn bold"
@@ -299,7 +300,7 @@ export function AuthGate() {
                 className="btn primary auth-submit-btn"
                 disabled={loading || !email}
               >
-                {loading ? "Gönderiliyor…" : "Sıfırlama Bağlantısı Gönder"}
+                {loading ? t("authSending") : t("authSendReset")}
               </button>
             </form>
 
@@ -309,7 +310,7 @@ export function AuthGate() {
                 className="link-btn bold"
                 onClick={() => setMode("login")}
               >
-                ← Giriş Ekranına Dön
+                {t("authBackToLogin")}
               </button>
             </div>
           </div>

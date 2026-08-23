@@ -10,6 +10,7 @@ import {
   Search,
 } from "lucide-react";
 import { formatErrorMessage } from "@/lib/errors";
+import { localeTag } from "@/domain/datetime";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { useAuthStore } from "@/state/authStore";
 import type { Filters } from "@/state/selectors";
@@ -169,7 +170,7 @@ function describeSyncStatus(
 ): { color: string; tooltip: string } {
   const last =
     s.lastSyncedAt !== null
-      ? `${t("syncLastAt")} ${new Date(s.lastSyncedAt).toLocaleTimeString([], {
+      ? `${t("syncLastAt")} ${new Date(s.lastSyncedAt).toLocaleTimeString(localeTag(), {
           hour: "2-digit",
           minute: "2-digit",
         })}`
@@ -231,7 +232,7 @@ export function Topbar({
             <button
               type="button"
               className="btn ghost icon"
-              aria-label="Previous"
+              aria-label={t("previous")}
               onClick={() => onStep(-1)}
             >
               <ChevronLeft size={16} />
@@ -239,7 +240,7 @@ export function Topbar({
             <button
               type="button"
               className="btn ghost icon"
-              aria-label="Next"
+              aria-label={t("next")}
               onClick={() => onStep(1)}
             >
               <ChevronRight size={16} />

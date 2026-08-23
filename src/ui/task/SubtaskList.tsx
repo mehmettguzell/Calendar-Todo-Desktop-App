@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { ArrowUpRight, GripVertical, Plus, Trash2 } from "lucide-react";
 import type { Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
+import { useI18n } from "@/lib/i18n";
 import { useSubtasks } from "@/state/selectors";
 import { useStore } from "@/state/store";
 import { Checkbox } from "@/ui/components/primitives";
@@ -25,6 +26,7 @@ export function SubtaskList({
   const setStatus = useStore((s) => s.setStatus);
   const deleteTask = useStore((s) => s.deleteTask);
   const reorderSubtasks = useStore((s) => s.reorderSubtasks);
+  const { t } = useI18n();
   const [title, setTitle] = useState("");
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const dragIndexRef = useRef<number | null>(null);
@@ -102,7 +104,7 @@ export function SubtaskList({
           <span className="progress" style={{ width: 80 }}>
             <i style={{ width: `${(done / subtasks.length) * 100}%` }} />
           </span>
-          {done} of {subtasks.length} done
+          {t("subtaskProgress", { done, total: subtasks.length })}
         </div>
       ) : null}
 
@@ -159,8 +161,8 @@ export function SubtaskList({
             role="button"
             tabIndex={0}
             className="subtask-grip"
-            aria-label={`Reorder "${subtask.title}" — arrow up or down`}
-            title="Drag to reorder (or focus and press ↑ / ↓)"
+            aria-label={t("subtaskReorderAria", { title: subtask.title })}
+            title={t("subtaskReorderHint")}
             onKeyDown={(e) => {
               if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
               e.preventDefault();
@@ -184,7 +186,7 @@ export function SubtaskList({
           <button
             type="button"
             className="btn ghost icon"
-            title="Open subtask"
+            title={t("subtaskOpen")}
             onClick={() => onOpen(subtask.id)}
           >
             <ArrowUpRight size={14} />
@@ -192,7 +194,7 @@ export function SubtaskList({
           <button
             type="button"
             className="btn ghost icon"
-            title="Move to trash"
+            title={t("menuDelete")}
             onClick={() => deleteTask(subtask.id)}
           >
             <Trash2 size={14} />
@@ -203,7 +205,7 @@ export function SubtaskList({
       <div className="row">
         <input
           className="input"
-          placeholder="Add a subtask"
+          placeholder={t("subtaskPlaceholder")}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {
@@ -214,7 +216,7 @@ export function SubtaskList({
           type="button"
           className="btn icon"
           onClick={add}
-          title="Add subtask"
+          title={t("subtaskAdd")}
         >
           <Plus size={15} />
         </button>

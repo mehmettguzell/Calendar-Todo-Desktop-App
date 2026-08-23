@@ -15,9 +15,11 @@ import {
   type AuthModalView,
 } from "@/state/authStore";
 import { getSubscriptionStatusLabel } from "@/domain/auth";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { Modal } from "./primitives";
 
 export function AuthModal() {
+  const { t } = useI18n();
   const isOpen = useAuthStore((s) => s.authModalOpen);
   const view = useAuthStore((s) => s.authModalView);
   const close = useAuthStore((s) => s.closeAuthModal);
@@ -60,7 +62,7 @@ export function AuthModal() {
     const res = await signUpWithEmail(email.trim(), password, fullName.trim());
     if (res.success && res.needsEmailConfirmation) {
       setSuccessInfo(
-        "Kayıt başarılı! Lütfen e-posta kutunuza gelen onay bağlantısına tıklayın.",
+        t("authRegistered"),
       );
     }
   };
@@ -73,7 +75,7 @@ export function AuthModal() {
       // Straight on to the code screen: sending the mail is a step, not a
       // destination, and leaving the user on a "check your inbox" dead end is
       // where this flow used to stop.
-      setSuccessInfo("6 haneli kodu e-postanıza gönderdik.");
+      setSuccessInfo(t("authCodeSent"));
       setView("new_password");
     }
   };
@@ -81,11 +83,11 @@ export function AuthModal() {
   const handleNewPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword.length < 6) {
-      setLocalError("Şifre en az 6 karakter olmalı.");
+      setLocalError(t("authPasswordTooShort"));
       return;
     }
     if (newPassword !== newPasswordAgain) {
-      setLocalError("Şifreler eşleşmiyor.");
+      setLocalError(t("authPasswordMismatch"));
       return;
     }
     setLocalError(null);
@@ -98,7 +100,7 @@ export function AuthModal() {
       : await updatePassword(newPassword);
 
     if (ok) {
-      setSuccessInfo("Şifreniz güncellendi. Yeni şifrenizle giriş yapabilirsiniz.");
+      setSuccessInfo(t("authPasswordUpdated"));
       setRecoveryCode("");
       setNewPassword("");
       setNewPasswordAgain("");
@@ -110,17 +112,17 @@ export function AuthModal() {
     if (!fullName.trim()) return;
     const ok = await updateProfile(fullName.trim());
     if (ok) {
-      setSuccessInfo("Profiliniz başarıyla güncellendi.");
+      setSuccessInfo(t("authProfileUpdated"));
       setTimeout(() => close(), 1200);
     }
   };
 
   const titles: Record<AuthModalView, string> = {
-    login: "Giriş Yap",
-    register: "Hesap Oluştur",
-    forgot_password: "Şifremi Unuttum",
-    new_password: "Yeni Şifre Belirle",
-    profile: "Hesabım & Profil",
+    login: t("authTitleLogin"),
+    register: t("authTitleRegister"),
+    forgot_password: t("authTitleForgot"),
+    new_password: t("authTitleNewPassword"),
+    profile: t("authTitleProfile"),
     pricing: "Abonelik & Pro Plan",
   };
 
@@ -152,11 +154,11 @@ export function AuthModal() {
               onClick={() => signInWithGoogle()}
             >
               <GoogleIcon />
-              <span>Google ile Giriş Yap</span>
+              <span>{t("authGoogleLogin")}</span>
             </button>
 
             <div className="auth-divider">
-              <span>veya e-posta ile</span>
+              <span>{t("authOrEmail")}</span>
             </div>
 
             <form onSubmit={handleLogin} className="col" style={{ gap: 10 }}>
@@ -181,7 +183,7 @@ export function AuthModal() {
                   className="row"
                   style={{ justifyContent: "space-between" }}
                 >
-                  <label className="field-label">Şifre</label>
+                  <label className="field-label">{t("authPassword")}</label>
                   <button
                     type="button"
                     className="link-btn"
@@ -209,7 +211,7 @@ export function AuthModal() {
                 className="btn primary auth-submit-btn"
                 disabled={loading || !email || !password}
               >
-                {loading ? "Giriş yapılıyor…" : "Giriş Yap"}
+                {loading ? t("authLoggingIn") : t("authLogin")}
               </button>
             </form>
 
@@ -233,7 +235,7 @@ export function AuthModal() {
             <div className="auth-trial-promo">
               <Sparkles size={16} className="auth-promo-icon" />
               <div>
-                <strong>14 Gün Ücretsiz Deneme!</strong>
+                <strong>{t("authTrialTitle")}</strong>
                 <p
                   className="faint"
                   style={{ fontSize: 12, margin: "2px 0 0 0" }}
@@ -251,22 +253,22 @@ export function AuthModal() {
               onClick={() => signInWithGoogle()}
             >
               <GoogleIcon />
-              <span>Google ile Hızlı Kayıt Ol</span>
+              <span>{t("authGoogleRegister")}</span>
             </button>
 
             <div className="auth-divider">
-              <span>veya e-posta ile</span>
+              <span>{t("authOrEmail")}</span>
             </div>
 
             <form onSubmit={handleRegister} className="col" style={{ gap: 10 }}>
               <div className="field">
-                <label className="field-label">Ad Soyad</label>
+                <label className="field-label">{t("fullName")}</label>
                 <div className="input-icon-wrap">
                   <User size={15} className="input-icon" />
                   <input
                     type="text"
                     className="input auth-input"
-                    placeholder="Ahmet Yılmaz"
+                    placeholder={t("fullNamePlaceholder")}
                     autoFocus
                     required
                     value={fullName}
@@ -291,7 +293,7 @@ export function AuthModal() {
               </div>
 
               <div className="field">
-                <label className="field-label">Şifre (En az 6 karakter)</label>
+                <label className="field-label">{t("authPasswordMin")}</label>
                 <div className="input-icon-wrap">
                   <KeyRound size={15} className="input-icon" />
                   <input
@@ -311,7 +313,7 @@ export function AuthModal() {
                 className="btn primary auth-submit-btn"
                 disabled={loading || !email || !password || !fullName}
               >
-                {loading ? "Hesap oluşturuluyor…" : "Ücretsiz Hesabımı Başlat"}
+                {loading ? t("authCreating") : t("authStartMyAccount")}
               </button>
             </form>
 
@@ -362,7 +364,7 @@ export function AuthModal() {
                 className="btn primary auth-submit-btn"
                 disabled={loading || !email}
               >
-                {loading ? "Gönderiliyor…" : "Sıfırlama Bağlantısı Gönder"}
+                {loading ? t("authSending") : t("authSendReset")}
               </button>
             </form>
 
@@ -372,7 +374,7 @@ export function AuthModal() {
                 className="link-btn bold"
                 onClick={() => setView("login")}
               >
-                ← Giriş Ekranına Dön
+                {t("authBackToLogin")}
               </button>
             </div>
           </div>
@@ -401,7 +403,7 @@ export function AuthModal() {
               </div>
 
               <div className="field">
-                <label className="field-label">Doğrulama kodu</label>
+                <label className="field-label">{t("authCode")}</label>
                 <input
                   className="input auth-input auth-code"
                   inputMode="numeric"
@@ -415,13 +417,13 @@ export function AuthModal() {
               </div>
 
               <div className="field">
-                <label className="field-label">Yeni şifre</label>
+                <label className="field-label">{t("authNewPassword")}</label>
                 <div className="input-icon-wrap">
                   <KeyRound size={15} className="input-icon" />
                   <input
                     type="password"
                     className="input auth-input"
-                    placeholder="En az 6 karakter"
+                    placeholder={t("passwordMin")}
                     required
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
@@ -430,7 +432,7 @@ export function AuthModal() {
               </div>
 
               <div className="field">
-                <label className="field-label">Yeni şifre (tekrar)</label>
+                <label className="field-label">{t("authNewPasswordAgain")}</label>
                 <div className="input-icon-wrap">
                   <KeyRound size={15} className="input-icon" />
                   <input
@@ -454,7 +456,7 @@ export function AuthModal() {
                 className="btn primary auth-submit-btn"
                 disabled={loading || !newPassword}
               >
-                {loading ? "Kaydediliyor…" : "Şifreyi Güncelle"}
+                {loading ? t("authSaving") : t("authUpdatePassword")}
               </button>
             </form>
 
@@ -496,7 +498,7 @@ export function AuthModal() {
               </div>
               <div className="grow truncate">
                 <h3 className="auth-profile-name truncate">
-                  {user.fullName ?? "Kullanıcı"}
+                  {user.fullName ?? t("authUser")}
                 </h3>
                 <p className="auth-profile-email truncate faint">
                   {user.email}
@@ -515,7 +517,7 @@ export function AuthModal() {
                   style={{ gap: 4, fontWeight: 650, fontSize: 13 }}
                 >
                   <Crown size={14} style={{ color: "#f59e0b" }} />
-                  {getSubscriptionStatusLabel(trial).badge}
+                  {t(getSubscriptionStatusLabel(trial).badgeKey as TranslationKey, getSubscriptionStatusLabel(trial).params)}
                 </span>
                 {!trial.isPro && (
                   <button
@@ -528,7 +530,7 @@ export function AuthModal() {
                 )}
               </div>
               <p className="faint" style={{ fontSize: 12, margin: 0 }}>
-                {getSubscriptionStatusLabel(trial).description}
+                {t(getSubscriptionStatusLabel(trial).descriptionKey as TranslationKey, getSubscriptionStatusLabel(trial).params)}
               </p>
             </div>
 
@@ -538,13 +540,13 @@ export function AuthModal() {
               style={{ gap: 10 }}
             >
               <div className="field">
-                <label className="field-label">Ad Soyad</label>
+                <label className="field-label">{t("fullName")}</label>
                 <input
                   type="text"
                   className="input"
                   defaultValue={user.fullName ?? ""}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Ad Soyad"
+                  placeholder={t("fullNamePlaceholder")}
                 />
               </div>
 
@@ -585,7 +587,7 @@ export function AuthModal() {
             {/* Trial Status Header */}
             <div className="pricing-status-header">
               <span className="pricing-status-pill">
-                {getSubscriptionStatusLabel(trial).badge}
+                {t(getSubscriptionStatusLabel(trial).badgeKey as TranslationKey, getSubscriptionStatusLabel(trial).params)}
               </span>
               {trial.isEarlyBirdEligible && (
                 <span className="pricing-discount-pill">
@@ -598,25 +600,25 @@ export function AuthModal() {
             <div className="pricing-cards-grid">
               {/* Monthly Plan */}
               <div className="pricing-card">
-                <div className="pricing-card-title">Aylık Pro</div>
+                <div className="pricing-card-title">{t("priceMonthly")}</div>
                 <div className="pricing-card-price">
                   {trial.isEarlyBirdEligible ? (
                     <>
                       <span className="pricing-old-price">₺199</span>
                       <span className="pricing-new-price">₺119</span>
-                      <span className="pricing-period">/ay</span>
+                      <span className="pricing-period">{t("pricePerMonth")}</span>
                     </>
                   ) : (
                     <>
                       <span className="pricing-new-price">₺199</span>
-                      <span className="pricing-period">/ay</span>
+                      <span className="pricing-period">{t("pricePerMonth")}</span>
                     </>
                   )}
                 </div>
                 <ul className="pricing-features">
-                  <li>✓ Masaüstü + Mobil Anlık Senkronizasyon</li>
-                  <li>✓ Sınırsız Görev, Plan & Not</li>
-                  <li>✓ Odak (Focus) ve İstatistikler</li>
+                  <li>{t("priceFeatureSync")}</li>
+                  <li>{t("priceFeatureUnlimited")}</li>
+                  <li>{t("priceFeatureFocus")}</li>
                 </ul>
                 <button
                   type="button"
@@ -624,33 +626,33 @@ export function AuthModal() {
                   style={{ width: "100%" }}
                 >
                   {trial.isEarlyBirdEligible
-                    ? "%40 İndirimle Başla"
-                    : "Pro'ya Geç"}
+                    ? t("priceStartDiscount")
+                    : t("priceGoPro")}
                 </button>
               </div>
 
               {/* Annual Plan (Best Value) */}
               <div className="pricing-card highlighted">
-                <div className="pricing-card-badge">En Çok Tercih Edilen</div>
-                <div className="pricing-card-title">Yıllık Pro</div>
+                <div className="pricing-card-badge">{t("priceBestValue")}</div>
+                <div className="pricing-card-title">{t("priceYearly")}</div>
                 <div className="pricing-card-price">
                   {trial.isEarlyBirdEligible ? (
                     <>
                       <span className="pricing-old-price">₺1.990</span>
                       <span className="pricing-new-price">₺1.190</span>
-                      <span className="pricing-period">/yıl</span>
+                      <span className="pricing-period">{t("pricePerYear")}</span>
                     </>
                   ) : (
                     <>
                       <span className="pricing-new-price">₺1.990</span>
-                      <span className="pricing-period">/yıl</span>
+                      <span className="pricing-period">{t("pricePerYear")}</span>
                     </>
                   )}
                 </div>
                 <ul className="pricing-features">
-                  <li>✓ 2 Ay Bedava!</li>
-                  <li>✓ Masaüstü + Mobil Sınırsız Eşitleme</li>
-                  <li>✓ Öncelikli Yeni Özellikler</li>
+                  <li>{t("priceFeatureTwoMonths")}</li>
+                  <li>{t("priceFeatureUnlimitedSync")}</li>
+                  <li>{t("priceFeatureEarlyAccess")}</li>
                 </ul>
                 <button
                   type="button"

@@ -1,7 +1,7 @@
 import { addMinutes } from "date-fns";
-import { atTime, fromInstant } from "./datetime";
+import { atTime, fromInstant, localeTag } from "./datetime";
 import { occurrenceId } from "./ids";
-import { expandOccurrences } from "./recurrence";
+import { expandOccurrences, type Translate } from "./recurrence";
 import { toInstance } from "./task";
 import type {
   LocalDate,
@@ -12,16 +12,8 @@ import type {
   TaskInstance,
 } from "./types";
 
-export const REMINDER_OFFSETS = [
-  { minutes: 0, label: "At start time" },
-  { minutes: 5, label: "5 minutes before" },
-  { minutes: 10, label: "10 minutes before" },
-  { minutes: 15, label: "15 minutes before" },
-  { minutes: 30, label: "30 minutes before" },
-  { minutes: 60, label: "1 hour before" },
-  { minutes: 120, label: "2 hours before" },
-  { minutes: 1440, label: "1 day before" },
-] as const;
+/** The offsets the editor offers. Wording is the job of the UI, not this file. */
+export const REMINDER_OFFSETS = [0, 5, 10, 15, 30, 60, 120, 1440] as const;
 
 /**
  * The instant a reminder should fire for one occurrence of its task.
@@ -44,17 +36,29 @@ export function reminderInstantFor(
   return addMinutes(atTime(date, time), -(reminder.offsetMinutes ?? 0));
 }
 
-export function describeReminder(reminder: Reminder): string {
-  if (reminder.kind === "ABSOLUTE") {
-    if (!reminder.remindAt) return "At a fixed time";
-    const at = fromInstant(reminder.remindAt);
-    return `On ${at.toLocaleDateString()} at ${at.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    })}`;
+/** "10 dakika once" / "10 minutes before", in the app language. */
+export function describeOffset(minutes: number, t: Translate): string {
+  if (minutes === 0) return t("reminderAtStart");
+  if (minutes === 1440) return t("reminderDayBefore");
+  if (minutes >= 60 && minutes % 60 === 0) {
+    return t("reminderHoursBefore", { n: minutes / 60 });
   }
-  const offset = reminder.offsetMinutes ?? 0;
-  return REMINDER_OFFSETS.find((o) => o.minutes === offset)?.label ?? `${offset} minutes before`;
+  return t("reminderMinutesBefore", { n: minutes });
+}
+
+export function describeReminder(reminder: Reminder, t: Translate): string {
+  if (reminder.kind === "ABSOLUTE") {
+    if (!reminder.remindAt) return t("reminderAtFixed");
+    const at = fromInstant(reminder.remindAt);
+    return t("reminderOnAt", {
+      date: at.toLocaleDateString(localeTag()),
+      time: at.toLocaleTimeString(localeTag(), {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    });
+  }
+  return describeOffset(reminder.offsetMinutes ?? 0, t);
 }
 
 export interface DueReminder {

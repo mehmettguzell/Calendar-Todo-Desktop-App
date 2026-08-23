@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fromInstant } from "@/domain/datetime";
+import { fromInstant, localeTag } from "@/domain/datetime";
 import { describeHistory } from "@/domain/history";
 import type { HistoryEntry } from "@/domain/types";
 
@@ -30,7 +30,7 @@ export function HistoryTimeline({ entries }: { entries: HistoryEntry[] }) {
           <div className="grow">
             <div>{describeHistory(entry)}</div>
             <time dateTime={entry.at}>
-              {fromInstant(entry.at).toLocaleString([], {
+              {fromInstant(entry.at).toLocaleString(localeTag(), {
                 dateStyle: "medium",
                 timeStyle: "short",
               })}

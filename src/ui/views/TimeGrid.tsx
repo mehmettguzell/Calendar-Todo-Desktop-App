@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Plus } from "lucide-react";
-import { durationMinutes, minutesFromMidnight, minutesToTime, toLocalDate } from "@/domain/datetime";
+import {
+  durationMinutes,
+  localeTag,
+  minutesFromMidnight,
+  minutesToTime,
+  toLocalDate,
+} from "@/domain/datetime";
 import type { LocalDate, TaskInstance } from "@/domain/types";
 import { cn } from "@/lib/cn";
+import { useI18n } from "@/lib/i18n";
 import { useCategoryIndex } from "@/state/selectors";
+import { ContextMenu } from "@/ui/components/ContextMenu";
 import { TaskChip } from "./TaskChip";
+import { useCalendarInteractions } from "./calendarInteractions";
 
 const GUTTER = 56;
 const HOUR_H = 52;
@@ -23,6 +32,8 @@ export function TimeGrid({
   dayStartHour,
   dayEndHour,
   instancesByDate,
+  selectedDate,
+  onSelectDate,
   onOpen,
   onQuickAdd,
 }: {
@@ -32,10 +43,15 @@ export function TimeGrid({
   dayStartHour: number;
   dayEndHour: number;
   instancesByDate: Map<LocalDate, TaskInstance[]>;
+  /** The day keyboard paste lands on. Picked by clicking a column heading. */
+  selectedDate: LocalDate | null;
+  onSelectDate: (date: LocalDate) => void;
   onOpen: (instance: TaskInstance) => void;
   onQuickAdd: (date: LocalDate, time: string | null) => void;
 }) {
   const categories = useCategoryIndex();
+  const { t } = useI18n();
+  const gestures = useCalendarInteractions({ onOpen, onQuickAdd });
   const bodyRef = useRef<HTMLDivElement>(null);
   const hours = useMemo(
     () => Array.from({ length: dayEndHour - dayStartHour + 1 }, (_, i) => dayStartHour + i),
@@ -60,18 +76,54 @@ export function TimeGrid({
         {days.map((date) => {
           const d = new Date(`${date}T00:00:00`);
           return (
-            <div key={date} className={cn("time-head-day", date === today && "today")}>
-              <span className="dow">{d.toLocaleDateString([], { weekday: "short" })}</span>
+            <button
+              key={date}
+              type="button"
+              className={cn(
+                "time-head-day",
+                date === today && "today",
+                date === selectedDate && "day-selected",
+              )}
+              onClick={() => onSelectDate(date)}
+              onContextMenu={(e) => {
+                onSelectDate(date);
+                gestures.openDayMenu(e, date, null);
+              }}
+            >
+              <span className="dow">{d.toLocaleDateString(localeTag(), { weekday: "short" })}</span>
               <span className="dom">{d.getDate()}</span>
-            </div>
+            </button>
           );
         })}
       </div>
 
       <div className="allday-row" style={{ gridTemplateColumns: columns }}>
-        <div className="allday-label">All-day</div>
+        <div className="allday-label">{t("allDayStrip")}</div>
         {days.map((date) => (
-          <div key={date} className="allday-cell">
+          <div
+            key={date}
+            className={cn(
+              "allday-cell",
+              gestures.dropTarget === `allday:${date}` && "drop-target",
+            )}
+            onContextMenu={(e) => {
+              onSelectDate(date);
+              gestures.openDayMenu(e, date, null);
+            }}
+            onDragOver={(e) => {
+              if (!gestures.isDragging()) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect =
+                e.ctrlKey || e.altKey || e.metaKey ? "copy" : "move";
+              gestures.setDropTarget(`allday:${date}`);
+            }}
+            onDragLeave={() => {
+              if (gestures.dropTarget === `allday:${date}`) gestures.setDropTarget(null);
+            }}
+            // Dropping in this strip is what makes a task all-day: the strip is
+            // the one place on the grid that has no clock reading.
+            onDrop={(e) => gestures.dropOn(e, date, null)}
+          >
             {(instancesByDate.get(date) ?? [])
               .filter((i) => i.startsAt === null)
               .map((instance) => (
@@ -84,6 +136,11 @@ export function TimeGrid({
                       : null
                   }
                   onOpen={onOpen}
+                  onContextMenu={gestures.openTaskMenu}
+                  draggable={!instance.isRecurring}
+                  dragging={gestures.dragging?.key === instance.key}
+                  onDragStart={gestures.startDrag}
+                  onDragEnd={gestures.endDrag}
                 />
               ))}
           </div>
@@ -108,11 +165,15 @@ export function TimeGrid({
             showNowLine={date === nowLocal}
             nowTop={topOf(now.getHours() * 60 + now.getMinutes())}
             instances={(instancesByDate.get(date) ?? []).filter((i) => i.startsAt !== null)}
+            gestures={gestures}
+            onSelectDate={onSelectDate}
             onOpen={onOpen}
             onQuickAdd={onQuickAdd}
           />
         ))}
       </div>
+
+      <ContextMenu state={gestures.menu} onClose={gestures.closeMenu} />
     </div>
   );
 }
@@ -124,6 +185,8 @@ function DayColumn({
   showNowLine,
   nowTop,
   instances,
+  gestures,
+  onSelectDate,
   onOpen,
   onQuickAdd,
 }: {
@@ -133,22 +196,43 @@ function DayColumn({
   showNowLine: boolean;
   nowTop: number;
   instances: TaskInstance[];
+  gestures: ReturnType<typeof useCalendarInteractions>;
+  onSelectDate: (date: LocalDate) => void;
   onOpen: (instance: TaskInstance) => void;
   onQuickAdd: (date: LocalDate, time: string | null) => void;
 }) {
   const categories = useCategoryIndex();
+  const { t } = useI18n();
   const placed = useMemo(() => layout(instances, dayStartHour), [instances, dayStartHour]);
+
+  /** The quarter-hour the pointer is over, so a drop keeps the time it aimed at. */
+  const timeAt = (clientY: number, element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    const raw = dayStartHour * 60 + ((clientY - rect.top) / HOUR_H) * 60;
+    return minutesToTime(Math.min(23 * 60 + 45, Math.max(0, Math.round(raw / 15) * 15)));
+  };
 
   return (
     <div
-      className="time-col"
+      className={cn("time-col", gestures.dropTarget === date && "drop-target")}
       style={{ height: hours.length * HOUR_H }}
-      onDoubleClick={(e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const offset = e.clientY - rect.top;
-        const raw = dayStartHour * 60 + (offset / HOUR_H) * 60;
-        onQuickAdd(date, minutesToTime(Math.round(raw / 15) * 15));
+      onClick={() => onSelectDate(date)}
+      onDoubleClick={(e) => onQuickAdd(date, timeAt(e.clientY, e.currentTarget))}
+      onContextMenu={(e) => {
+        onSelectDate(date);
+        gestures.openDayMenu(e, date, timeAt(e.clientY, e.currentTarget));
       }}
+      onDragOver={(e) => {
+        if (!gestures.isDragging()) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect =
+          e.ctrlKey || e.altKey || e.metaKey ? "copy" : "move";
+        if (gestures.dropTarget !== date) gestures.setDropTarget(date);
+      }}
+      onDragLeave={() => {
+        if (gestures.dropTarget === date) gestures.setDropTarget(null);
+      }}
+      onDrop={(e) => gestures.dropOn(e, date, timeAt(e.clientY, e.currentTarget))}
     >
       {hours.map((hour, index) => (
         <div key={hour}>
@@ -171,6 +255,7 @@ function DayColumn({
               "event",
               instance.storedStatus === "COMPLETED" && "done",
               instance.status === "OVERDUE" && "overdue",
+              gestures.dragging?.key === instance.key && "chip-dragging",
             )}
             style={{
               top,
@@ -179,7 +264,17 @@ function DayColumn({
               width: `calc(${width * 100}% - 6px)`,
               borderLeftColor: category?.color ?? "var(--accent)",
             }}
-            onClick={() => onOpen(instance)}
+            draggable={!instance.isRecurring}
+            onDragStart={(e) => {
+              e.stopPropagation();
+              gestures.startDrag(e, instance);
+            }}
+            onDragEnd={gestures.endDrag}
+            onContextMenu={(e) => gestures.openTaskMenu(e, instance)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen(instance);
+            }}
           >
             <span className="event-title truncate">{instance.task.title}</span>
             <span className="event-time">
@@ -194,8 +289,11 @@ function DayColumn({
         type="button"
         className="month-add"
         style={{ position: "absolute", top: 4, right: 4 }}
-        title="Add task on this day"
-        onClick={() => onQuickAdd(date, "09:00")}
+        title={t("addTaskOnDay")}
+        onClick={(e) => {
+          e.stopPropagation();
+          onQuickAdd(date, "09:00");
+        }}
       >
         <Plus size={13} />
       </button>

@@ -20,19 +20,20 @@ export type SnoozePresetId =
 
 export interface SnoozePreset {
   id: SnoozePresetId;
-  label: string;
+  /** Dictionary key for the label. The wording belongs to the UI, not here. */
+  labelKey: string;
   /** Presets that jump to another day carry the task with them (spec §8). */
   movesDay: boolean;
 }
 
 export const SNOOZE_PRESETS: SnoozePreset[] = [
-  { id: "10m", label: "10 minutes", movesDay: false },
-  { id: "30m", label: "30 minutes", movesDay: false },
-  { id: "1h", label: "1 hour", movesDay: false },
-  { id: "3h", label: "3 hours", movesDay: false },
-  { id: "tomorrow", label: "Tomorrow", movesDay: true },
-  { id: "monday", label: "Monday", movesDay: true },
-  { id: "custom", label: "Custom…", movesDay: true },
+  { id: "10m", labelKey: "snooze10m", movesDay: false },
+  { id: "30m", labelKey: "snooze30m", movesDay: false },
+  { id: "1h", labelKey: "snooze1h", movesDay: false },
+  { id: "3h", labelKey: "snooze3h", movesDay: false },
+  { id: "tomorrow", labelKey: "snoozeTomorrow", movesDay: true },
+  { id: "monday", labelKey: "snoozeMonday", movesDay: true },
+  { id: "custom", labelKey: "snoozeCustom", movesDay: true },
 ];
 
 export interface SnoozeOutcome {

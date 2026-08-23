@@ -36,8 +36,10 @@ describe("Subscription & Trial Calculation Domain Logic", () => {
     expect(calc.earlyBirdDaysLeft).toBe(5);
 
     const labels = getSubscriptionStatusLabel(calc);
-    expect(labels.badge).toContain("12 gün kaldı");
-    expect(labels.description).toContain("erken alım indirimi");
+    // Keys and numbers, not sentences — the wording lives in the dictionary.
+    expect(labels.badgeKey).toBe("subTrialBadge");
+    expect(labels.params?.days).toBe(12);
+    expect(labels.descriptionKey).toBe("subEarlyBirdDesc");
   });
 
   it("marks early bird expired after 7 days but trial still active for remaining 7 days", () => {
@@ -79,7 +81,7 @@ describe("Subscription & Trial Calculation Domain Logic", () => {
     expect(calc.daysLeftInTrial).toBe(0);
 
     const labels = getSubscriptionStatusLabel(calc);
-    expect(labels.badge).toContain("Deneme Süresi Doldu");
+    expect(labels.badgeKey).toBe("subExpiredBadge");
   });
 
   it("recognizes PRO_ACTIVE subscription", () => {
@@ -99,6 +101,6 @@ describe("Subscription & Trial Calculation Domain Logic", () => {
     expect(calc.isExpired).toBe(false);
 
     const labels = getSubscriptionStatusLabel(calc);
-    expect(labels.badge).toContain("Tempo Pro");
+    expect(labels.badgeKey).toBe("subProBadge");
   });
 });

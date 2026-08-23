@@ -1,13 +1,15 @@
-import { describeRecurrence, WEEKDAY_SHORT } from "@/domain/recurrence";
+import { useMemo } from "react";
+import { weekdayNames } from "@/domain/datetime";
+import { describeRecurrence } from "@/domain/recurrence";
 import type { Recurrence, RecurrenceFreq } from "@/domain/types";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { Field } from "@/ui/components/primitives";
 
-const FREQS: { id: RecurrenceFreq; label: string }[] = [
-  { id: "DAILY", label: "Daily" },
-  { id: "WEEKLY", label: "Weekly" },
-  { id: "MONTHLY", label: "Monthly" },
-  { id: "YEARLY", label: "Yearly" },
+const FREQS: { id: RecurrenceFreq; labelKey: TranslationKey }[] = [
+  { id: "DAILY", labelKey: "repeatDaily" },
+  { id: "WEEKLY", labelKey: "repeatWeekly" },
+  { id: "MONTHLY", labelKey: "repeatMonthly" },
+  { id: "YEARLY", labelKey: "repeatYearly" },
 ];
 
 /**
@@ -24,8 +26,11 @@ export function RecurrenceEditor({
   value: Recurrence | null;
   onChange: (next: Recurrence | null) => void;
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const rule = value;
+  // Recomputed when the language changes, so the day buttons and the sentence
+  // under them never disagree about what day 1 is called.
+  const weekdays = useMemo(() => weekdayNames("short"), [language]);
 
   const patch = (changes: Partial<Recurrence>) => {
     onChange({ ...(rule ?? { freq: "WEEKLY", interval: 1 }), ...changes });
@@ -46,7 +51,7 @@ export function RecurrenceEditor({
           <option value="NONE">{t("formNoRepeat")}</option>
           {FREQS.map((f) => (
             <option key={f.id} value={f.id}>
-              {f.label}
+              {t(f.labelKey)}
             </option>
           ))}
         </select>
@@ -78,7 +83,7 @@ export function RecurrenceEditor({
           {rule.freq === "WEEKLY" ? (
             <Field label={t("formOnDays")}>
               <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
-                {WEEKDAY_SHORT.map((label, index) => {
+                {weekdays.map((label, index) => {
                   const active = rule.byWeekday?.includes(index) ?? false;
                   return (
                     <button
@@ -108,7 +113,7 @@ export function RecurrenceEditor({
           ) : null}
 
           <p className="faint" style={{ margin: 0, fontSize: 12 }}>
-            {describeRecurrence(rule)}
+            {describeRecurrence(rule, t, weekdays)}
           </p>
         </>
       ) : null}

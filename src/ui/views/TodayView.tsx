@@ -15,7 +15,7 @@ import { getMotivationalMessage } from "@/domain/gamification";
 import type { Priority, TaskInstance } from "@/domain/types";
 import { fireConfetti } from "@/lib/confetti";
 import { cn } from "@/lib/cn";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
   compareInstances,
   useFocusSessions,
@@ -84,21 +84,41 @@ export function TodayView({
   const sorted = [...todays].sort(compareInstances);
   const openCount = sorted.length - done;
 
+  /*
+   * Today's own tasks, minus the ones the Overdue section is already showing.
+   *
+   * A task due at 14:00 is overdue from 14:01, and it is still a task due
+   * today — so without this it appears twice on one screen, once under each
+   * heading. Two rows for one task is exactly the thing the whole app is built
+   * not to do (spec section 3), and it is worse here than anywhere: ticking one
+   * of them leaves the other sitting there looking unfinished.
+   */
+  const overdueKeys = useMemo(
+    () => new Set(overdue.map((i) => i.key)),
+    [overdue],
+  );
+
   // Timed vs All-day vs Completed separation
   const timedTasks = useMemo(
     () =>
       sorted.filter(
-        (t) => t.storedStatus !== "COMPLETED" && t.startsAt !== null,
+        (t) =>
+          t.storedStatus !== "COMPLETED" &&
+          t.startsAt !== null &&
+          !overdueKeys.has(t.key),
       ),
-    [sorted],
+    [sorted, overdueKeys],
   );
 
   const allDayTasks = useMemo(
     () =>
       sorted.filter(
-        (t) => t.storedStatus !== "COMPLETED" && t.startsAt === null,
+        (t) =>
+          t.storedStatus !== "COMPLETED" &&
+          t.startsAt === null &&
+          !overdueKeys.has(t.key),
       ),
-    [sorted],
+    [sorted, overdueKeys],
   );
 
   const completedTodayTasks = useMemo(
@@ -158,33 +178,40 @@ export function TodayView({
           <div className="today-hero-text">
             <div className="today-motivation-badge-row">
               <span className={`today-badge ${motivation.badgeType}`}>
-                {motivation.emoji} {motivation.title}
+                {motivation.emoji} {t(motivation.titleKey as TranslationKey, motivation.params)}
               </span>
               {streaks.currentStreak > 0 && (
                 <span
                   className="today-streak-badge"
-                  title={`${streaks.currentStreak} günlük seri`}
+                  title={t("todayStreakBadge", { n: streaks.currentStreak })}
                 >
-                  <Flame size={12} /> {streaks.currentStreak} gün seri
+                  <Flame size={12} /> {t("todayStreakShort", { n: streaks.currentStreak })}
                 </span>
               )}
             </div>
 
-            <p className="today-hero-subtitle">{motivation.subtitle}</p>
+            <p className="today-hero-subtitle">
+              {t(motivation.subtitleKey as TranslationKey, {
+                ...motivation.params,
+                streak: motivation.streakDays
+                  ? t("motivStreakSuffix", { n: motivation.streakDays })
+                  : "",
+              })}
+            </p>
 
             <div className="today-hero-quickstats">
               <span className="today-hero-stat">
-                <strong>{openCount}</strong> açık
+                <strong>{openCount}</strong> {t("todayOpen")}
               </span>
               <span className="today-hero-stat-dot">•</span>
               <span className="today-hero-stat">
-                <strong>{done}</strong> tamamlandı
+                <strong>{done}</strong> {t("todayDone")}
               </span>
               {focusedToday > 0 && (
                 <>
                   <span className="today-hero-stat-dot">•</span>
                   <span className="today-hero-stat">
-                    <strong>{formatTracked(focusedToday)}</strong> odaklanma
+                    <strong>{formatTracked(focusedToday)}</strong> {t("todayFocusedStat")}
                   </span>
                 </>
               )}
@@ -192,7 +219,7 @@ export function TodayView({
                 <>
                   <span className="today-hero-stat-dot">•</span>
                   <span className="today-hero-stat danger">
-                    <strong>{overdue.length}</strong> gecikmiş
+                    <strong>{overdue.length}</strong> {t("todayOverdueStat")}
                   </span>
                 </>
               )}
@@ -209,7 +236,7 @@ export function TodayView({
       <div className="today-fast-add-bar section">
         <input
           className="input grow today-fast-input"
-          placeholder="+ Bugün için hızlı görev ekle… (Enter'a bas)"
+          placeholder={t("todayFastAdd")}
           value={quickTitle}
           onChange={(e) => setQuickTitle(e.target.value)}
           onKeyDown={(e) => {
@@ -223,7 +250,7 @@ export function TodayView({
               "btn sm ghost",
               quickPriority === "HIGH" && "active prio-high-active",
             )}
-            title="Yüksek Öncelik"
+            title={t("todayHighPriority")}
             onClick={() =>
               setQuickPriority(quickPriority === "HIGH" ? "NONE" : "HIGH")
             }
@@ -310,8 +337,8 @@ export function TodayView({
         {allDayTasks.length === 0 && timedTasks.length === 0 ? (
           <Empty
             icon={<CalendarCheck size={28} />}
-            title="Bugün için açık görev yok"
-            hint="Yukarıdaki çubuktan hızlıca görev ekleyebilir veya günün keyfini çıkarabilirsiniz."
+            title={t("todayEmptyTitle")}
+            hint={t("todayEmptyHint")}
           />
         ) : (
           allDayTasks.map((instance) => (
@@ -340,7 +367,7 @@ export function TodayView({
               <ChevronRight size={14} />
             )}
             <CheckCircle2 size={14} style={{ color: "var(--success)" }} />
-            <h2>Bugün Tamamlananlar</h2>
+            <h2>{t("todayCompletedHeading")}</h2>
             <span className="count">{completedTodayTasks.length}</span>
           </div>
 

@@ -14,13 +14,14 @@ import { toLocalDate } from "@/domain/datetime";
 import { toInstance } from "@/domain/task";
 import type { Priority, Task, TaskInstance } from "@/domain/types";
 import { cn } from "@/lib/cn";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
   useCategories,
   useLiveTasks,
   useTodoGroups,
   useTrashedTasks,
   type Filters,
+  type TodoGroup,
 } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
 import { Empty } from "@/ui/components/primitives";
@@ -163,7 +164,7 @@ export function TasksView({
       <div className="row section" style={{ gap: 8 }}>
         <input
           className="input grow"
-          placeholder="Yeni bir görev ekleyin… (Örn: Raporu hazırla ve ekibe gönder)"
+          placeholder={t("quickAddPlaceholder")}
           value={quickTitle}
           onChange={(e) => setQuickTitle(e.target.value)}
           onKeyDown={(e) => {
@@ -176,7 +177,7 @@ export function TasksView({
           disabled={!quickTitle.trim()}
           onClick={handleQuickAdd}
         >
-          <Plus size={14} /> Ekle
+          <Plus size={14} /> {t("add")}
         </button>
       </div>
 
@@ -188,14 +189,14 @@ export function TasksView({
             className={cn("filter-pill", filterPill === "all" && "active")}
             onClick={() => setFilterPill("all")}
           >
-            Tümü
+            {t("allTasks")}
           </button>
           <button
             type="button"
             className={cn("filter-pill", filterPill === "high" && "active")}
             onClick={() => setFilterPill("high")}
           >
-            <Flame size={12} /> Yüksek Öncelikli ({stats.high})
+            <Flame size={12} /> {t("highPriority")} ({stats.high})
           </button>
           {stats.overdue > 0 && (
             <button
@@ -206,7 +207,7 @@ export function TasksView({
               )}
               onClick={() => setFilterPill("overdue")}
             >
-              <CircleAlert size={12} /> Gecikenler ({stats.overdue})
+              <CircleAlert size={12} /> {t("overdue")} ({stats.overdue})
             </button>
           )}
           <button
@@ -217,7 +218,7 @@ export function TasksView({
             )}
             onClick={() => setFilterPill("completed")}
           >
-            <CheckCircle2 size={12} /> Tamamlananlar ({stats.done})
+            <CheckCircle2 size={12} /> {t("completed")} ({stats.done})
           </button>
         </div>
 
@@ -226,10 +227,10 @@ export function TasksView({
             <button
               type="button"
               className={cn("tasks-view-btn", viewMode === "list" && "active")}
-              title="Liste Görünümü"
+              title={t("tasksViewListTitle")}
               onClick={() => setViewMode("list")}
             >
-              <List size={15} /> Liste
+              <List size={15} /> {t("viewList")}
             </button>
             <button
               type="button"
@@ -237,10 +238,10 @@ export function TasksView({
                 "tasks-view-btn",
                 viewMode === "priority" && "active",
               )}
-              title="Öncelik Panosu (Kanban)"
+              title={t("tasksViewPriorityTitle")}
               onClick={() => setViewMode("priority")}
             >
-              <FolderKanban size={15} /> Öncelik Panosu
+              <FolderKanban size={15} /> {t("viewPriority")}
             </button>
             <button
               type="button"
@@ -248,10 +249,10 @@ export function TasksView({
                 "tasks-view-btn",
                 viewMode === "category" && "active",
               )}
-              title="Kategori Matrisi"
+              title={t("tasksViewCategoryTitle")}
               onClick={() => setViewMode("category")}
             >
-              <Layers size={15} /> Kategoriler
+              <Layers size={15} /> {t("viewCategory")}
             </button>
           </div>
 
@@ -316,20 +317,22 @@ function ListView({
   filteredTasks,
   now,
 }: {
-  groups: { id: string; label: string; instances: TaskInstance[] }[];
+  groups: TodoGroup[];
   selectedKey: string | null;
   onOpen: (instance: TaskInstance) => void;
   filterPill: string;
   filteredTasks: Task[];
   now: Date;
 }) {
+  const { t } = useI18n();
+
   if (filterPill !== "all") {
     if (filteredTasks.length === 0) {
       return (
         <Empty
           icon={<ListChecks size={28} />}
-          title="Filtreye uygun görev bulunamadı"
-          hint="Farklı bir filtre seçebilir veya yeni bir görev ekleyebilirsiniz."
+          title={t("tasksNoMatchTitle")}
+          hint={t("tasksNoMatchHint")}
         />
       );
     }
@@ -355,8 +358,8 @@ function ListView({
     return (
       <Empty
         icon={<ListChecks size={28} />}
-        title="Görev listeniz boş"
-        hint="Yukarıdaki çubuktan ilk görevinizi ekleyin ve üretkenliğin tadını çıkarın!"
+        title={t("tasksEmptyTitle")}
+        hint={t("tasksEmptyHint")}
       />
     );
   }
@@ -370,7 +373,7 @@ function ListView({
               group.id === "overdue" ? "section-head alert" : "section-head"
             }
           >
-            <h2>{group.label}</h2>
+            <h2>{t(group.labelKey as TranslationKey)}</h2>
             <span className="count">{group.instances.length}</span>
           </div>
           <div className="task-list">
@@ -391,14 +394,14 @@ function ListView({
 
 const PRIORITY_COLUMNS: {
   id: Priority;
-  label: string;
+  labelKey: TranslationKey;
   icon: string;
   className: string;
 }[] = [
-  { id: "HIGH", label: "Yüksek / Acil", icon: "🔴", className: "high" },
-  { id: "MEDIUM", label: "Orta Öncelik", icon: "🟡", className: "medium" },
-  { id: "LOW", label: "Düşük Öncelik", icon: "🔵", className: "low" },
-  { id: "NONE", label: "Önceliksiz", icon: "⚪", className: "none" },
+  { id: "HIGH", labelKey: "kanbanHigh", icon: "🔴", className: "high" },
+  { id: "MEDIUM", labelKey: "kanbanMedium", icon: "🟡", className: "medium" },
+  { id: "LOW", labelKey: "kanbanLow", icon: "🔵", className: "low" },
+  { id: "NONE", labelKey: "kanbanNone", icon: "⚪", className: "none" },
 ];
 
 function PriorityKanbanView({
@@ -421,7 +424,7 @@ function PriorityKanbanView({
           <div key={col.id} className={cn("kanban-column", col.className)}>
             <div className="kanban-column-head">
               <span className="kanban-col-icon">{col.icon}</span>
-              <h3 className="kanban-col-title">{col.label}</h3>
+              <h3 className="kanban-col-title">{t(col.labelKey)}</h3>
               <span className="count">{colTasks.length}</span>
             </div>
 

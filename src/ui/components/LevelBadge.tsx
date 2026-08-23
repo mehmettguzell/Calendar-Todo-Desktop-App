@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronRight, Flame, Shield, Sparkles, Star, Zap } from "lucide-react";
 import { LEVEL_TIERS, type LevelInfo, type StreakInfo } from "@/domain/gamification";
+import { localeTag } from "@/domain/datetime";
 import { fireConfetti } from "@/lib/confetti";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { Modal } from "./primitives";
 
 export interface LevelBadgeProps {
@@ -10,6 +12,7 @@ export interface LevelBadgeProps {
 }
 
 export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
+  const { t } = useI18n();
   const [modalOpen, setModalOpen] = useState(false);
   const [levelUpNotif, setLevelUpNotif] = useState<number | null>(null);
   const prevLevelRef = useRef<number>(levelInfo.level);
@@ -34,7 +37,9 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
 
           <div className="level-meta grow truncate">
             <div className="level-title-row">
-              <span className="level-title truncate">{levelInfo.title}</span>
+              <span className="level-title truncate">
+                {t(levelInfo.titleKey as TranslationKey)}
+              </span>
               {streaks.currentStreak > 0 && (
                 <span className="level-streak-chip" title={`${streaks.currentStreak} günlük seri!`}>
                   <Flame size={11} /> {streaks.currentStreak}
@@ -65,7 +70,10 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
           <div className="grow">
             <strong>Tebrikler! Seviye Atladın! 🎉</strong>
             <div style={{ fontSize: 12 }}>
-              Artık <strong>Level {levelInfo.level}: {levelInfo.title}</strong> unvanına sahipsin!
+              {t("levelUpBody", {
+                level: levelInfo.level,
+                title: t(levelInfo.titleKey as TranslationKey),
+              })}
             </div>
           </div>
           <button
@@ -81,7 +89,7 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
       {/* Level Details Modal */}
       {modalOpen && (
         <Modal
-          title="Seviye & Üretkenlik İlerlemesi"
+          title={t("levelTitle")}
           onClose={() => setModalOpen(false)}
           width={480}
         >
@@ -89,19 +97,26 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
             <div className="level-modal-hero">
               <div className="level-modal-shield">
                 <Star size={28} className="level-modal-star" />
-                <span className="level-modal-lvl">Lv.{levelInfo.level}</span>
+                <span className="level-modal-lvl">
+                  {t("levelShort")}
+                  {levelInfo.level}
+                </span>
               </div>
               <div>
-                <h3 style={{ fontSize: 18, fontWeight: 700 }}>{levelInfo.title}</h3>
+                <h3 style={{ fontSize: 18, fontWeight: 700 }}>
+                  {t(levelInfo.titleKey as TranslationKey)}
+                </h3>
                 <p className="faint" style={{ fontSize: 13, marginTop: 2 }}>
-                  Toplam {levelInfo.totalXp.toLocaleString()} XP topladın.
+                  {t("levelTotalXp", {
+                    xp: levelInfo.totalXp.toLocaleString(localeTag()),
+                  })}
                 </p>
               </div>
             </div>
 
             <div className="card">
               <div className="card-head">
-                <span>Sonraki Seviyeye İlerleme</span>
+                <span>{t("levelNextProgress")}</span>
                 <span className="mono">
                   {levelInfo.xpInCurrentLevel} / {levelInfo.xpNeededForNextLevel} XP
                 </span>
@@ -114,39 +129,47 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
               </div>
               <div className="faint" style={{ fontSize: 12, marginTop: 6 }}>
                 {levelInfo.nextLevelXp === Infinity
-                  ? "En yüksek seviyeye ulaştın!"
-                  : `Sonraki seviyeye ${levelInfo.xpNeededForNextLevel - levelInfo.xpInCurrentLevel} XP kaldı.`}
+                  ? t("levelMaxed")
+                  : t("levelXpToNext", {
+                      xp:
+                        levelInfo.xpNeededForNextLevel -
+                        levelInfo.xpInCurrentLevel,
+                    })}
               </div>
             </div>
 
             <div className="row" style={{ gap: 8 }}>
               <div className="stat grow">
-                <div className="value">{streaks.currentStreak} gün</div>
-                <div className="label">Mevcut Seri 🔥</div>
+                <div className="value">
+                  {streaks.currentStreak} {t("dayUnit")}
+                </div>
+                <div className="label">{t("levelStreakCurrent")}</div>
               </div>
               <div className="stat grow">
-                <div className="value">{streaks.longestStreak} gün</div>
-                <div className="label">En Uzun Seri 🏆</div>
+                <div className="value">
+                  {streaks.longestStreak} {t("dayUnit")}
+                </div>
+                <div className="label">{t("levelStreakLongest")}</div>
               </div>
               <div className="stat grow">
                 <div className="value">{streaks.totalActiveDays}</div>
-                <div className="label">Aktif Gün ⚡</div>
+                <div className="label">{t("levelActiveDays")}</div>
               </div>
             </div>
 
             <div className="card">
               <div className="card-head">
-                <span>XP Nasıl Kazanılır?</span>
+                <span>{t("levelHowToEarn")}</span>
               </div>
               <div className="col" style={{ gap: 6, fontSize: 13 }}>
                 <div className="row">
                   <Zap size={14} style={{ color: "var(--accent)" }} />
-                  <span className="grow">Tamamlanan her görev:</span>
+                  <span className="grow">{t("levelXpPerTask")}</span>
                   <strong className="mono">+10 XP</strong>
                 </div>
                 <div className="row">
                   <Flame size={14} style={{ color: "var(--warning)" }} />
-                  <span className="grow">Her Odaklanma (Focus) seansı:</span>
+                  <span className="grow">{t("levelXpPerFocus")}</span>
                   <strong className="mono">+20 XP</strong>
                 </div>
               </div>
@@ -154,7 +177,7 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
 
             <div className="card">
               <div className="card-head">
-                <span>Seviye Yol Haritası</span>
+                <span>{t("levelRoadmap")}</span>
               </div>
               <div className="col" style={{ gap: 4, maxHeight: 180, overflowY: "auto" }}>
                 {LEVEL_TIERS.map((tier) => {
@@ -169,8 +192,13 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
                       }`}
                       style={{ fontSize: 12.5, padding: "4px 8px", borderRadius: 4 }}
                     >
-                      <span style={{ fontWeight: 600, minWidth: 46 }}>Lv.{tier.level}</span>
-                      <span className="grow truncate">{tier.title}</span>
+                      <span style={{ fontWeight: 600, minWidth: 46 }}>
+                        {t("levelShort")}
+                        {tier.level}
+                      </span>
+                      <span className="grow truncate">
+                        {t(tier.titleKey as TranslationKey)}
+                      </span>
                       <span className="faint mono" style={{ fontSize: 11 }}>
                         {tier.minXp} XP
                       </span>

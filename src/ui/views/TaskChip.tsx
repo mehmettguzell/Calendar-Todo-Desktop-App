@@ -1,3 +1,4 @@
+import type { DragEvent, MouseEvent } from "react";
 import type { Category, TaskInstance } from "@/domain/types";
 import { cn } from "@/lib/cn";
 
@@ -15,10 +16,20 @@ export function TaskChip({
   instance,
   category,
   onOpen,
+  onContextMenu,
+  draggable = false,
+  dragging = false,
+  onDragStart,
+  onDragEnd,
 }: {
   instance: TaskInstance;
   category: Category | null;
   onOpen: (instance: TaskInstance) => void;
+  onContextMenu?: (event: MouseEvent, instance: TaskInstance) => void;
+  draggable?: boolean;
+  dragging?: boolean;
+  onDragStart?: (event: DragEvent, instance: TaskInstance) => void;
+  onDragEnd?: () => void;
 }) {
   const { task, span } = instance;
   const allDay = task.allDay || !task.startTime;
@@ -38,6 +49,7 @@ export function TaskChip({
         spanning && "spanning",
         spanning && !span.isStart && "span-continued",
         spanning && !span.isEnd && "span-continues",
+        dragging && "chip-dragging",
       )}
       style={allDay ? { background: color } : undefined}
       title={
@@ -45,6 +57,10 @@ export function TaskChip({
           ? `${task.title} · ${task.dueDate} → ${task.endDate} (${span.index + 1}/${span.length})`
           : task.title
       }
+      draggable={draggable}
+      onDragStart={onDragStart ? (e) => onDragStart(e, instance) : undefined}
+      onDragEnd={onDragEnd}
+      onContextMenu={onContextMenu ? (e) => onContextMenu(e, instance) : undefined}
       onClick={() => onOpen(instance)}
     >
       {allDay || continues ? null : (

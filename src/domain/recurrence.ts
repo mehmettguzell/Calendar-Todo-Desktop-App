@@ -5,39 +5,89 @@ import type { LocalDate, Recurrence, Task } from "./types";
 /** Safety valve so a malformed rule can never spin forever. */
 const MAX_STEPS = 3000;
 
-export function describeRecurrence(rule: Recurrence | null): string {
-  if (!rule) return "Does not repeat";
+/**
+ * The dictionary keys the domain layer is allowed to ask for.
+ *
+ * Spelled out rather than left as `string`, so that a key renamed in the
+ * dictionary breaks this file at compile time instead of quietly rendering the
+ * key itself to a user.
+ */
+export type DomainTextKey =
+  | "formNoRepeat"
+  | "repeatEveryDay"
+  | "repeatEveryNDays"
+  | "repeatEveryWeek"
+  | "repeatEveryNWeeks"
+  | "repeatEveryMonth"
+  | "repeatEveryNMonths"
+  | "repeatEveryYear"
+  | "repeatEveryNYears"
+  | "repeatOnDays"
+  | "repeatUntil"
+  | "repeatTimes"
+  | "reminderAtStart"
+  | "reminderDayBefore"
+  | "reminderHoursBefore"
+  | "reminderMinutesBefore"
+  | "reminderAtFixed"
+  | "reminderOnAt";
+
+/**
+ * Look-up used to describe a rule. Passed in rather than imported so the domain
+ * layer goes on knowing nothing about the dictionary or the UI.
+ */
+export type Translate = (
+  key: DomainTextKey,
+  params?: Record<string, string | number>,
+) => string;
+
+/**
+ * "Her hafta - Pzt, Per" / "Every week on Mon, Thu".
+ *
+ * Assembled from whole phrases rather than glued-together words: word order is
+ * not the same in every language, and "every 3 days" reverses into "her 3 gunde
+ * bir" — the number lands somewhere else entirely, which only the dictionary
+ * can know.
+ */
+export function describeRecurrence(
+  rule: Recurrence | null,
+  t: Translate,
+  weekdayNames: string[],
+): string {
+  if (!rule) return t("formNoRepeat");
   const n = Math.max(1, rule.interval);
-  const every = n === 1 ? "Every" : `Every ${n}`;
+  const single = n === 1;
+
   let base: string;
   switch (rule.freq) {
     case "DAILY":
-      base = `${every} ${n === 1 ? "day" : "days"}`;
+      base = single ? t("repeatEveryDay") : t("repeatEveryNDays", { n });
       break;
     case "WEEKLY": {
-      const days = rule.byWeekday?.length
-        ? ` on ${rule.byWeekday
-            .slice()
-            .sort((a, b) => a - b)
-            .map((d) => WEEKDAY_SHORT[d])
-            .join(", ")}`
-        : "";
-      base = `${every} ${n === 1 ? "week" : "weeks"}${days}`;
+      base = single ? t("repeatEveryWeek") : t("repeatEveryNWeeks", { n });
+      if (rule.byWeekday?.length) {
+        const days = rule.byWeekday
+          .slice()
+          .sort((a, b) => a - b)
+          .map((d) => weekdayNames[d] ?? "")
+          .filter(Boolean)
+          .join(", ");
+        if (days) base = t("repeatOnDays", { base, days });
+      }
       break;
     }
     case "MONTHLY":
-      base = `${every} ${n === 1 ? "month" : "months"}`;
+      base = single ? t("repeatEveryMonth") : t("repeatEveryNMonths", { n });
       break;
     case "YEARLY":
-      base = `${every} ${n === 1 ? "year" : "years"}`;
+      base = single ? t("repeatEveryYear") : t("repeatEveryNYears", { n });
       break;
   }
-  if (rule.until) base += ` until ${rule.until}`;
-  else if (rule.count) base += `, ${rule.count} times`;
+
+  if (rule.until) return t("repeatUntil", { base, date: rule.until });
+  if (rule.count) return t("repeatTimes", { base, n: rule.count });
   return base;
 }
-
-export const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /**
  * Every date the series produces inside `[rangeStart, rangeEnd]`, inclusive.

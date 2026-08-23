@@ -155,17 +155,9 @@ export function isSubtask(task: Task): boolean {
   return task.parentId !== null;
 }
 
-export const STATUS_LABEL: Record<TaskStatus, string> = {
-  TODO: "To do",
-  IN_PROGRESS: "In progress",
-  COMPLETED: "Completed",
-  SNOOZED: "Snoozed",
-  OVERDUE: "Overdue",
-};
-
-export const PRIORITY_LABEL = {
-  NONE: "None",
-  LOW: "Low",
-  MEDIUM: "Medium",
-  HIGH: "High",
-} as const;
+/*
+ * Status and priority carry no label maps here on purpose.
+ *
+ * A domain module that spells a word in one language is a module the UI cannot
+ * translate. The names ARE the keys: `t("statusOVERDUE")`, `t("priorityHIGH")`.
+ */

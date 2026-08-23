@@ -9,11 +9,10 @@ import {
   startOfWeek,
 } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { fromLocalDate, toLocalDate } from "@/domain/datetime";
+import { fromLocalDate, localeTag, toLocalDate, weekdayNames } from "@/domain/datetime";
+import { useI18n } from "@/lib/i18n";
 import type { LocalDate } from "@/domain/types";
 import { cn } from "@/lib/cn";
-
-const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
 
 /** Month overview in the sidebar; a dot marks days that hold at least one task. */
 export function MiniMonth({
@@ -33,6 +32,7 @@ export function MiniMonth({
   onSelect: (date: LocalDate) => void;
   onAnchorChange: (date: LocalDate) => void;
 }) {
+  const { t, language } = useI18n();
   const anchorDate = fromLocalDate(anchor);
 
   const days = useMemo(() => {
@@ -41,22 +41,26 @@ export function MiniMonth({
     return eachDayOfInterval({ start, end });
   }, [anchor, weekStartsOn]);
 
-  const headings = useMemo(
-    () =>
-      Array.from({ length: 7 }, (_, i) => WEEKDAY_INITIALS[(i + weekStartsOn) % 7] as string),
-    [weekStartsOn],
-  );
+  // The mini month used to spell its columns in English while the grid beside
+  // it spelled them in Turkish. One source, one language.
+  const headings = useMemo(() => {
+    const names = weekdayNames("short");
+    return Array.from(
+      { length: 7 },
+      (_, i) => (names[(i + weekStartsOn) % 7] ?? "").slice(0, 2),
+    );
+  }, [weekStartsOn, language]);
 
   return (
     <div className="col" style={{ gap: 6 }}>
       <div className="row" style={{ padding: "0 8px" }}>
         <span className="grow" style={{ fontSize: 12.5, fontWeight: 600 }}>
-          {anchorDate.toLocaleDateString([], { month: "long", year: "numeric" })}
+          {anchorDate.toLocaleDateString(localeTag(), { month: "long", year: "numeric" })}
         </span>
         <button
           type="button"
           className="btn ghost icon"
-          aria-label="Previous month"
+          aria-label={t("previous")}
           onClick={() => onAnchorChange(toLocalDate(addMonths(anchorDate, -1)))}
         >
           <ChevronLeft size={14} />
@@ -64,7 +68,7 @@ export function MiniMonth({
         <button
           type="button"
           className="btn ghost icon"
-          aria-label="Next month"
+          aria-label={t("next")}
           onClick={() => onAnchorChange(toLocalDate(addMonths(anchorDate, 1)))}
         >
           <ChevronRight size={14} />

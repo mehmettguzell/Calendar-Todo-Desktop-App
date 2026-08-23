@@ -136,40 +136,48 @@ export function calculateTrialStatus(
 /**
  * Returns human-friendly Turkish labels for subscription status.
  */
+/**
+ * Subscription state as keys, not sentences.
+ *
+ * The badge and the description are two halves of one message, so they travel
+ * together; the words are chosen by whichever dictionary is loaded.
+ */
 export function getSubscriptionStatusLabel(calc: TrialCalculation): {
-  badge: string;
-  description: string;
+  badgeKey: string;
+  descriptionKey: string;
+  params?: Record<string, string | number>;
   isUrgent: boolean;
 } {
   if (calc.isPro) {
     return {
-      badge: "Tempo Pro 👑",
-      description:
-        "Tüm cihazlarda sınırsız kullanım ve anlık senkronizasyon aktif.",
+      badgeKey: "subProBadge",
+      descriptionKey: "subProDesc",
       isUrgent: false,
     };
   }
 
   if (calc.isExpired) {
     return {
-      badge: "Deneme Süresi Doldu ⚠️",
-      description:
-        "Uygulamayı tüm cihazlarınızda kullanmaya devam etmek için Pro sürüme geçin.",
+      badgeKey: "subExpiredBadge",
+      descriptionKey: "subExpiredDesc",
       isUrgent: true,
     };
   }
 
   if (calc.isEarlyBirdEligible) {
     return {
-      badge: `Ücretsiz Deneme (${calc.daysLeftInTrial} gün kaldı)`,
-      description: `🔥 İlk haftaya özel %40 erken alım indirimi aktif! (Kalan süre: ${calc.earlyBirdDaysLeft} gün)`,
+      badgeKey: "subTrialBadge",
+      descriptionKey: "subEarlyBirdDesc",
+      params: { days: calc.daysLeftInTrial, earlyBirdDays: calc.earlyBirdDaysLeft },
       isUrgent: calc.earlyBirdDaysLeft <= 2,
     };
   }
 
   return {
-    badge: `Ücretsiz Deneme (${calc.daysLeftInTrial} gün kaldı)`,
-    description: "14 günlük ücretsiz deneme sürümünüz devam ediyor.",
+    badgeKey: "subTrialBadge",
+    descriptionKey: "subTrialDesc",
+    params: { days: calc.daysLeftInTrial },
     isUrgent: calc.daysLeftInTrial <= 3,
   };
 }
+

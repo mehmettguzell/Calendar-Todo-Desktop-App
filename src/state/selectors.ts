@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { addDaysLocal, toLocalDate } from "@/domain/datetime";
+import { addDaysLocal, localeTag, toLocalDate } from "@/domain/datetime";
 import { occurrenceId } from "@/domain/ids";
 import { instancesInRange, representativeInstance } from "@/domain/task";
 import type {
@@ -191,18 +191,19 @@ export function matchesFilters(task: Task, filters: Filters): boolean {
 
 export interface TodoGroup {
   id: string;
-  label: string;
+  /** Dictionary key — the view spells the heading, this file only names it. */
+  labelKey: string;
   instances: TaskInstance[];
 }
 
 const TODO_GROUPS: [string, string][] = [
-  ["overdue", "Overdue"],
-  ["today", "Today"],
-  ["tomorrow", "Tomorrow"],
-  ["week", "Next 7 days"],
-  ["later", "Later"],
-  ["someday", "No date"],
-  ["completed", "Completed"],
+  ["overdue", "groupOverdue"],
+  ["today", "groupToday"],
+  ["tomorrow", "groupTomorrow"],
+  ["week", "groupWeek"],
+  ["later", "groupLater"],
+  ["someday", "groupSomeday"],
+  ["completed", "groupCompleted"],
 ];
 
 /**
@@ -264,9 +265,9 @@ export function useTodoGroups(filters: Filters): TodoGroup[] {
       }
     }
 
-    return TODO_GROUPS.map(([id, label]) => ({
+    return TODO_GROUPS.map(([id, labelKey]) => ({
       id,
-      label,
+      labelKey,
       instances: (buckets.get(id) ?? []).sort(compareInstances),
     })).filter((group) => group.instances.length > 0);
   }, [tasks, occurrences, filters, now]);
@@ -435,7 +436,7 @@ export function useActivityHeatmapWeeks(weeksCount = 20): HeatmapWeek[] {
 
         // If the month changed on the first day or middle of the week, add month label
         if (d === 0 && month !== lastMonth) {
-          weekMonthLabel = dayObj.toLocaleString("tr-TR", { month: "short" });
+          weekMonthLabel = dayObj.toLocaleString(localeTag(), { month: "short" });
           lastMonth = month;
         }
 

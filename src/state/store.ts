@@ -17,9 +17,18 @@ import {
   setActiveNamespace,
 } from "@/data/namespace";
 import type { Repository } from "@/data/repository";
-import { nowInstant, toInstant, toLocalDate } from "@/domain/datetime";
+import {
+  addDaysLocal,
+  daysBetween,
+  minutesFromMidnight,
+  minutesToTime,
+  nowInstant,
+  toInstant,
+  toLocalDate,
+} from "@/domain/datetime";
 import { historyEntry } from "@/domain/history";
 import { createId, occurrenceId } from "@/domain/ids";
+import { copySubtree, type CopyTarget } from "@/domain/copy";
 import { toInstance } from "@/domain/task";
 import { resolveSnooze, type SnoozePresetId } from "@/domain/snooze";
 import type { BudgetCategory, MoneyFlow, Transaction } from "@/domain/money";
@@ -124,6 +133,12 @@ interface StoreState {
   tick(): void;
 
   createTask(draft: TaskDraft): Task;
+  /**
+   * Copy a task — with its subtasks — onto another day.
+   *
+   * Returns the new root task, or `null` when the source is gone.
+   */
+  duplicateTask(taskId: string, target?: CopyTarget): Task | null;
   updateTask(taskId: string, patch: TaskPatch, note?: string): void;
   deleteTask(taskId: string): void;
   restoreTask(taskId: string): void;
@@ -480,6 +495,57 @@ export const useStore = create<StoreState>((set, get) => {
       return task;
     },
 
+    /**
+     * Copy a task onto another day.
+     *
+     * The copy is a new, independent task (see `domain/copy.ts`): it starts at
+     * TODO, carries the subtasks that make it meaningful, and leaves the
+     * original's reminders, focus sessions and history behind — those are the
+     * record of what happened to *that* task, and a copy has no past yet.
+     */
+    duplicateTask(taskId, target = {}) {
+      const at = nowInstant();
+      const source = get().db.tasks.find(
+        (t) => t.id === taskId && t.deletedAt === null,
+      );
+      if (!source) return null;
+
+      const copies = copySubtree(get().db.tasks, taskId, target, at);
+      const root = copies[0];
+      if (!root) return null;
+
+      // The copy sorts after everything already on its day rather than
+      // inheriting the source's position and landing on top of a stranger.
+      const siblings = get().db.tasks.filter(
+        (t) => t.parentId === root.parentId,
+      );
+      root.order = siblings.length;
+
+      commit((db) =>
+        appendHistory(
+          { ...db, tasks: [...db.tasks, ...copies] },
+          ...copies.map((copy) =>
+            historyEntry({
+              taskId: copy.id,
+              kind: "CREATED",
+              note:
+                copy.id === root.id
+                  ? `Copied from "${source.title}"`
+                  : `Copied with "${source.title}"`,
+            }),
+          ),
+        ),
+      );
+      for (const copy of copies) void syncTaskToCloud(copy);
+
+      // A stray copy on the wrong day is the whole risk of a one-key paste.
+      useUndoStore
+        .getState()
+        .push("undoneTaskCopied", () => get().purgeTask(root.id));
+
+      return root;
+    },
+
     updateTask(taskId, patch, note) {
       commit((db) => {
         const task = db.tasks.find((t) => t.id === taskId);
@@ -609,17 +675,20 @@ export const useStore = create<StoreState>((set, get) => {
 
     setStatus(ref, status) {
       commit((db) => applyStatus(db, ref, status));
-      const updated = get().db.tasks.find((t) => t.id === ref.taskId);
-      if (updated) void syncTaskToCloud(updated);
+      syncSubtree(get().db, ref.taskId);
     },
 
     toggleComplete(instance) {
       const ref = refOf(instance);
       const previous = instance.storedStatus;
       const next: StoredStatus = previous === "COMPLETED" ? "TODO" : "COMPLETED";
+      // Read before the write: these are the subtasks the completion is about
+      // to carry with it, and the undo has to know how to put them back.
+      const cascaded =
+        next === "COMPLETED" ? openDescendants(get().db, ref.taskId) : [];
+
       commit((db) => applyStatus(db, ref, next));
-      const updated = get().db.tasks.find((t) => t.id === ref.taskId);
-      if (updated) void syncTaskToCloud(updated);
+      syncSubtree(get().db, ref.taskId);
 
       // Ticking the wrong row off a dense list is the single easiest mistake to
       // make in this app, and the one most likely to go unnoticed.
@@ -627,16 +696,43 @@ export const useStore = create<StoreState>((set, get) => {
         .getState()
         .push(
           next === "COMPLETED" ? "undoneTaskCompleted" : "undoneTaskReopened",
-          () => get().setStatus(ref, previous),
+          () => {
+            get().setStatus(ref, previous);
+            for (const id of cascaded) {
+              get().setStatus({ taskId: id, occurrenceDate: null }, "TODO");
+            }
+          },
         );
     },
 
+    /**
+     * Move a task to another day (and optionally another time).
+     *
+     * This is what a drag across the calendar means, so it has to behave like
+     * one: a four-day run dropped on a new day stays four days long, and a
+     * timed task keeps its duration rather than collapsing to a point.
+     */
     reschedule(taskId, dueDate, startTime) {
+      const before = get().db.tasks.find((t) => t.id === taskId);
+      if (!before) return;
+      if (
+        before.dueDate === dueDate &&
+        (startTime === undefined || before.startTime === startTime)
+      ) {
+        return;
+      }
+
       commit((db) => {
         const task = db.tasks.find((t) => t.id === taskId);
         if (!task) return db;
-        const patch: TaskPatch = { dueDate };
-        if (startTime !== undefined) patch.startTime = startTime;
+        const patch: TaskPatch = { dueDate, endDate: shiftedEnd(task, dueDate) };
+        if (startTime !== undefined) {
+          patch.startTime = startTime;
+          patch.endTime = shiftedEndTime(task, startTime);
+          // Dropped on a clock slot it is a timed task; dropped in the all-day
+          // strip it is not. Either way the drop said so explicitly.
+          patch.allDay = startTime === null;
+        }
         const next = { ...task, ...patch, updatedAt: nowInstant() };
         return appendHistory(
           { ...db, tasks: db.tasks.map((t) => (t.id === taskId ? next : t)) },
@@ -648,6 +744,20 @@ export const useStore = create<StoreState>((set, get) => {
             to: describeSchedule(next),
           }),
         );
+      });
+
+      const updated = get().db.tasks.find((t) => t.id === taskId);
+      if (updated) void syncTaskToCloud(updated);
+
+      // Dropping a task on the wrong cell is a one-pixel mistake; taking it
+      // back should not mean remembering which day it came from.
+      useUndoStore.getState().push("undoneTaskMoved", () => {
+        get().updateTask(taskId, {
+          dueDate: before.dueDate,
+          endDate: before.endDate ?? null,
+          startTime: before.startTime,
+          endTime: before.endTime,
+        });
       });
     },
 
@@ -1399,11 +1509,50 @@ function applyStatus(
     snoozedUntil: status === "COMPLETED" ? null : task.snoozedUntil,
     updatedAt: at,
   };
+
+  // Finishing a task finishes what it was made of. A parent marked COMPLETED
+  // over subtasks that still read TODO is not a record of anything — the two
+  // halves of one task disagreeing about whether it happened — and the leftover
+  // children would go on surfacing in Today and in the reminder queue.
+  //
+  // Reopening is deliberately *not* symmetric: a subtask that was genuinely
+  // done stays done when its parent turns out to need more work.
+  const cascade = status === "COMPLETED" ? openDescendants(db, task.id) : [];
+
   return {
     ...db,
-    tasks: db.tasks.map((t) => (t.id === task.id ? next : t)),
-    history: [...db.history, entry],
+    tasks: db.tasks.map((t) => {
+      if (t.id === task.id) return next;
+      return cascade.includes(t.id)
+        ? { ...t, status, completedAt, snoozedUntil: null, updatedAt: at }
+        : t;
+    }),
+    history: [
+      ...db.history,
+      entry,
+      ...cascade.map((id) =>
+        historyEntry({
+          taskId: id,
+          kind: "STATUS_CHANGED",
+          field: "status",
+          from: db.tasks.find((t) => t.id === id)?.status ?? "TODO",
+          to: status,
+          note: `Completed with "${task.title}"`,
+        }),
+      ),
+    ],
   };
+}
+
+/** Live, unfinished descendants of a task — what a completion cascades onto. */
+export function openDescendants(db: Database, taskId: string): string[] {
+  const ids = new Set(collectSubtree(db.tasks, taskId));
+  ids.delete(taskId);
+  return db.tasks
+    .filter(
+      (t) => ids.has(t.id) && t.deletedAt === null && t.status !== "COMPLETED",
+    )
+    .map((t) => t.id);
 }
 
 function currentStoredStatus(db: Database, ref: InstanceRef): StoredStatus {
@@ -1454,6 +1603,34 @@ function writeSnoozeUntil(
         : t,
     ),
   };
+}
+
+/** Keep a `dueDate`..`endDate` run the same length when its start moves. */
+function shiftedEnd(task: Task, dueDate: LocalDate | null): LocalDate | null {
+  const end = task.endDate ?? null;
+  if (!end || !task.dueDate || !dueDate) return dueDate ? end : null;
+  if (end <= task.dueDate) return null;
+  return addDaysLocal(dueDate, daysBetween(task.dueDate, end));
+}
+
+/** Keep a timed task the same length when its start moves. */
+function shiftedEndTime(task: Task, startTime: string | null): string | null {
+  if (!task.endTime || !task.startTime || !startTime) return task.endTime ?? null;
+  if (startTime === task.startTime) return task.endTime;
+  const delta =
+    minutesFromMidnight(startTime) - minutesFromMidnight(task.startTime);
+  const end = minutesFromMidnight(task.endTime) + delta;
+  if (end >= 24 * 60 - 1) return "23:59";
+  if (end < 0) return "00:00";
+  return minutesToTime(end);
+}
+
+/** Push a task and its descendants: one completion can touch the whole run. */
+function syncSubtree(db: Database, rootId: string): void {
+  const ids = new Set(collectSubtree(db.tasks, rootId));
+  for (const task of db.tasks) {
+    if (ids.has(task.id)) void syncTaskToCloud(task);
+  }
 }
 
 /** A task plus every descendant, so trash and restore act on a whole subtree. */

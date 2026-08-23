@@ -7,6 +7,7 @@ import {
   type SnoozePresetId,
 } from "@/domain/snooze";
 import type { TaskInstance } from "@/domain/types";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { useNow, useStore } from "@/state/store";
 import { Field, Modal, Popover } from "@/ui/components/primitives";
 
@@ -28,6 +29,7 @@ export function SnoozeMenu({
 }) {
   const snooze = useStore((s) => s.snooze);
   const settings = useStore((s) => s.db.settings);
+  const { t } = useI18n();
   const now = useNow();
   const [customOpen, setCustomOpen] = useState(false);
 
@@ -55,7 +57,7 @@ export function SnoozeMenu({
   return (
     <Popover onClose={onClose} align={align}>
       <div style={{ padding: "4px 8px 6px", fontSize: 11, fontWeight: 650, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-faint)" }}>
-        Snooze
+        {t("snooze")}
       </div>
       {SNOOZE_PRESETS.map((preset) => {
         const preview =
@@ -76,7 +78,7 @@ export function SnoozeMenu({
             className="menu-item"
             onClick={() => apply(preset.id)}
           >
-            <span className="grow">{preset.label}</span>
+            <span className="grow">{t(preset.labelKey as TranslationKey)}</span>
             {targetDate ? (
               <span className="faint mono" style={{ fontSize: 11 }}>
                 {preview?.reschedule
@@ -89,8 +91,7 @@ export function SnoozeMenu({
       })}
       <hr />
       <div style={{ padding: "2px 8px 4px", fontSize: 11, color: "var(--text-faint)" }}>
-        Day-jumping options count from the task&apos;s own date, move the task, and
-        are recorded in its history.
+        {t("snoozeFootnote")}
       </div>
     </Popover>
   );
@@ -104,6 +105,7 @@ function CustomSnoozeDialog({
   onClose: () => void;
 }) {
   const snooze = useStore((s) => s.snooze);
+  const { t } = useI18n();
   const now = useNow();
   const [date, setDate] = useState(instance.date ?? toLocalDate(now));
   const [time, setTime] = useState(
@@ -112,13 +114,13 @@ function CustomSnoozeDialog({
 
   return (
     <Modal
-      title="Snooze until"
+      title={t("snoozeUntilLabel")}
       onClose={onClose}
       width={380}
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("cancel")}
           </button>
           <button
             type="button"
@@ -128,13 +130,13 @@ function CustomSnoozeDialog({
               onClose();
             }}
           >
-            Snooze
+            {t("snooze")}
           </button>
         </>
       }
     >
       <div className="field-row">
-        <Field label="Date">
+        <Field label={t("fieldDate")}>
           <input
             className="input"
             type="date"
@@ -142,7 +144,7 @@ function CustomSnoozeDialog({
             onChange={(e) => setDate(e.target.value)}
           />
         </Field>
-        <Field label="Time">
+        <Field label={t("fieldTime")}>
           <input
             className="input"
             type="time"

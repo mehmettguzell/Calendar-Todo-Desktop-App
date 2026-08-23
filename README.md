@@ -286,9 +286,33 @@ different is then a one-field edit rather than a special case.
 - `src/domain/__tests__/export.test.ts` — valid iCalendar, and CSV that cannot
   smuggle a formula into someone else's spreadsheet.
 
+## Moving work around the calendar
+
+Right-click anything on the calendar. A task offers copy, cut, duplicate, copy
+to tomorrow, complete and trash; empty space offers paste and a new task. Drag a
+task to another day to move it, or hold `Ctrl` while dropping to leave the
+original where it is. Every move and every copy can be taken back with a single
+`Ctrl/Cmd+Z`.
+
+A repeating task is laid out by its rule, so it cannot be dragged or cut — one
+occurrence cannot move without dragging the rest of the series with it. Copying
+it still works, and produces a plain one-off task on the day you drop it.
+
+### The same task on more than one day
+
+Open a task and use **Bu hafta ayrıca / Also this week**: seven chips, one per
+day of that task's week. Ticking Thursday does not copy anything — the task
+starts occurring on Thursday too, as one record, and each day is completed on its
+own. Unticking them hands back exactly the single-day task you started with.
+
+Copying is the other answer, for when you want *another* task like this one: a
+new row, starting fresh, with its subtasks and none of the original's history.
+
 ## Keyboard
 
-`Ctrl/Cmd+K` command palette · `n` new task · `t` jump to today · `Esc` close
+`Ctrl/Cmd+K` command palette · `n` new task · `t` jump to today · `Esc` close ·
+`Ctrl/Cmd+C` copy the open task · `Ctrl/Cmd+X` cut it · `Ctrl/Cmd+V` paste it on
+the day you last clicked
 
 ### Quick add understands plain language
 

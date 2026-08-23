@@ -11,7 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toLocalDate } from "@/domain/datetime";
-import type { Priority, Task, TaskInstance } from "@/domain/types";
+import { PRIORITIES, type Priority, type Task, type TaskInstance } from "@/domain/types";
 import { toInstance } from "@/domain/task";
 import {
   useCategories,
@@ -21,6 +21,7 @@ import {
 import { useNow, useStore } from "@/state/store";
 import { Checkbox, Field, Modal } from "@/ui/components/primitives";
 import { cn } from "@/lib/cn";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 
 type PlanFilter = "ALL" | "ACTIVE" | "COMPLETED";
 
@@ -29,59 +30,75 @@ const SUBTASK_PREVIEW_COUNT = 5;
 
 interface PlanStarter {
   id: string;
-  title: string;
-  categoryName: string;
-  description: string;
-  subtasks: string[];
+  emoji: string;
+  /** Which seeded category it files under, in either language. */
+  categoryKey: keyof typeof STARTER_CATEGORY_NAMES;
+  titleKey: TranslationKey;
+  descKey: TranslationKey;
+  stepKeys: TranslationKey[];
 }
+
+/**
+ * A starter files itself under a seeded category, and the seeds are named in
+ * whatever language the app was first opened in. Matching on both spellings
+ * means a template still lands in the right place after the language is
+ * switched, or on a document created before it was.
+ */
+const STARTER_CATEGORY_NAMES = {
+  health: ["Health", "Sağlık"],
+  work: ["Work", "İş"],
+  personal: ["Personal", "Kişisel"],
+} as const;
 
 const PLAN_STARTERS: PlanStarter[] = [
   {
     id: "fitness",
-    title: "🎯 30 Günlük Fitness & Sağlık",
-    categoryName: "Health",
-    description:
-      "Düzenli hareket, sağlıklı beslenme ve su takibi ile zinde kal.",
-    subtasks: [
-      "Haftada 3 gün kardiyo / egzersiz yap",
-      "Günde en az 2.5L su iç",
-      "İşlenmiş şekeri ve abur cuburu azalt",
-      "Her gün 8,000 adım hedefini tamamla",
+    emoji: "🎯",
+    categoryKey: "health",
+    titleKey: "planTplFitnessTitle",
+    descKey: "planTplFitnessDesc",
+    stepKeys: [
+      "planTplFitnessStep1",
+      "planTplFitnessStep2",
+      "planTplFitnessStep3",
+      "planTplFitnessStep4",
     ],
   },
   {
     id: "project",
-    title: "🚀 Yeni Proje Lansmanı",
-    categoryName: "Work",
-    description: "Fikirden ürüne adım adım ilerle ve başarıyla yayına al.",
-    subtasks: [
-      "Gereksinimleri ve MVP kapsamını belirle",
-      "Kullanıcı arayüzü ve akışları tasarla",
-      "Temel modülleri kodla ve test et",
-      "İlk kullanıcıları davet et ve geri bildirim topla",
+    emoji: "🚀",
+    categoryKey: "work",
+    titleKey: "planTplProjectTitle",
+    descKey: "planTplProjectDesc",
+    stepKeys: [
+      "planTplProjectStep1",
+      "planTplProjectStep2",
+      "planTplProjectStep3",
+      "planTplProjectStep4",
     ],
   },
   {
     id: "learning",
-    title: "📚 Kitap & Yetenek Geliştirme",
-    categoryName: "Personal",
-    description: "Yeni bir konuda uzmanlaş ve okuma alışkanlığını güçlendir.",
-    subtasks: [
-      "Günde 25 sayfa odaklı okuma yap",
-      "Önemli fikirleri Notlar bölümüne kaydet",
-      "Haftada bir mini uygulama projesi yap",
+    emoji: "📚",
+    categoryKey: "personal",
+    titleKey: "planTplLearningTitle",
+    descKey: "planTplLearningDesc",
+    stepKeys: [
+      "planTplLearningStep1",
+      "planTplLearningStep2",
+      "planTplLearningStep3",
     ],
   },
   {
     id: "habits",
-    title: "✨ Üretkenlik & Odak Rutini",
-    categoryName: "Personal",
-    description:
-      "Zamanını en verimli şekilde yönetebileceğin günlük alışkanlıklar kazan.",
-    subtasks: [
-      "Günün en önemli 1 'Ana Odağını' belirle",
-      "Günde en az 2 Focus (Odaklanma) seansı yap",
-      "Akşam 5 dakikalık gün değerlendirmesi yap",
+    emoji: "✨",
+    categoryKey: "personal",
+    titleKey: "planTplHabitsTitle",
+    descKey: "planTplHabitsDesc",
+    stepKeys: [
+      "planTplHabitsStep1",
+      "planTplHabitsStep2",
+      "planTplHabitsStep3",
     ],
   },
 ];
@@ -96,6 +113,7 @@ export function PlansView({
   const tasks = useLiveTasks();
   const createTask = useStore((s) => s.createTask);
   const now = useNow();
+  const { t } = useI18n();
   const categories = useCategories();
 
   const [filter, setFilter] = useState<PlanFilter>("ALL");
@@ -149,11 +167,14 @@ export function PlansView({
 
   const handleApplyStarter = (starter: PlanStarter) => {
     const cat = categories.find(
-      (c) => c.name.toLowerCase() === starter.categoryName.toLowerCase(),
+      (c) =>
+        (
+          STARTER_CATEGORY_NAMES[starter.categoryKey] as readonly string[]
+        ).some((name) => name.toLowerCase() === c.name.toLowerCase()),
     );
     const plan = createTask({
-      title: starter.title,
-      description: starter.description,
+      title: `${starter.emoji} ${t(starter.titleKey)}`,
+      description: t(starter.descKey),
       categoryId: cat ? cat.id : null,
       tags: ["plan"],
       priority: "HIGH",
@@ -161,9 +182,9 @@ export function PlansView({
       allDay: true,
     });
 
-    for (const sub of starter.subtasks) {
+    for (const key of starter.stepKeys) {
       createTask({
-        title: sub,
+        title: t(key),
         parentId: plan.id,
         dueDate: null,
         allDay: true,
@@ -182,11 +203,8 @@ export function PlansView({
             <Target size={20} />
           </div>
           <div>
-            <h2 className="plans-main-title">Planlar & Hedefler</h2>
-            <p className="plans-subtitle">
-              Büyük hedefleri yönetilebilir adımlara bölün, ilerlemenizi takip
-              edin.
-            </p>
+            <h2 className="plans-main-title">{t("plansTitle")}</h2>
+            <p className="plans-subtitle">{t("plansSubtitle")}</p>
           </div>
         </div>
 
@@ -197,21 +215,21 @@ export function PlansView({
               className={cn("plan-tab-btn", filter === "ALL" && "active")}
               onClick={() => setFilter("ALL")}
             >
-              Tümü ({plans.length})
+              {t("plansAll")} ({plans.length})
             </button>
             <button
               type="button"
               className={cn("plan-tab-btn", filter === "ACTIVE" && "active")}
               onClick={() => setFilter("ACTIVE")}
             >
-              Aktif
+              {t("plansActive")}
             </button>
             <button
               type="button"
               className={cn("plan-tab-btn", filter === "COMPLETED" && "active")}
               onClick={() => setFilter("COMPLETED")}
             >
-              Tamamlananlar
+              {t("plansCompleted")}
             </button>
           </div>
 
@@ -220,7 +238,7 @@ export function PlansView({
             className="btn primary"
             onClick={() => setNewPlanModal(true)}
           >
-            <Plus size={14} /> Yeni Plan Oluştur
+            <Plus size={14} /> {t("plansNewButton")}
           </button>
         </div>
       </div>
@@ -229,7 +247,7 @@ export function PlansView({
       <div className="row section" style={{ gap: 8 }}>
         <input
           className="input grow"
-          placeholder="Yeni bir plan veya hedef adı yazın… (Örn: Web Sitemi Yayınla)"
+          placeholder={t("plansQuickAdd")}
           value={inlineTitle}
           onChange={(e) => setInlineTitle(e.target.value)}
           onKeyDown={(e) => {
@@ -242,7 +260,7 @@ export function PlansView({
           disabled={!inlineTitle.trim()}
           onClick={handleQuickAdd}
         >
-          <Plus size={14} /> Hızlı Ekle
+          <Plus size={14} /> {t("plansQuickAddButton")}
         </button>
       </div>
 
@@ -251,9 +269,9 @@ export function PlansView({
         <div className="section">
           <div className="section-head" style={{ marginBottom: 12 }}>
             <Lightbulb size={14} />
-            <h2>Örnek Hedef Şablonları</h2>
+            <h2>{t("plansStarterHeading")}</h2>
             <span className="faint" style={{ fontSize: 12 }}>
-              (Tek tıkla hazır bir plan başlatın)
+              {t("plansStarterHint")}
             </span>
           </div>
           <div className="plan-starters-grid">
@@ -263,10 +281,12 @@ export function PlansView({
                 className="plan-starter-card"
                 onClick={() => handleApplyStarter(starter)}
               >
-                <div className="plan-starter-title">{starter.title}</div>
-                <div className="plan-starter-desc">{starter.description}</div>
+                <div className="plan-starter-title">
+                  {starter.emoji} {t(starter.titleKey)}
+                </div>
+                <div className="plan-starter-desc">{t(starter.descKey)}</div>
                 <div className="plan-starter-sub-count">
-                  {starter.subtasks.length} alt hedef içerir
+                  {t("plansStarterSubCount", { n: starter.stepKeys.length })}
                 </div>
               </div>
             ))}
@@ -352,6 +372,7 @@ function PlanCard({
   onOpen: (instance: TaskInstance) => void;
   now: Date;
 }) {
+  const { t } = useI18n();
   const toggleComplete = useStore((s) => s.toggleComplete);
   const createTask = useStore((s) => s.createTask);
   const updateTask = useStore((s) => s.updateTask);
@@ -436,7 +457,7 @@ function PlanCard({
           <button
             type="button"
             className={cn("btn ghost icon sm", isPlanToday && "active")}
-            title={isPlanToday ? "Bugünden kaldır" : "Planı Bugüne Ata"}
+            title={isPlanToday ? t("removeFromToday") : t("assignToToday")}
             onClick={togglePlanToday}
             style={isPlanToday ? { color: "#f59e0b" } : undefined}
           >
@@ -445,7 +466,7 @@ function PlanCard({
           <button
             type="button"
             className="btn ghost icon sm"
-            title="Bu plana odaklan (Focus)"
+            title={t("plansFocusOn")}
             onClick={openPlan}
           >
             <Timer size={14} />
@@ -453,7 +474,7 @@ function PlanCard({
           <button
             type="button"
             className="btn ghost icon sm"
-            title="Planı sil"
+            title={t("plansDelete")}
             onClick={(e) => {
               e.stopPropagation();
               deleteTask(plan.id);
@@ -473,7 +494,7 @@ function PlanCard({
 
       <div className="plan-card-meta-row" onClick={openPlan}>
         {isPlanToday && (
-          <span className="plan-today-pill" title="Bugünün görevlerine eklendi">
+          <span className="plan-today-pill" title={t("plansAddedToToday")}>
             <Sun size={11} /> Bugün
           </span>
         )}
@@ -543,14 +564,14 @@ function PlanCard({
                     <span
                       className="plan-subtask-label grow truncate"
                       onClick={() => onOpen(subInstance)}
-                      title="Alt görevin özelliklerini aç"
+                      title={t("plansSubtaskOpen")}
                     >
                       {sub.title}
                     </span>
                     {isSubToday && (
                       <span
                         className="plan-subtask-today-tag"
-                        title="Bugüne atanmış"
+                        title={t("plansAssignedToday")}
                       >
                         <Sun size={10} /> Bugün
                       </span>
@@ -561,7 +582,7 @@ function PlanCard({
                         "btn ghost icon xs plan-subtask-today-btn",
                         isSubToday && "active",
                       )}
-                      title={isSubToday ? "Bugünden Kaldır" : "Bugüne Ata"}
+                      title={isSubToday ? t("removeFromToday") : t("assignToToday")}
                       onClick={(e) => {
                         e.stopPropagation();
                         updateTask(sub.id, {
@@ -585,8 +606,8 @@ function PlanCard({
                 onClick={() => setShowAllSubtasks((v) => !v)}
               >
                 {showAllSubtasks
-                  ? "Daha az göster"
-                  : `+${hiddenSubtaskCount} daha`}
+                  ? t("showLess")
+                  : t("moreCount", { n: hiddenSubtaskCount })}
               </button>
             )}
 
@@ -594,7 +615,7 @@ function PlanCard({
             <div className="plan-subtask-add-row">
               <input
                 className="input sm grow"
-                placeholder="+ Alt hedef ekle…"
+                placeholder={t("plansAddSubtask")}
                 value={newSubtask}
                 onChange={(e) => setNewSubtask(e.target.value)}
                 onKeyDown={(e) => {
@@ -633,6 +654,7 @@ function NewPlanModal({
     initialSubtasks: string[],
   ) => void;
 }) {
+  const { t } = useI18n();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState<string | null>(null);
@@ -650,13 +672,13 @@ function NewPlanModal({
 
   return (
     <Modal
-      title="Yeni Plan & Hedef Oluştur"
+      title={t("plansNewTitle")}
       onClose={onClose}
       width={480}
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>
-            İptal
+            {t("cancel")}
           </button>
           <button
             type="button"
@@ -664,26 +686,26 @@ function NewPlanModal({
             disabled={!title.trim()}
             onClick={handleSubmit}
           >
-            Planı Başlat
+            {t("plansStart")}
           </button>
         </>
       }
     >
-      <Field label="Plan / Hedef Başlığı">
+      <Field label={t("plansFieldTitle")}>
         <input
           className="input"
           autoFocus
-          placeholder="Örn: 2026 Mobil Uygulama Lansmanı"
+          placeholder={t("plansTitlePlaceholder")}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
       </Field>
 
-      <Field label="Açıklama & Neden Önemli?">
+      <Field label={t("plansFieldWhy")}>
         <textarea
           className="input"
           rows={2}
-          placeholder="Bu hedefi neden gerçekleştirmek istiyorsunuz?"
+          placeholder={t("plansWhyPlaceholder")}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
@@ -691,13 +713,13 @@ function NewPlanModal({
 
       <div className="row" style={{ gap: 12 }}>
         <div style={{ flex: 1 }}>
-          <Field label="Kategori">
+          <Field label={t("formCategory")}>
             <select
               className="select"
               value={categoryId ?? ""}
               onChange={(e) => setCategoryId(e.target.value || null)}
             >
-              <option value="">Kategorisiz</option>
+              <option value="">{t("plansNoCategory")}</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -708,26 +730,27 @@ function NewPlanModal({
         </div>
 
         <div style={{ flex: 1 }}>
-          <Field label="Öncelik">
+          <Field label={t("formPriority")}>
             <select
               className="select"
               value={priority}
               onChange={(e) => setPriority(e.target.value as Priority)}
             >
-              <option value="NONE">Önceliksiz</option>
-              <option value="LOW">Düşük</option>
-              <option value="MEDIUM">Orta</option>
-              <option value="HIGH">Yüksek 🔥</option>
+              {PRIORITIES.map((p) => (
+                <option key={p} value={p}>
+                  {t(`priority${p}`)}
+                </option>
+              ))}
             </select>
           </Field>
         </div>
       </div>
 
-      <Field label="Başlangıç Alt Hedefleri (Her satıra bir hedef)">
+      <Field label={t("plansFieldSteps")}>
         <textarea
           className="input"
           rows={3}
-          placeholder={"1. İlk adımı tamamla\n2. İkinci adımı planla"}
+          placeholder={t("plansStepsPlaceholder")}
           value={subtasksText}
           onChange={(e) => setSubtasksText(e.target.value)}
         />

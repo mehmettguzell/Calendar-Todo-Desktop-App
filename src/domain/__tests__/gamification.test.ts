@@ -16,14 +16,14 @@ describe("Gamification Domain", () => {
     it("starts at Level 1 with 0 XP", () => {
       const level = calculateLevel(0);
       expect(level.level).toBe(1);
-      expect(level.title).toBe("Acemi Planlayıcı");
+      expect(level.titleKey).toBe("tier1");
       expect(level.progressPercent).toBe(0);
     });
 
     it("calculates level progression and percentage correctly", () => {
       const level = calculateLevel(150);
       expect(level.level).toBe(2);
-      expect(level.title).toBe("Görev Avcısı");
+      expect(level.titleKey).toBe("tier2");
       // Level 2 is 100 - 250 (range 150), so 150 XP is 50 in current level = 33%
       expect(level.progressPercent).toBe(33);
     });
@@ -31,7 +31,7 @@ describe("Gamification Domain", () => {
     it("handles max level correctly", () => {
       const level = calculateLevel(15000);
       expect(level.level).toBe(10);
-      expect(level.title).toBe("Zamanın Efendisi");
+      expect(level.titleKey).toBe("tier10");
       expect(level.progressPercent).toBe(100);
     });
   });
@@ -192,7 +192,9 @@ describe("Gamification Domain", () => {
         streak: 3,
       });
       expect(msg.badgeType).toBe("celebrate");
-      expect(msg.title).toContain("Günün Kahramanı");
+      // Keys, not sentences: the module picks the mood, the dictionary the words.
+      expect(msg.titleKey).toBe("motivAllDoneTitle");
+      expect(msg.streakDays).toBe(3);
     });
 
     it("returns warning when overdue tasks exist", () => {
@@ -203,7 +205,8 @@ describe("Gamification Domain", () => {
         streak: 1,
       });
       expect(msg.badgeType).toBe("warning");
-      expect(msg.title).toContain("gecikmiş");
+      expect(msg.titleKey).toBe("motivOverdueTitle");
+      expect(msg.params?.n).toBe(2);
     });
   });
 });

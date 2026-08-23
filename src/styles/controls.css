@@ -312,3 +312,48 @@
 }
 
 .export-buttons .btn { gap: 5px; }
+
+/* Context menu -------------------------------------------------------------- */
+.context-menu { min-width: 220px; }
+.context-menu .menu-item:disabled { color: var(--text-faint); cursor: default; }
+.context-menu .menu-item:disabled:hover { background: none; }
+.context-menu .menu-item.danger { color: var(--danger); }
+.context-menu .menu-item.danger:hover { background: var(--danger-soft); }
+.context-menu .menu-icon { display: grid; place-items: center; width: 16px; flex: none; }
+.context-menu .menu-hint {
+  margin-left: auto;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-family: inherit;
+}
+
+/* Extra-day chips ----------------------------------------------------------- */
+/* Seven small targets rather than a second date field: the question is "which
+   days of this week", and a week is short enough to show whole. */
+.weekday-chips { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+
+.weekday-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.weekday-chip:hover { background: var(--surface-hover); }
+.weekday-chip.on {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+}
+/* The only remaining day is not a choice, so it does not offer itself as one. */
+.weekday-chip.locked { cursor: default; opacity: 0.9; }
+.weekday-chip-dow { font-size: 10px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
+.weekday-chip-dom { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }

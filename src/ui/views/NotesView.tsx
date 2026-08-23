@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { localeTag } from "@/domain/datetime";
 import {
   CheckSquare,
   Lightbulb,
@@ -23,27 +24,28 @@ import {
   withPinned,
 } from "@/domain/note";
 import { cn } from "@/lib/cn";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 
 type SortId = "updated" | "created" | "title";
 
-const SORTS: { id: SortId; label: string }[] = [
-  { id: "updated", label: "Last edited" },
-  { id: "created", label: "Newest" },
-  { id: "title", label: "Title" },
+const SORTS: { id: SortId; labelKey: TranslationKey }[] = [
+  { id: "updated", labelKey: "notesSortUpdated" },
+  { id: "created", labelKey: "notesSortCreated" },
+  { id: "title", labelKey: "notesSortTitle" },
 ];
 
 /** Blank plus two shapes people actually reach for. */
 const STARTERS = [
-  { id: "blank", label: "Blank note", icon: StickyNote, body: "" },
+  { id: "blank", labelKey: "notesStarterBlank", icon: StickyNote, body: "" },
   {
     id: "checklist",
-    label: "Checklist",
+    labelKey: "notesStarterChecklist",
     icon: CheckSquare,
     body: "- [ ] \n- [ ] \n- [ ] ",
   },
   {
     id: "idea",
-    label: "Idea",
+    labelKey: "notesStarterIdea",
     icon: Lightbulb,
     body: "# The idea\n\n\n# Why it matters\n\n\n# Next step\n- [ ] ",
   },
@@ -57,6 +59,7 @@ export function NotesView({
   onOpen: (instance: TaskInstance) => void;
 }) {
   const tasks = useLiveTasks();
+  const { t } = useI18n();
   const createTask = useStore((s) => s.createTask);
   const updateTask = useStore((s) => s.updateTask);
   const now = useNow();
@@ -124,10 +127,10 @@ export function NotesView({
     <div className="page wide">
       <div className="section-head" style={{ marginBottom: 16 }}>
         <StickyNote size={16} />
-        <h2>Notes</h2>
+        <h2>{t("notesTitle")}</h2>
         <span className="count grow">{notes.length}</span>
         <button type="button" className="btn primary" onClick={() => add("")}>
-          <Plus size={14} /> New note
+          <Plus size={14} /> {t("notesNew")}
         </button>
       </div>
 
@@ -138,7 +141,7 @@ export function NotesView({
             <input
               className="input"
               value={query}
-              placeholder="Search notes…"
+              placeholder={t("notesSearch")}
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
@@ -146,11 +149,11 @@ export function NotesView({
             className="select"
             value={sort}
             onChange={(e) => setSort(e.target.value as SortId)}
-            aria-label="Sort notes"
+            aria-label={t("notesSort")}
           >
             {SORTS.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.label}
+                {t(s.labelKey)}
               </option>
             ))}
           </select>
@@ -183,8 +186,8 @@ export function NotesView({
         <>
           <Empty
             icon={<StickyNote size={28} />}
-            title="No notes yet"
-            hint="A place for instant thoughts, ideas and scratch lists."
+            title={t("notesEmptyTitle")}
+            hint={t("notesEmptyHint")}
           />
           <div className="note-starters">
             {STARTERS.map((starter) => (
@@ -195,7 +198,7 @@ export function NotesView({
                 onClick={() => add(starter.body)}
               >
                 <starter.icon size={14} />
-                {starter.label}
+                {t(starter.labelKey as TranslationKey)}
               </button>
             ))}
           </div>
@@ -203,8 +206,8 @@ export function NotesView({
       ) : visible.length === 0 ? (
         <Empty
           icon={<Search size={28} />}
-          title="Nothing matches"
-          hint="Try a different search or clear the filters."
+          title={t("notesNoMatch")}
+          hint={t("notesNoMatchHint")}
         />
       ) : (
         <>
@@ -212,7 +215,7 @@ export function NotesView({
             <>
               <div className="section-head" style={{ marginBottom: 12 }}>
                 <Pin size={13} />
-                <h2>Pinned</h2>
+                <h2>{t("notesPinned")}</h2>
                 <span className="count grow">{pinnedCount}</span>
               </div>
               <Wall
@@ -227,7 +230,7 @@ export function NotesView({
                   className="section-head"
                   style={{ marginTop: 20, marginBottom: 12 }}
                 >
-                  <h2>Others</h2>
+                  <h2>{t("notesOthers")}</h2>
                   <span className="count grow">
                     {visible.length - pinnedCount}
                   </span>
@@ -290,6 +293,7 @@ function NoteCard({
   onOpen: () => void;
   onTogglePin: () => void;
 }) {
+  const { t } = useI18n();
   const pinned = isPinned(note);
   const labels = noteLabels(note);
   const named = note.title.trim().length > 0;
@@ -316,7 +320,7 @@ function NoteCard({
       <button
         type="button"
         className={cn("note-pin", pinned && "on")}
-        title={pinned ? "Unpin note" : "Pin note"}
+        title={pinned ? t("notesUnpin") : t("notesPin")}
         aria-pressed={pinned}
         onClick={(e) => {
           e.stopPropagation();
@@ -327,7 +331,7 @@ function NoteCard({
       </button>
 
       <div className={cn("note-title", untitled && "untitled")}>
-        {untitled ? "Empty note" : title}
+        {untitled ? t("notesEmptyNote") : title}
       </div>
 
       {preview.trim() ? <NotePreview body={preview} /> : null}
@@ -408,5 +412,5 @@ function relativeDay(instant: string): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.round(hours / 24);
   if (days < 7) return `${days}d ago`;
-  return then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return then.toLocaleDateString(localeTag(), { month: "short", day: "numeric" });
 }

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { shiftTime, toLocalDate } from "@/domain/datetime";
 import { describeParse, parseQuickAdd } from "@/domain/naturalLanguage";
-import { PRIORITY_LABEL } from "@/domain/task";
 import {
   PRIORITIES,
   type LocalDate,
@@ -170,7 +169,7 @@ export function QuickAdd({
           className="input"
           autoFocus
           value={title}
-          placeholder="yarın 14:00 proje sunumu #iş !1"
+          placeholder={t("quickAddNlPlaceholder")}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
@@ -230,7 +229,7 @@ export function QuickAdd({
           >
             {PRIORITIES.map((p) => (
               <option key={p} value={p}>
-                {PRIORITY_LABEL[p]}
+                {t(`priority${p}`)}
               </option>
             ))}
           </select>
@@ -282,7 +281,7 @@ export function QuickAdd({
           <input
             className="input"
             value={tags}
-            placeholder="design, review"
+            placeholder={t("tagsPlaceholder")}
             onChange={(e) => setTags(e.target.value)}
           />
         </Field>

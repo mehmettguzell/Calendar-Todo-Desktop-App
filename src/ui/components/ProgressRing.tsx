@@ -1,4 +1,5 @@
 import { Sparkles, Trophy } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 export interface ProgressRingProps {
   completed: number;
@@ -15,6 +16,7 @@ export function ProgressRing({
   strokeWidth = 9,
   onCelebrate,
 }: ProgressRingProps) {
+  const { t } = useI18n();
   const percentage =
     total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 100;
   const isAllDone = total > 0 && completed >= total;
@@ -97,13 +99,13 @@ export function ProgressRing({
         {total === 0 ? (
           <div className="progress-ring-empty">
             <Sparkles size={22} className="progress-ring-icon faint" />
-            <span className="progress-ring-sub">Temiz</span>
+            <span className="progress-ring-sub">{t("ringClear")}</span>
           </div>
         ) : isAllDone ? (
           <button
             type="button"
             className="progress-ring-done-btn"
-            title="Kutlamayı tekrar oynat!"
+            title={t("replayCelebration")}
             onClick={onCelebrate}
           >
             <Trophy size={26} className="progress-ring-icon-trophy" />

@@ -1,9 +1,16 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AlarmClock, Play, Square, Trash2, X, ArrowLeft } from "lucide-react";
-import { formatTracked } from "@/domain/datetime";
+import {
+  AlarmClock,
+  Copy,
+  Play,
+  Square,
+  Trash2,
+  X,
+  ArrowLeft,
+} from "lucide-react";
+import { formatTracked, localeTag } from "@/domain/datetime";
 import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
-import { PRIORITY_LABEL } from "@/domain/task";
 import { PRIORITIES, type Priority, type TaskInstance } from "@/domain/types";
 import {
   useCategories,
@@ -13,6 +20,8 @@ import {
 } from "@/state/selectors";
 import { useStore } from "@/state/store";
 import { Field, StatusBadge, Switch } from "@/ui/components/primitives";
+import { useClipboardStore } from "@/state/clipboardStore";
+import { ExtraDaysPicker } from "./ExtraDaysPicker";
 import { HistoryTimeline } from "./HistoryTimeline";
 import { RecurrenceEditor } from "./RecurrenceEditor";
 import { ReminderEditor } from "./ReminderEditor";
@@ -45,9 +54,11 @@ export function TaskPanel({
   const startFocus = useStore((s) => s.startFocus);
   const stopFocus = useStore((s) => s.stopFocus);
   const runningFocus = useStore((s) => s.runningFocus);
+  const copyToClipboard = useClipboardStore((s) => s.copy);
+  const clip = useClipboardStore((s) => s.clip);
   const categories = useCategories();
-  const history = useTaskHistory(task.id);
   const { t } = useI18n();
+  const history = useTaskHistory(task.id);
   const tracked = useTrackedSeconds(task.id);
 
   /**
@@ -63,9 +74,9 @@ export function TaskPanel({
     const ratio = Math.round((actual / estimate) * 100);
     return {
       over: actual > estimate,
-      label: `${actual}/${estimate} dk · %${ratio}`,
+      label: `${actual}/${estimate} ${t("minutesShort")} · %${ratio}`,
     };
-  }, [task.estimateMinutes, tracked]);
+  }, [task.estimateMinutes, tracked, t]);
   const parentTask = useTaskById(task.parentId);
 
   const [title, setTitle] = useState(task.title);
@@ -115,7 +126,7 @@ export function TaskPanel({
         <StatusBadge status={instance.status} />
         {instance.isRecurring && instance.date ? (
           <span className="faint mono" style={{ fontSize: 11 }}>
-            occurrence {instance.date}
+            {t("occurrenceLabel")} {instance.date}
           </span>
         ) : null}
         <span className="grow" />
@@ -123,7 +134,7 @@ export function TaskPanel({
           type="button"
           className="btn ghost icon"
           onClick={onClose}
-          aria-label="Close panel"
+          aria-label={t("closePanel")}
         >
           <X size={16} />
         </button>
@@ -141,7 +152,7 @@ export function TaskPanel({
               paddingRight: 8,
             }}
             onClick={() => onOpenTask(parentTask.id)}
-            title={`Back to ${parentTask.title}`}
+            title={t("backTo", { title: parentTask.title })}
           >
             <ArrowLeft size={14} />{" "}
             <span className="truncate" style={{ maxWidth: 220 }}>
@@ -161,7 +172,7 @@ export function TaskPanel({
             e.preventDefault();
             e.currentTarget.blur();
           }}
-          placeholder="Untitled task"
+          placeholder={t("untitledTask")}
         />
 
         <div className="row" style={{ position: "relative", flexWrap: "wrap" }}>
@@ -170,7 +181,7 @@ export function TaskPanel({
             className="btn primary"
             onClick={() => toggleComplete(instance)}
           >
-            {instance.storedStatus === "COMPLETED" ? "Reopen" : "Complete"}
+            {instance.storedStatus === "COMPLETED" ? t("menuReopen") : t("menuComplete")}
           </button>
           <button
             type="button"
@@ -184,14 +195,25 @@ export function TaskPanel({
               }
             }}
           >
-            {isFocused ? "Pause" : "Start"}
+            {isFocused ? t("pause") : t("startShort")}
           </button>
           <button
             type="button"
             className="btn"
             onClick={() => setSnoozeOpen((v) => !v)}
           >
-            <AlarmClock size={14} /> Snooze
+            <AlarmClock size={14} /> {t("snooze")}
+          </button>
+          <button
+            type="button"
+            className={cn("btn icon", clip?.taskId === task.id && "primary")}
+            aria-label={t("menuCopy")}
+            title={`${t("menuCopy")} — ${t("calendarDayHint")}`}
+            onClick={() =>
+              copyToClipboard(task.id, task.title, instance.date ?? task.dueDate)
+            }
+          >
+            <Copy size={14} />
           </button>
           {instance.status === "SNOOZED" ? (
             <button
@@ -199,7 +221,7 @@ export function TaskPanel({
               className="btn ghost"
               onClick={() => clearSnooze(ref)}
             >
-              Wake now
+              {t("wakeNow")}
             </button>
           ) : null}
           {snoozeOpen ? (
@@ -219,11 +241,11 @@ export function TaskPanel({
           ) : null}
         </div>
 
-        <Field label="Notes">
+        <Field label={t("formNotes")}>
           <textarea
             className="textarea"
             value={description}
-            placeholder="Add details…"
+            placeholder={t("notesPlaceholder")}
             onChange={(e) => setDescription(e.target.value)}
             onBlur={() =>
               description !== task.description &&
@@ -233,10 +255,10 @@ export function TaskPanel({
         </Field>
 
         <div className="card">
-          <div className="card-head">Schedule</div>
+          <div className="card-head">{t("cardSchedule")}</div>
           <div className="col" style={{ gap: 10 }}>
             <div className="field-row">
-              <Field label="Start Date">
+              <Field label={t("formStartDate")}>
                 <input
                   className="input"
                   type="date"
@@ -246,7 +268,7 @@ export function TaskPanel({
                   }
                 />
               </Field>
-              <Field label="End Date">
+              <Field label={t("formEndDate")}>
                 <input
                   className="input"
                   type="date"
@@ -273,7 +295,7 @@ export function TaskPanel({
 
             {!task.allDay ? (
               <div className="field-row">
-                <Field label="Start">
+                <Field label={t("formStart")}>
                   <input
                     className="input"
                     type="time"
@@ -283,7 +305,7 @@ export function TaskPanel({
                     }
                   />
                 </Field>
-                <Field label="End">
+                <Field label={t("formEnd")}>
                   <input
                     className="input"
                     type="time"
@@ -296,6 +318,15 @@ export function TaskPanel({
               </div>
             ) : null}
 
+            {/* Above the repeat rule on purpose: "also on Thursday" is the
+                small, frequent wish, and it is expressed as a rule bounded to
+                this week — so the repeat editor below shows the same fact from
+                the other side, and stretching its end date is how an extra day
+                grows into a real weekly repeat. */}
+            <Field label={t("extraDaysTitle")}>
+              <ExtraDaysPicker task={task} />
+            </Field>
+
             <RecurrenceEditor
               value={task.recurrence}
               onChange={(recurrence) => updateTask(task.id, { recurrence })}
@@ -304,7 +335,7 @@ export function TaskPanel({
         </div>
 
         <div className="card">
-          <div className="card-head">Organise</div>
+          <div className="card-head">{t("cardOrganise")}</div>
           <div className="col" style={{ gap: 10 }}>
             <div className="field-row">
               <Field label={t("formPriority")}>
@@ -319,7 +350,7 @@ export function TaskPanel({
                 >
                   {PRIORITIES.map((p) => (
                     <option key={p} value={p}>
-                      {PRIORITY_LABEL[p]}
+                      {t(`priority${p}`)}
                     </option>
                   ))}
                 </select>
@@ -332,7 +363,7 @@ export function TaskPanel({
                     updateTask(task.id, { categoryId: e.target.value || null })
                   }
                 >
-                  <option value="">None</option>
+                  <option value="">{t("formNone")}</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -346,7 +377,7 @@ export function TaskPanel({
               <input
                 className="input"
                 value={tagInput}
-                placeholder="design, review"
+                placeholder={t("tagsPlaceholder")}
                 onChange={(e) => setTagInput(e.target.value)}
                 onBlur={() => {
                   const tags = tagInput
@@ -373,7 +404,7 @@ export function TaskPanel({
 
         <div className="card">
           <div className="card-head">
-            Focus
+            {t("formFocus")}
             <span className="mono">{formatTracked(tracked)}</span>
           </div>
 
@@ -396,7 +427,7 @@ export function TaskPanel({
                 }
               />
               <span className="faint" style={{ fontSize: 12 }}>
-                dk
+                {t("minutesShort")}
               </span>
               {estimateDelta ? (
                 // Planned against actual, in one line. A record of how wrong
@@ -404,7 +435,7 @@ export function TaskPanel({
                 // next one better.
                 <span
                   className={cn("estimate-delta", estimateDelta.over && "over")}
-                  title="Tahmin / gerçekleşen"
+                  title={t("estimateVsActual")}
                 >
                   {estimateDelta.label}
                 </span>
@@ -430,7 +461,9 @@ export function TaskPanel({
 
       <div className="panel-foot">
         <span className="grow faint" style={{ fontSize: 11.5 }}>
-          Created {new Date(task.createdAt).toLocaleDateString()}
+          {t("createdOn", {
+            date: new Date(task.createdAt).toLocaleDateString(localeTag()),
+          })}
         </span>
         {task.tags.includes("plan") ? (
           <button
@@ -442,7 +475,7 @@ export function TaskPanel({
               });
             }}
           >
-            Remove from Plans
+            {t("removeFromPlans")}
           </button>
         ) : (
           <button
@@ -458,7 +491,7 @@ export function TaskPanel({
               });
             }}
           >
-            Move to Plans
+            {t("moveToPlans")}
           </button>
         )}
         <button
@@ -469,7 +502,7 @@ export function TaskPanel({
             onClose();
           }}
         >
-          <Trash2 size={14} /> Trash
+          <Trash2 size={14} /> {t("trash")}
         </button>
       </div>
     </aside>

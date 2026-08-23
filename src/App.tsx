@@ -35,9 +35,11 @@ import { AuthModal } from "@/ui/components/AuthModal";
 import { CommandPalette } from "@/ui/components/CommandPalette";
 import { UndoToast } from "@/ui/components/UndoToast";
 import { useUndoStore } from "@/state/undoStore";
+import { pasteTaskOn } from "@/state/clipboardActions";
+import { useClipboardStore } from "@/state/clipboardStore";
 import { useAuthStore } from "@/state/authStore";
 import { initSyncEngine } from "@/state/syncEngine";
-import { useApplyTheme, useShortcuts } from "@/ui/hooks";
+import { useApplyLanguage, useApplyTheme, useShortcuts } from "@/ui/hooks";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 
 /** The selected task, remembered as a reference rather than a snapshot. */
@@ -69,7 +71,7 @@ export function App() {
   const settings = useStore((s) => s.db.settings);
   const occurrences = useOccurrenceIndex();
   const now = useNow();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
 
   const [view, setView] = useState<ViewId>("today");
   const [mode, setMode] = useState<CalendarMode>("month");
@@ -81,6 +83,14 @@ export function App() {
   const [quickAdd, setQuickAdd] = useState<QuickAddSeed | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  /**
+   * The calendar day a keyboard paste lands on.
+   *
+   * Ctrl+V has to have an unambiguous target, and the only honest one is the
+   * day the user last pointed at — so clicking a cell marks it, and the mark is
+   * visible rather than implied.
+   */
+  const [daySelection, setDaySelection] = useState<LocalDate | null>(null);
 
   const { alerts, dismissAlert } = useReminderScheduler();
 
@@ -116,18 +126,6 @@ export function App() {
     };
   }, []);
 
-  useApplyTheme(settings.theme);
-  useShortcuts({
-    onNew: () => setQuickAdd({ date: anchor, time: null }),
-    onToday: () => {
-      setAnchor(toLocalDate(new Date()));
-      setView("today");
-    },
-    onEscape: () => setSelection(null),
-    onPalette: () => setPaletteOpen((open) => !open),
-    onUndo: () => useUndoStore.getState().undo(),
-  });
-
   /**
    * The panel re-derives its instance from the live store on every render, so
    * an edit made anywhere (a calendar click, a todo checkbox, a fired reminder)
@@ -143,6 +141,36 @@ export function App() {
       : null;
     return toInstance(task, date, occurrence, now);
   }, [selection, tasks, occurrences, now]);
+
+  useApplyTheme(settings.theme);
+  useApplyLanguage(language);
+  useShortcuts({
+    onNew: () => setQuickAdd({ date: anchor, time: null }),
+    onToday: () => {
+      setAnchor(toLocalDate(new Date()));
+      setView("today");
+    },
+    onEscape: () => setSelection(null),
+    onPalette: () => setPaletteOpen((open) => !open),
+    onUndo: () => useUndoStore.getState().undo(),
+    onCopy: () => {
+      if (!selected) return false;
+      useClipboardStore
+        .getState()
+        .copy(selected.task.id, selected.task.title, selected.date);
+      return true;
+    },
+    onCut: () => {
+      // A series is laid out by its rule: cutting one occurrence out of it
+      // would move every other one too. Copy it instead.
+      if (!selected || selected.isRecurring) return false;
+      useClipboardStore
+        .getState()
+        .cut(selected.task.id, selected.task.title, selected.date);
+      return true;
+    },
+    onPaste: () => pasteTaskOn(daySelection ?? anchor) !== null,
+  });
 
   if (!ready) {
     return (
@@ -217,6 +245,8 @@ export function App() {
               mode={mode}
               anchor={anchor}
               filters={filters}
+              selectedDate={daySelection}
+              onSelectDate={setDaySelection}
               onOpen={openInstance}
               onQuickAdd={(date, time) => setQuickAdd({ date, time })}
             />

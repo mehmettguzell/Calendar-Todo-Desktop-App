@@ -19,15 +19,50 @@ import type { Instant, LocalDate, LocalTime } from "./types";
  * ends up half translated.
  */
 const LOCALES = { tr, en: enUS } as const;
+const LOCALE_TAGS = { tr: "tr-TR", en: "en-GB" } as const;
 let activeLocale: (typeof LOCALES)[keyof typeof LOCALES] = LOCALES.en;
+let activeLanguage: "tr" | "en" = "en";
 
 export function setDateLocale(language: "tr" | "en"): void {
   activeLocale = LOCALES[language] ?? LOCALES.en;
+  activeLanguage = language === "tr" ? "tr" : "en";
+}
+
+/** The app's language, for the handful of places that must branch on it. */
+export function currentLanguage(): "tr" | "en" {
+  return activeLanguage;
+}
+
+/**
+ * BCP-47 tag for `Intl` / `toLocaleDateString`.
+ *
+ * Every one of those calls used to pass `[]`, which means "whatever the browser
+ * is set to" — so a Turkish app on an English machine printed Turkish labels
+ * next to English weekday headings. The app's own language is the only answer
+ * that can be right in both places.
+ */
+export function localeTag(): string {
+  return LOCALE_TAGS[activeLanguage];
 }
 
 /** `date-fns.format`, always with the active locale. */
 function format(date: Date, pattern: string): string {
   return formatDateFns(date, pattern, { locale: activeLocale });
+}
+
+/**
+ * Weekday names in the app language, index 0 = Sunday.
+ *
+ * Derived from `Intl` rather than kept in the dictionary: seven names per
+ * language is seven more things to translate, and the platform already knows
+ * them for every locale this app will ever be asked to speak.
+ */
+export function weekdayNames(style: "short" | "long" = "short"): string[] {
+  const formatter = new Intl.DateTimeFormat(localeTag(), { weekday: style });
+  // 2024-01-07 is a Sunday, so the offsets line up with getDay().
+  return Array.from({ length: 7 }, (_, i) =>
+    formatter.format(new Date(2024, 0, 7 + i)),
+  );
 }
 
 export const DATE_FMT = "yyyy-MM-dd";
@@ -115,9 +150,9 @@ export function describeWhen(
   time: LocalTime | null,
   reference: Date = new Date(),
 ): string {
-  if (!date) return "No date";
+  if (!date) return relativeLabels().noDate;
   const diff = daysBetween(toLocalDate(reference), date);
-  const relative = RELATIVE_DAY_LABELS[activeLocale === LOCALES.tr ? "tr" : "en"];
+  const relative = relativeLabels();
   const dayLabel =
     diff === 0
       ? relative.today
@@ -130,8 +165,30 @@ export function describeWhen(
 }
 
 const RELATIVE_DAY_LABELS = {
-  tr: { today: "Bugün", tomorrow: "Yarın", yesterday: "Dün", at: "saat" },
-  en: { today: "Today", tomorrow: "Tomorrow", yesterday: "Yesterday", at: "at" },
+  tr: {
+    today: "Bugün",
+    tomorrow: "Yarın",
+    yesterday: "Dün",
+    at: "saat",
+    noDate: "Tarihsiz",
+  },
+  en: {
+    today: "Today",
+    tomorrow: "Tomorrow",
+    yesterday: "Yesterday",
+    at: "at",
+    noDate: "No date",
+  },
+} as const;
+
+function relativeLabels() {
+  return RELATIVE_DAY_LABELS[activeLanguage];
+}
+
+/** Duration units: `2sa 15dk` in Turkish, `2h 15m` in English. */
+const DURATION_UNITS = {
+  tr: { h: "sa", m: "dk", s: "sn" },
+  en: { h: "h", m: "m", s: "s" },
 } as const;
 
 export function formatDate(date: LocalDate, pattern: string): string {
@@ -139,19 +196,21 @@ export function formatDate(date: LocalDate, pattern: string): string {
 }
 
 export function formatDuration(totalSeconds: number): string {
+  const u = DURATION_UNITS[activeLanguage];
   const s = Math.max(0, Math.floor(totalSeconds));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
-  if (m > 0) return `${m}m ${String(sec).padStart(2, "0")}s`;
-  return `${sec}s`;
+  if (h > 0) return `${h}${u.h} ${String(m).padStart(2, "0")}${u.m}`;
+  if (m > 0) return `${m}${u.m} ${String(sec).padStart(2, "0")}${u.s}`;
+  return `${sec}${u.s}`;
 }
 
-/** Compact form used on task rows: `2h 15m`, `45m`, `—`. */
+/** Compact form used on task rows: `2h 15m` / `2sa 15dk`. */
 export function formatTracked(totalSeconds: number): string {
-  if (totalSeconds <= 0) return "0m";
+  const u = DURATION_UNITS[activeLanguage];
+  if (totalSeconds <= 0) return `0${u.m}`;
   const m = Math.round(totalSeconds / 60);
-  if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+  if (m < 60) return `${m}${u.m}`;
+  return `${Math.floor(m / 60)}${u.h} ${String(m % 60).padStart(2, "0")}${u.m}`;
 }

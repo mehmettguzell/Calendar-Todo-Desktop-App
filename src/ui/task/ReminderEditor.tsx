@@ -1,7 +1,14 @@
 import { useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { atTime, toInstant, toLocalDate, toLocalTime } from "@/domain/datetime";
-import { describeReminder, REMINDER_OFFSETS, reminderInstantFor } from "@/domain/reminders";
+import {
+  describeOffset,
+  describeReminder,
+  REMINDER_OFFSETS,
+  reminderInstantFor,
+} from "@/domain/reminders";
+import { localeTag } from "@/domain/datetime";
+import { useI18n } from "@/lib/i18n";
 import type { Task } from "@/domain/types";
 import { useStore } from "@/state/store";
 
@@ -22,13 +29,14 @@ export function ReminderEditor({ task }: { task: Task }) {
   );
   const settings = useStore((s) => s.db.settings);
   const removeReminder = useStore((s) => s.removeReminder);
+  const { t } = useI18n();
   const [adding, setAdding] = useState(false);
 
   return (
     <div className="col" style={{ gap: 8 }}>
       {reminders.length === 0 ? (
         <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
-          No reminders. {task.dueDate ? "" : "Give the task a date to enable relative reminders."}
+          {t("reminderNone")} {task.dueDate ? "" : t("reminderNeedsDate")}
         </p>
       ) : (
         reminders.map((reminder) => {
@@ -36,19 +44,24 @@ export function ReminderEditor({ task }: { task: Task }) {
           return (
             <div key={reminder.id} className="row">
               <div className="grow">
-                <div style={{ fontSize: 13 }}>{describeReminder(reminder)}</div>
+                <div style={{ fontSize: 13 }}>{describeReminder(reminder, t)}</div>
                 <div className="faint mono" style={{ fontSize: 11 }}>
                   {fires
-                    ? `Next: ${fires.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
-                    : "Waiting for a date"}
-                  {reminder.status === "FIRED" ? " · delivered" : ""}
-                  {reminder.status === "DISMISSED" ? " · dismissed" : ""}
+                    ? t("reminderNext", {
+                        when: fires.toLocaleString(localeTag(), {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }),
+                      })
+                    : t("reminderWaiting")}
+                  {reminder.status === "FIRED" ? ` · ${t("reminderDelivered")}` : ""}
+                  {reminder.status === "DISMISSED" ? ` · ${t("reminderDismissed")}` : ""}
                 </div>
               </div>
               <button
                 type="button"
                 className="btn ghost icon"
-                title="Remove reminder"
+                title={t("reminderRemove")}
                 onClick={() => removeReminder(reminder.id)}
               >
                 <Trash2 size={14} />
@@ -62,7 +75,7 @@ export function ReminderEditor({ task }: { task: Task }) {
         <AddReminderForm task={task} onDone={() => setAdding(false)} />
       ) : (
         <button type="button" className="btn sm" onClick={() => setAdding(true)}>
-          <Plus size={13} /> Add reminder
+          <Plus size={13} /> {t("reminderAdd")}
         </button>
       )}
     </div>
@@ -70,6 +83,7 @@ export function ReminderEditor({ task }: { task: Task }) {
 }
 
 function AddReminderForm({ task, onDone }: { task: Task; onDone: () => void }) {
+  const { t } = useI18n();
   const addReminder = useStore((s) => s.addReminder);
   const defaultOffset = useStore((s) => s.db.settings.defaultReminderOffset);
   const [mode, setMode] = useState<"RELATIVE" | "ABSOLUTE">(
@@ -102,14 +116,14 @@ function AddReminderForm({ task, onDone }: { task: Task; onDone: () => void }) {
           disabled={!task.dueDate}
           onClick={() => setMode("RELATIVE")}
         >
-          Before start
+          {t("reminderBeforeStart")}
         </button>
         <button
           type="button"
           aria-pressed={mode === "ABSOLUTE"}
           onClick={() => setMode("ABSOLUTE")}
         >
-          Exact time
+          {t("reminderExactTime")}
         </button>
       </div>
 
@@ -119,9 +133,9 @@ function AddReminderForm({ task, onDone }: { task: Task; onDone: () => void }) {
           value={offset}
           onChange={(e) => setOffset(Number(e.target.value))}
         >
-          {REMINDER_OFFSETS.map((o) => (
-            <option key={o.minutes} value={o.minutes}>
-              {o.label}
+          {REMINDER_OFFSETS.map((minutes) => (
+            <option key={minutes} value={minutes}>
+              {describeOffset(minutes, t)}
             </option>
           ))}
         </select>
@@ -144,10 +158,10 @@ function AddReminderForm({ task, onDone }: { task: Task; onDone: () => void }) {
 
       <div className="row">
         <button type="button" className="btn primary sm" onClick={submit}>
-          Add
+          {t("add")}
         </button>
         <button type="button" className="btn sm" onClick={onDone}>
-          Cancel
+          {t("cancel")}
         </button>
       </div>
     </div>

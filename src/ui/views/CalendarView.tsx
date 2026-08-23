@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { addDays, addMonths, endOfMonth, endOfWeek, startOfMonth, startOfWeek } from "date-fns";
-import { fromLocalDate, toLocalDate } from "@/domain/datetime";
+import { fromLocalDate, localeTag, toLocalDate } from "@/domain/datetime";
 import type { LocalDate, TaskInstance } from "@/domain/types";
 import { groupByDate, useInstancesInRange, type Filters } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
@@ -17,12 +17,17 @@ export function CalendarView({
   mode,
   anchor,
   filters,
+  selectedDate,
+  onSelectDate,
   onOpen,
   onQuickAdd,
 }: {
   mode: CalendarMode;
   anchor: LocalDate;
   filters: Filters;
+  /** The day a keyboard paste lands on; `null` until one is clicked. */
+  selectedDate: LocalDate | null;
+  onSelectDate: (date: LocalDate) => void;
   onOpen: (instance: TaskInstance) => void;
   onQuickAdd: (date: LocalDate, time: string | null) => void;
 }) {
@@ -44,6 +49,8 @@ export function CalendarView({
         today={today}
         weekStartsOn={settings.weekStartsOn}
         instancesByDate={byDate}
+        selectedDate={selectedDate}
+        onSelectDate={onSelectDate}
         onOpen={onOpen}
         onQuickAdd={(date) => onQuickAdd(date, null)}
       />
@@ -58,6 +65,8 @@ export function CalendarView({
       dayStartHour={settings.dayStartHour}
       dayEndHour={settings.dayEndHour}
       instancesByDate={byDate}
+      selectedDate={selectedDate}
+      onSelectDate={onSelectDate}
       onOpen={onOpen}
       onQuickAdd={onQuickAdd}
     />
@@ -99,15 +108,15 @@ export function calendarTitle(
 ): string {
   const date = fromLocalDate(anchor);
   if (mode === "month") {
-    return date.toLocaleDateString([], { month: "long", year: "numeric" });
+    return date.toLocaleDateString(localeTag(), { month: "long", year: "numeric" });
   }
   if (mode === "day") {
-    return date.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
+    return date.toLocaleDateString(localeTag(), { weekday: "long", day: "numeric", month: "long" });
   }
   const start = startOfWeek(date, { weekStartsOn });
   const end = addDays(start, 6);
   const sameMonth = start.getMonth() === end.getMonth();
   return sameMonth
-    ? `${start.getDate()} – ${end.getDate()} ${start.toLocaleDateString([], { month: "long", year: "numeric" })}`
-    : `${start.toLocaleDateString([], { day: "numeric", month: "short" })} – ${end.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}`;
+    ? `${start.getDate()} – ${end.getDate()} ${start.toLocaleDateString(localeTag(), { month: "long", year: "numeric" })}`
+    : `${start.toLocaleDateString(localeTag(), { day: "numeric", month: "short" })} – ${end.toLocaleDateString(localeTag(), { day: "numeric", month: "short", year: "numeric" })}`;
 }

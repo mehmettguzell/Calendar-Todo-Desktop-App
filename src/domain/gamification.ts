@@ -1,4 +1,4 @@
-import { addDaysLocal } from "./datetime";
+import { addDaysLocal, localeTag, weekdayNames } from "./datetime";
 import type {
   FocusSession,
   HistoryEntry,
@@ -12,27 +12,27 @@ export const XP_PER_FOCUS_SESSION = 20;
 
 export interface LevelTier {
   level: number;
-  title: string;
+  titleKey: string;
   minXp: number;
   maxXp: number;
 }
 
 export const LEVEL_TIERS: LevelTier[] = [
-  { level: 1, title: "Acemi Planlayıcı", minXp: 0, maxXp: 100 },
-  { level: 2, title: "Görev Avcısı", minXp: 100, maxXp: 250 },
-  { level: 3, title: "Zaman Bükücü", minXp: 250, maxXp: 500 },
-  { level: 4, title: "Üretkenlik Gurusu", minXp: 500, maxXp: 900 },
-  { level: 5, title: "Odak Ustası", minXp: 900, maxXp: 1500 },
-  { level: 6, title: "Disiplin Şampiyonu", minXp: 1500, maxXp: 2500 },
-  { level: 7, title: "Zaman Lordu", minXp: 2500, maxXp: 4000 },
-  { level: 8, title: "Tempo Efsanesi", minXp: 4000, maxXp: 7000 },
-  { level: 9, title: "Üretkenlik Titanı", minXp: 7000, maxXp: 12000 },
-  { level: 10, title: "Zamanın Efendisi", minXp: 12000, maxXp: Infinity },
+  { level: 1, titleKey: "tier1", minXp: 0, maxXp: 100 },
+  { level: 2, titleKey: "tier2", minXp: 100, maxXp: 250 },
+  { level: 3, titleKey: "tier3", minXp: 250, maxXp: 500 },
+  { level: 4, titleKey: "tier4", minXp: 500, maxXp: 900 },
+  { level: 5, titleKey: "tier5", minXp: 900, maxXp: 1500 },
+  { level: 6, titleKey: "tier6", minXp: 1500, maxXp: 2500 },
+  { level: 7, titleKey: "tier7", minXp: 2500, maxXp: 4000 },
+  { level: 8, titleKey: "tier8", minXp: 4000, maxXp: 7000 },
+  { level: 9, titleKey: "tier9", minXp: 7000, maxXp: 12000 },
+  { level: 10, titleKey: "tier10", minXp: 12000, maxXp: Infinity },
 ];
 
 export interface LevelInfo {
   level: number;
-  title: string;
+  titleKey: string;
   totalXp: number;
   currentLevelXp: number;
   nextLevelXp: number;
@@ -74,7 +74,7 @@ export function calculateLevel(totalXp: number): LevelInfo {
   const safeXp = Math.max(0, totalXp);
   const fallbackTier: LevelTier = LEVEL_TIERS[LEVEL_TIERS.length - 1] ?? {
     level: 1,
-    title: "Acemi Planlayıcı",
+    titleKey: "tier1",
     minXp: 0,
     maxXp: 100,
   };
@@ -97,7 +97,7 @@ export function calculateLevel(totalXp: number): LevelInfo {
 
   return {
     level: tier.level,
-    title: tier.title,
+    titleKey: tier.titleKey,
     totalXp: safeXp,
     currentLevelXp: tier.minXp,
     nextLevelXp: tier.maxXp,
@@ -302,8 +302,6 @@ export function computeStreaks(
   };
 }
 
-const TURKISH_DAY_NAMES = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
-
 /**
  * Computes weekly stats for the last N days (defaults to 7).
  */
@@ -318,8 +316,8 @@ export function computeWeeklyStats(
     const date = addDaysLocal(today, -i);
     const act = activityMap.get(date);
     const d = new Date(date + "T00:00:00");
-    const dayLabel = TURKISH_DAY_NAMES[d.getDay()] ?? "";
-    const shortDate = d.toLocaleDateString("tr-TR", {
+    const dayLabel = weekdayNames("short")[d.getDay()] ?? "";
+    const shortDate = d.toLocaleDateString(localeTag(), {
       day: "numeric",
       month: "short",
     });
@@ -347,8 +345,12 @@ export interface MotivationOptions {
 }
 
 export interface MotivationalMessage {
-  title: string;
-  subtitle: string;
+  /** Dictionary keys, not sentences: this module picks the mood, not the words. */
+  titleKey: string;
+  subtitleKey: string;
+  params?: Record<string, string | number>;
+  /** Set when the "your streak lives on" clause belongs in the subtitle. */
+  streakDays?: number;
   emoji: string;
   badgeType: "neutral" | "success" | "warning" | "celebrate";
 }
@@ -371,9 +373,9 @@ export function getMotivationalMessage(
 
   if (overdueCount > 0 && openCount > 0) {
     return {
-      title: `${overdueCount} gecikmiş görevin var`,
-      subtitle:
-        "Önce bunları aradan çıkarıp kafanı rahatlatabilirsin. Sen halledersin! 💪",
+      titleKey: "motivOverdueTitle",
+      subtitleKey: "motivOverdueSub",
+      params: { n: overdueCount },
       emoji: "⚡",
       badgeType: "warning",
     };
@@ -382,28 +384,28 @@ export function getMotivationalMessage(
   if (total === 0) {
     if (currentHour < 12) {
       return {
-        title: "Günaydın! Harika bir gün seni bekliyor",
-        subtitle:
-          "Bugün için henüz bir görev planlanmamış. İster yeni hedefler ekle, ister anın tadını çıkar! ☕",
+        titleKey: "motivMorningEmptyTitle",
+        subtitleKey: "motivMorningEmptySub",
         emoji: "☀️",
         badgeType: "neutral",
       };
     }
     return {
-      title: "Planlı görev yok, rahatla!",
-      subtitle:
-        "Bugün için takvimin tertemiz. Dinlenmek de üretkenliğin bir parçasıdır. 🌿",
+      titleKey: "motivEmptyTitle",
+      subtitleKey: "motivEmptySub",
       emoji: "🛋️",
       badgeType: "neutral",
     };
   }
 
-  if (percent === 100 && total > 0) {
-    const streakSuffix =
-      streak > 1 ? ` 🔥 ${streak} günlük serin devam ediyor!` : "";
+  if (percent === 100) {
     return {
-      title: "Günün Kahramanı! 🎉",
-      subtitle: `Bugüne ait ${total} görevin hepsini tamamladın.${streakSuffix} Muhteşem bir iş başardın!`,
+      titleKey: "motivAllDoneTitle",
+      subtitleKey: "motivAllDoneSub",
+      params: { total, streak: "" },
+      // The streak clause is a whole phrase rather than glued-on words, so the
+      // sentence it joins can put it wherever that language wants it.
+      ...(streak > 1 ? { streakDays: streak } : {}),
       emoji: "🏆",
       badgeType: "celebrate",
     };
@@ -411,8 +413,9 @@ export function getMotivationalMessage(
 
   if (percent >= 75) {
     return {
-      title: "Zirveye çok az kaldı! 🚀",
-      subtitle: `${doneCount}/${total} görev bitti (%${percent}). Son kalan ${openCount} görevi de bitirip günü fethet!`,
+      titleKey: "motivAlmostTitle",
+      subtitleKey: "motivAlmostSub",
+      params: { done: doneCount, total, percent, open: openCount },
       emoji: "🎯",
       badgeType: "success",
     };
@@ -420,8 +423,9 @@ export function getMotivationalMessage(
 
   if (percent >= 50) {
     return {
-      title: "Yolu yarıladın bile! 🔥",
-      subtitle: `Harika bir tempo yakaladın (${doneCount} tamamlandı). Kalan ${openCount} görevi de aynı odakla tamamlayabilirsin.`,
+      titleKey: "motivHalfTitle",
+      subtitleKey: "motivHalfSub",
+      params: { done: doneCount, open: openCount },
       emoji: "⚡",
       badgeType: "success",
     };
@@ -429,33 +433,37 @@ export function getMotivationalMessage(
 
   if (doneCount > 0) {
     return {
-      title: "Güzel bir başlangıç yaptın! ✨",
-      subtitle: `${doneCount} görev bitti, ivmeyi kaybetme! Sıradaki göreve odaklan.`,
+      titleKey: "motivStartedTitle",
+      subtitleKey: "motivStartedSub",
+      params: { done: doneCount },
       emoji: "🌱",
       badgeType: "neutral",
     };
   }
 
-  // 0% done
   if (currentHour < 12) {
     return {
-      title: "Yeni bir gün, yeni hedefler! 🌅",
-      subtitle: `Bugün tamamlanacak ${openCount} görev seni bekliyor. İlk adımı atarak harika bir başlangıç yap.`,
+      titleKey: "motivMorningTitle",
+      subtitleKey: "motivMorningSub",
+      params: { open: openCount },
       emoji: "🚀",
       badgeType: "neutral",
     };
-  } else if (currentHour >= 18) {
+  }
+  if (currentHour >= 18) {
     return {
-      title: "Akşam temposu! 🌙",
-      subtitle: `Günü tamamlamak için ${openCount} görevin var. Sakin ve odaklı bir şekilde halledebilirsin.`,
+      titleKey: "motivEveningTitle",
+      subtitleKey: "motivEveningSub",
+      params: { open: openCount },
       emoji: "💡",
       badgeType: "neutral",
     };
   }
 
   return {
-    title: "Odaklanma Zamanı! 🎯",
-    subtitle: `Bugün listende ${openCount} görev var. İlk görevi seç ve başla!`,
+    titleKey: "motivFocusTitle",
+    subtitleKey: "motivFocusSub",
+    params: { open: openCount },
     emoji: "⏳",
     badgeType: "neutral",
   };

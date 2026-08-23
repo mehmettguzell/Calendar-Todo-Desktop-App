@@ -113,12 +113,29 @@ export function defaultBudgetCategories(
   }));
 }
 
-function defaultCategories(): Category[] {
-  return [
-    { id: createId("c"), name: "Work", color: "#3b82f6", order: 0 },
-    { id: createId("c"), name: "Personal", color: "#22c55e", order: 1 },
-    { id: createId("c"), name: "Health", color: "#ec4899", order: 2 },
-  ];
+/**
+ * The three categories a fresh document starts with.
+ *
+ * Named in the language the app is first opened in — they are the first words a
+ * new user reads, and English labels in a Turkish sidebar are the loudest kind
+ * of half-translation. They stay ordinary user data afterwards: switching
+ * language later does not rename them, because by then they may hold work.
+ */
+const SEED_CATEGORIES = {
+  tr: ["İş", "Kişisel", "Sağlık"],
+  en: ["Work", "Personal", "Health"],
+} as const;
+
+function defaultCategories(
+  language: "tr" | "en" = DEFAULT_SETTINGS.language ?? "en",
+): Category[] {
+  const colors = ["#3b82f6", "#22c55e", "#ec4899"];
+  return (SEED_CATEGORIES[language] ?? SEED_CATEGORIES.en).map((name, index) => ({
+    id: createId("c"),
+    name,
+    color: colors[index] as string,
+    order: index,
+  }));
 }
 
 export function deduplicateCategories(
