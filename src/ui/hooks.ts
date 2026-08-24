@@ -1,4 +1,35 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+
+/**
+ * Keep a value in the tree long enough for it to animate away.
+ *
+ * React drops a null the instant it appears, which is why the detail panel
+ * used to blink out of existence rather than leave: there was nothing left to
+ * animate. This holds the last non-null value for `exitMs` after it goes and
+ * reports it as `closing` so the markup can carry a state class.
+ *
+ * A value that comes back before the timer runs out simply replaces the held
+ * one — no remount, no restart. The exit was mid-flight, so what the eye sees
+ * is the panel turning round and coming back, which is what happened.
+ */
+export function usePresence<T>(
+  value: T | null,
+  exitMs: number,
+): { held: T | null; closing: boolean } {
+  const [held, setHeld] = useState<T | null>(value);
+
+  useEffect(() => {
+    if (value !== null) {
+      setHeld(value);
+      return;
+    }
+    if (held === null) return;
+    const timer = window.setTimeout(() => setHeld(null), exitMs);
+    return () => window.clearTimeout(timer);
+  }, [value, held, exitMs]);
+
+  return { held, closing: value === null && held !== null };
+}
 
 /** Resolve the theme setting against the OS preference and stamp it on <html>. */
 export function useApplyTheme(theme: "system" | "light" | "dark") {

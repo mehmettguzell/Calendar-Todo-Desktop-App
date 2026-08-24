@@ -38,10 +38,13 @@ import { SubtaskList } from "./SubtaskList";
  */
 export function TaskPanel({
   instance,
+  closing,
   onClose,
   onOpenTask,
 }: {
   instance: TaskInstance;
+  /** Rendering only so it can animate out; see `usePresence`. */
+  closing?: boolean;
   onClose: () => void;
   onOpenTask: (taskId: string) => void;
 }) {
@@ -121,7 +124,7 @@ export function TaskPanel({
   );
 
   return (
-    <aside className="panel">
+    <aside className={cn("panel", closing && "is-closing")} inert={closing}>
       <div className="panel-head">
         <StatusBadge status={instance.status} />
         {instance.isRecurring && instance.date ? (

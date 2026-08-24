@@ -187,6 +187,13 @@ ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS estimate_minutes INTEGER;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS recurrence JSONB;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS recurrence_source_id TEXT;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS last_generated_for TEXT;
+-- Statement import: who was paid, and the identity of the statement row it came
+-- from. The unique index is what makes re-importing the same month a no-op.
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS merchant TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS external_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS transactions_user_external_idx
+  ON public.transactions (user_id, external_id)
+  WHERE external_id IS NOT NULL;
 ALTER TABLE public.budget_categories ADD COLUMN IF NOT EXISTS monthly_limit_minor BIGINT;
 
 -- ==================================================================

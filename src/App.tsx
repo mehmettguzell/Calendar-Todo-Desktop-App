@@ -39,8 +39,19 @@ import { pasteTaskOn } from "@/state/clipboardActions";
 import { useClipboardStore } from "@/state/clipboardStore";
 import { useAuthStore } from "@/state/authStore";
 import { initSyncEngine } from "@/state/syncEngine";
-import { useApplyLanguage, useApplyTheme, useShortcuts } from "@/ui/hooks";
+import {
+  useApplyLanguage,
+  useApplyTheme,
+  usePresence,
+  useShortcuts,
+} from "@/ui/hooks";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+
+/**
+ * How long the detail panel stays mounted after the selection clears — long
+ * enough to cover the slide in `shell.css` and the fade in `views.css`.
+ */
+const PANEL_EXIT_MS = 260;
 
 /** The selected task, remembered as a reference rather than a snapshot. */
 interface Selection {
@@ -141,6 +152,13 @@ export function App() {
       : null;
     return toInstance(task, date, occurrence, now);
   }, [selection, tasks, occurrences, now]);
+
+  /**
+   * The panel outlives the selection by one animation. `has-panel` still
+   * follows the live selection, so the column starts collapsing the moment the
+   * task is deselected and the held panel rides it off the right edge.
+   */
+  const panel = usePresence(selected, PANEL_EXIT_MS);
 
   useApplyTheme(settings.theme);
   useApplyLanguage(language);
@@ -286,12 +304,17 @@ export function App() {
         </div>
       </main>
 
-      {selected ? (
-        selected.task.tags.includes("note") ? (
-          <NotePanel instance={selected} onClose={() => setSelection(null)} />
+      {panel.held ? (
+        panel.held.task.tags.includes("note") ? (
+          <NotePanel
+            instance={panel.held}
+            closing={panel.closing}
+            onClose={() => setSelection(null)}
+          />
         ) : (
           <TaskPanel
-            instance={selected}
+            instance={panel.held}
+            closing={panel.closing}
             onClose={() => setSelection(null)}
             onOpenTask={(taskId) => openTaskId(taskId)}
           />

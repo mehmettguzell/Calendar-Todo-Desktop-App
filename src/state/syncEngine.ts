@@ -628,6 +628,8 @@ function localTransactionFingerprint(t: Transaction): string {
     canonicalRecurrence(t.recurrence),
     nz(t.recurrenceSourceId),
     nz(t.lastGeneratedFor),
+    nz(t.merchant),
+    nz(t.externalId),
     t.deletedAt !== null,
   ]);
 }
@@ -642,6 +644,8 @@ function cloudTransactionFingerprint(row: Record<string, unknown>): string {
     canonicalRecurrence(row.recurrence),
     nz(row.recurrence_source_id),
     nz(row.last_generated_for),
+    nz(row.merchant),
+    nz(row.external_id),
     Boolean(row.is_deleted),
   ]);
 }
@@ -1089,6 +1093,44 @@ export interface SyncContext {
   liveTaskIds: Set<string>;
 }
 
+/**
+ * Columns added after the first release.
+ *
+ * A user whose Supabase project still runs the original schema.sql has a
+ * `transactions` table without these, and PostgREST rejects the whole batch
+ * rather than the unknown key. Rather than making sync fail until they run a
+ * migration, the write is retried without the column and the omission is
+ * remembered for the rest of the session — the statement importer is a local
+ * feature that degrades to "this device knows the merchant, the cloud does
+ * not", which is a far better outcome than a red sync badge.
+ */
+const OPTIONAL_COLUMNS: Record<string, string[]> = {
+  transactions: ["merchant", "external_id"],
+};
+
+const droppedColumns = new Map<string, Set<string>>();
+
+function withoutMissingColumns(
+  table: string,
+  row: Record<string, unknown>,
+): Record<string, unknown> {
+  const gone = droppedColumns.get(table);
+  if (!gone || gone.size === 0) return row;
+  const copy = { ...row };
+  for (const column of gone) delete copy[column];
+  return copy;
+}
+
+/** Does this error name a column we are allowed to give up on? */
+function missingOptionalColumn(table: string, error: unknown): string | null {
+  const message = (error as { message?: string } | null)?.message ?? "";
+  if (!message) return null;
+  for (const column of OPTIONAL_COLUMNS[table] ?? []) {
+    if (message.includes(column)) return column;
+  }
+  return null;
+}
+
 async function writeCollection<T>(
   spec: CollectionSpec<T>,
   rows: T[],
@@ -1102,14 +1144,32 @@ async function writeCollection<T>(
   );
 
   for (const batch of chunked(toWrite, UPSERT_CHUNK_SIZE)) {
-    const { error } = await withTimeout(
-      supabase
-        .from(spec.table)
-        .upsert(batch.map((row) => spec.toCloud(row, userId)), {
-          onConflict: "id,user_id",
-        }),
-      `${spec.table} upsert`,
-    );
+    const send = () =>
+      withTimeout(
+        supabase!
+          .from(spec.table)
+          .upsert(
+            batch.map((row) =>
+              withoutMissingColumns(spec.table, spec.toCloud(row, userId)),
+            ),
+            { onConflict: "id,user_id" },
+          ),
+        `${spec.table} upsert`,
+      );
+
+    let { error } = await send();
+
+    const absent = error ? missingOptionalColumn(spec.table, error) : null;
+    if (absent) {
+      const gone = droppedColumns.get(spec.table) ?? new Set<string>();
+      // Give up on every optional column at once: they arrive in the same
+      // migration, so a project missing one is missing all of them, and
+      // retrying per column would cost a round trip each.
+      for (const column of OPTIONAL_COLUMNS[spec.table] ?? []) gone.add(column);
+      droppedColumns.set(spec.table, gone);
+      ({ error } = await send());
+    }
+
     if (isMissingRelation(error)) {
       noteRelationMissing(spec.table);
       return;
@@ -1275,6 +1335,8 @@ const TRANSACTION_SPEC: CollectionSpec<Transaction> = {
     recurrence: t.recurrence ?? null,
     recurrence_source_id: t.recurrenceSourceId ?? null,
     last_generated_for: t.lastGeneratedFor ?? null,
+    merchant: t.merchant ?? null,
+    external_id: t.externalId ?? null,
     is_deleted: t.deletedAt !== null,
     created_at: t.createdAt,
     updated_at: t.updatedAt,
@@ -1343,6 +1405,8 @@ function transactionFromCloud(row: Record<string, unknown>): Transaction {
     recurrence: (row.recurrence as Transaction["recurrence"]) ?? null,
     recurrenceSourceId: (row.recurrence_source_id as string) ?? null,
     lastGeneratedFor: (row.last_generated_for as string) ?? null,
+    merchant: (row.merchant as string) ?? null,
+    externalId: (row.external_id as string) ?? null,
     createdAt: (row.created_at as string) ?? new Date().toISOString(),
     updatedAt: (row.updated_at as string) ?? new Date().toISOString(),
     deletedAt: row.is_deleted ? ((row.updated_at as string) ?? null) : null,

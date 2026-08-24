@@ -39,9 +39,12 @@ const AUTOSAVE_MS = 2000;
 
 export function NotePanel({
   instance,
+  closing,
   onClose,
 }: {
   instance: TaskInstance;
+  /** Rendering only so it can animate out; see `usePresence`. */
+  closing?: boolean;
   onClose: () => void;
 }) {
   const { task } = instance;
@@ -148,7 +151,11 @@ export function NotePanel({
   const words = wordCount(`${title} ${description}`);
 
   return (
-    <aside className="panel note-paper" data-color={color}>
+    <aside
+      className={cn("panel note-paper", closing && "is-closing")}
+      data-color={color}
+      inert={closing}
+    >
       <div className="note-panel-head">
         <div className="swatches">
           {NOTE_COLORS.map((option) => (

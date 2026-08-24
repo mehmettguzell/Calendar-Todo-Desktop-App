@@ -308,6 +308,43 @@ own. Unticking them hands back exactly the single-day task you started with.
 Copying is the other answer, for when you want *another* task like this one: a
 new row, starting fresh, with its subtasks and none of the original's history.
 
+## Bringing a bank statement in
+
+Budget → **Ekstre yükle / Import statement**. Drop the CSV or `.xls` your bank
+gives you, or paste the text straight out of a PDF statement. Nothing is written
+until you have seen the preview.
+
+The importer works out the column layout itself, reads Turkish amounts
+(`1.234,56`), and recognises the shop behind the descriptor — so twelve spellings
+of `MIGROS TIC.A.S.-5M ATAŞEHİR İSTANBUL TR` become one merchant called Migros,
+already filed under Market. Rows it cannot read are listed with a reason rather
+than dropped.
+
+Two things it does on your behalf, because getting them wrong is expensive:
+
+- **The card payment is not spending.** It arrives unticked — importing it would
+  count every purchase it settled a second time.
+- **A refund is negative spending.** It is subtracted from that shop's total
+  rather than counted as income.
+
+Re-importing the same month, or a statement that overlaps one you already loaded,
+adds nothing: every row carries a fingerprint, and the ones already in the ledger
+show up marked "zaten var".
+
+### Where the money went
+
+Under the same view, spending breaks down by category **and by shop inside it**:
+
+```
+🛒 Market            ₺2.662,40   %31
+   Migros            ₺1.820,10   2 kez   ort. ₺970,05   −₺120,00 iade
+   CarrefourSA         ₺842,30   1 kez   ort. ₺842,30
+```
+
+The search box answers the other question — "just Migros", across every category
+it appears in — and each category carries its change against the previous month,
+so a month that came out level cannot hide a category that doubled.
+
 ## Keyboard
 
 `Ctrl/Cmd+K` command palette · `n` new task · `t` jump to today · `Esc` close ·

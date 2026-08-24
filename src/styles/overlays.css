@@ -7,6 +7,7 @@
   padding: var(--space-5);
   background: rgba(12, 15, 22, 0.42);
   backdrop-filter: blur(2px);
+  animation: fade-in 160ms ease-out;
 }
 
 .modal {
@@ -22,6 +23,19 @@
   background: var(--surface);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
+  /* Slightly undersized and low, then settling into place — the dialog grows
+     out of the backdrop instead of being stamped onto it. */
+  animation: modal-in 240ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.975); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .modal { animation: none; }
 }
 
 .modal-head {
@@ -164,8 +178,12 @@
 .color-picker button[aria-pressed="true"] { border-color: var(--text); transform: scale(1.12); }
 
 @media (max-width: 1180px) {
-  .app.has-panel { grid-template-columns: var(--sidebar-w) 1fr; }
-  .app.has-panel .panel {
+  .app.has-panel { grid-template-columns: var(--sidebar-w) 1fr 0px; }
+  /* Keyed off the panel itself rather than the shell's open class, so the
+     rules survive that class being dropped at the start of the exit — else
+     the panel would drop back into the collapsed track mid-animation.
+     Nothing renders a .panel unless something is selected. */
+  .panel {
     position: fixed;
     top: 0;
     right: 0;
@@ -173,7 +191,29 @@
     width: min(var(--panel-w), 100vw);
     height: 100%;
     box-shadow: var(--shadow-lg);
+    /* No column opens at this width, so the slide has to come from the panel. */
+    animation: panel-slide-in 300ms cubic-bezier(0.32, 0.72, 0, 1);
   }
+
+  .panel.is-closing {
+    opacity: 1;
+    animation: panel-slide-out 240ms cubic-bezier(0.4, 0.14, 0.3, 1) forwards;
+  }
+
+  @keyframes panel-slide-in {
+    from { transform: translateX(100%); }
+    to { transform: none; }
+  }
+
+  @keyframes panel-slide-out {
+    from { transform: none; }
+    to { transform: translateX(100%); }
+  }
+}
+
+@media (max-width: 1180px) and (prefers-reduced-motion: reduce) {
+  .panel,
+  .panel.is-closing { animation: none; }
 }
 
 /* ==================================================================

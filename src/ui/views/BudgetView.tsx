@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
+  FileUp,
   PiggyBank,
   Plus,
   Trash2,
@@ -28,6 +29,8 @@ import type { Recurrence } from "@/domain/types";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { useNow, useStore } from "@/state/store";
+import { SpendingBreakdown } from "@/ui/budget/SpendingBreakdown";
+import { StatementImport } from "@/ui/budget/StatementImport";
 
 type PeriodId = "day" | "week" | "month" | "year";
 
@@ -62,6 +65,7 @@ export function BudgetView() {
   const updateBudgetCategory = useStore((s) => s.updateBudgetCategory);
   const materialise = useStore((s) => s.materialiseRecurringTransactions);
   const [generated, setGenerated] = useState(0);
+  const [importOpen, setImportOpen] = useState(false);
 
   const currency = settings.currency ?? "TRY";
   const [period, setPeriod] = useState<PeriodId>("month");
@@ -75,6 +79,17 @@ export function BudgetView() {
   const rows = useMemo(
     () => transactionsInRange(transactions, range),
     [transactions, range],
+  );
+
+  /*
+   * The window immediately before this one, of the same length.
+   *
+   * Stepping back by the period rather than subtracting days keeps "August vs
+   * July" meaning August vs July even though one of them is a day shorter.
+   */
+  const previousRange = useMemo(
+    () => periodRange(stepPeriod(anchor, period, -1), period, settings.weekStartsOn),
+    [anchor, period, settings.weekStartsOn],
   );
   const totals = useMemo(() => summarise(rows), [rows]);
   const burn = useMemo(() => burnRatePerDay(rows, range), [rows, range]);
@@ -261,6 +276,26 @@ export function BudgetView() {
           )}
         </section>
 
+        <section className="card budget-spend">
+          <div className="section-head">
+            <h3>{t("spendTitle")}</h3>
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => setImportOpen(true)}
+            >
+              <FileUp size={13} /> {t("importButton")}
+            </button>
+          </div>
+          <SpendingBreakdown
+            transactions={transactions}
+            categories={categories}
+            range={range}
+            previousRange={previousRange}
+            currency={currency}
+          />
+        </section>
+
         <section className="card budget-ledger">
           <div className="section-head">
             <h3>{t("budgetMovements")}</h3>
@@ -324,6 +359,7 @@ export function BudgetView() {
           )}
         </section>
       </div>
+      {importOpen ? <StatementImport onClose={() => setImportOpen(false)} /> : null}
     </div>
   );
 }

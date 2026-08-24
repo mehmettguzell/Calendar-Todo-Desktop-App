@@ -131,10 +131,57 @@
 .panel {
   display: flex;
   flex-direction: column;
+  /* Its own width rather than the grid track's. The track animates up from
+     zero, and a stretched panel would rewrap every label and button on every
+     frame of that; at a fixed width the collapsed track simply parks it past
+     the right edge, so the track animation alone reads as a slide. */
+  width: var(--panel-w);
   min-width: 0;
   height: 100%;
   border-left: 1px solid var(--border);
   background: var(--surface-2);
+  animation: panel-in 260ms ease-out;
+}
+
+/* Held in the tree for the length of its exit and nothing more: it is sliding
+   away under the grid transition, so it must not still take clicks. */
+.panel.is-closing {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 220ms ease-in;
+}
+
+@keyframes panel-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* The panel slides; its contents drift in behind it a beat later. The stagger
+   is what separates "a panel appeared" from "a panel opened". */
+.panel-head,
+.note-panel-head,
+.panel-body,
+.panel-foot {
+  animation: panel-content-in 320ms cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+
+.panel-head,
+.note-panel-head { animation-delay: 50ms; }
+.panel-body { animation-delay: 90ms; }
+.panel-foot { animation-delay: 130ms; }
+
+@keyframes panel-content-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .panel-head,
+  .note-panel-head,
+  .panel-body,
+  .panel-foot { animation: none; }
+  .panel.is-closing { transition: none; }
 }
 
 .panel-head {
@@ -2050,4 +2097,162 @@
   background: var(--surface-2);
   color: var(--text);
   outline: none;
+}
+
+/* Statement import ---------------------------------------------------------- */
+.import-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 20px;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.import-drop:hover,
+.import-drop.over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.import-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12.5px;
+}
+
+.import-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+.import-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.import-chip.warn { border-color: var(--warning); color: var(--warning); }
+
+/* The preview is the whole point of the wizard, so it gets the height. */
+.import-table-wrap { max-height: 46vh; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.import-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+
+.import-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: left;
+}
+
+.import-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.import-table tr:last-child td { border-bottom: none; }
+/* Rows the ledger already knows recede rather than disappear: someone
+   reconciling wants to see that the line was read, not wonder where it went. */
+.import-table tr.is-known { background: var(--surface-2); }
+.import-table tr.is-off { opacity: 0.5; }
+
+.import-merchant { display: block; font-weight: 600; }
+.import-raw { display: block; max-width: 320px; color: var(--text-faint); font-size: 10.5px; }
+.import-flag {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--warning-soft, var(--surface-hover));
+  color: var(--warning);
+  font-size: 10px;
+}
+.import-flag.kind { background: var(--surface-hover); color: var(--text-muted); }
+.import-amount { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.import-amount.in { color: var(--success); }
+
+/* Spending breakdown -------------------------------------------------------- */
+.spend-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.spend-total { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.spend-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+/* Spending more is the bad direction, so the usual green/red is inverted. */
+.spend-delta.up { background: var(--danger-soft); color: var(--danger); }
+.spend-delta.down { background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); }
+.spend-delta.sm { padding: 0 5px; font-size: 10.5px; }
+
+.spend-search { display: flex; align-items: center; gap: 6px; color: var(--text-faint); }
+.spend-search .input { flex: 1; }
+.spend-search-total { font-weight: 650; font-variant-numeric: tabular-nums; }
+
+.spend-categories, .spend-merchants { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+
+.spend-category-head {
+  display: grid;
+  grid-template-columns: 14px 18px minmax(60px, 1fr) 28px minmax(60px, 1.4fr) auto 34px auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 4px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.spend-category-head:hover { background: var(--surface-hover); }
+.spend-caret { transition: transform 140ms ease; color: var(--text-faint); }
+.spend-category.open .spend-caret { transform: rotate(90deg); }
+.spend-name { min-width: 0; font-size: 13px; }
+.spend-count { font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.spend-track { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.spend-track.thin { height: 4px; }
+.spend-fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.spend-value { font-size: 12.5px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.spend-share { font-size: 11px; text-align: right; }
+
+.spend-merchants { margin: 2px 0 6px 22px; padding-left: 10px; border-left: 1px solid var(--border); }
+.spend-merchants.standalone { margin-left: 0; padding-left: 0; border-left: none; }
+
+.spend-merchant {
+  display: grid;
+  grid-template-columns: minmax(60px, 1fr) 40px minmax(50px, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  font-size: 12px;
+}
+
+.spend-average { font-size: 10.5px; white-space: nowrap; }
+.spend-refund { color: var(--success); font-size: 10.5px; white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .spend-category-head { grid-template-columns: 14px 18px 1fr auto auto; }
+  .spend-category-head .spend-track, .spend-category-head .spend-count { display: none; }
+  .spend-merchant { grid-template-columns: 1fr auto auto; }
+  .spend-merchant .spend-track, .spend-merchant .spend-average { display: none; }
 }

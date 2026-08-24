@@ -34,8 +34,11 @@ import { resolveSnooze, type SnoozePresetId } from "@/domain/snooze";
 import type { BudgetCategory, MoneyFlow, Transaction } from "@/domain/money";
 import {
   BUDGET_CATEGORY_COLORS,
+  CATEGORY_CATALOGUE,
   dueRecurringTransactions,
+  type CategoryKey,
 } from "@/domain/money";
+import type { ImportDraft } from "@/domain/statementImport";
 import {
   syncDeleteCategoryToCloud,
   syncDeleteTaskToCloud,
@@ -193,6 +196,20 @@ interface StoreState {
   restoreTransaction(id: string): void;
   /** Find a budget category by name, or create it. Names are the identity. */
   ensureBudgetCategory(name: string, flow: MoneyFlow): BudgetCategory;
+  /**
+   * Create the categories a statement needs, in the app's language.
+   *
+   * Returns the key -> id map the import then files its rows under.
+   */
+  ensureCategoriesForKeys(keys: CategoryKey[]): Record<string, string>;
+  /**
+   * Write a confirmed statement import.
+   *
+   * Returns how many entries were created. Entries whose `externalId` is
+   * already in the ledger are skipped here as well as in the plan, so a stale
+   * preview can never double a month.
+   */
+  importTransactions(drafts: ImportDraft[]): number;
   updateBudgetCategory(
     id: string,
     patch: Partial<
@@ -1332,6 +1349,102 @@ export const useStore = create<StoreState>((set, get) => {
       });
 
       return movedIds.size;
+    },
+
+    ensureCategoriesForKeys(keys) {
+      const language = get().db.settings.language ?? "tr";
+      const mapping: Record<string, string> = {};
+
+      for (const key of keys) {
+        const entry = CATEGORY_CATALOGUE[key];
+        if (!entry) continue;
+        // Both spellings count as "already there": a document started in
+        // English holds "Groceries", and adding "Market" beside it would split
+        // the very total the import exists to build.
+        const wanted = [entry.tr, entry.en].map((name) => name.toLocaleLowerCase("tr"));
+        const existing = get().db.budgetCategories.find((category) =>
+          wanted.includes(category.name.trim().toLocaleLowerCase("tr")),
+        );
+        if (existing) {
+          mapping[key] = existing.id;
+          continue;
+        }
+
+        const at = nowInstant();
+        const created: BudgetCategory = {
+          id: createId("b"),
+          name: language === "tr" ? entry.tr : entry.en,
+          flow: entry.flow,
+          color: entry.color,
+          icon: entry.icon,
+          // Created by the import, so the user may delete it like their own.
+          builtIn: false,
+          order: get().db.budgetCategories.length,
+          updatedAt: at,
+        };
+        commit((db) => ({
+          ...db,
+          budgetCategories: [...db.budgetCategories, created],
+        }));
+        mapping[key] = created.id;
+      }
+      return mapping;
+    },
+
+    /**
+     * Write a confirmed statement import.
+     *
+     * One commit for the whole file: a statement is a hundred rows, and a
+     * hundred separate writes would be a hundred renders and a hundred disk
+     * flushes for what the user experienced as a single action.
+     */
+    importTransactions(drafts) {
+      if (drafts.length === 0) return 0;
+
+      const taken = new Set(
+        get()
+          .db.transactions.filter((t) => t.deletedAt === null && t.externalId)
+          .map((t) => t.externalId as string),
+      );
+      // The preview may have been built minutes ago; the ledger is the
+      // authority on what is already in it.
+      const fresh = drafts.filter((draft) => !taken.has(draft.externalId));
+      if (fresh.length === 0) return 0;
+
+      const at = nowInstant();
+      const created: Transaction[] = fresh.map((draft) => ({
+        id: createId("x"),
+        date: draft.date,
+        amountMinor: draft.amountMinor,
+        flow: draft.flow,
+        categoryId: draft.categoryId,
+        note: draft.note,
+        merchant: draft.merchant,
+        externalId: draft.externalId,
+        recurrence: null,
+        recurrenceSourceId: null,
+        lastGeneratedFor: null,
+        createdAt: at,
+        updatedAt: at,
+        deletedAt: null,
+      }));
+
+      commit((db) => ({ ...db, transactions: [...db.transactions, ...created] }));
+
+      // A hundred rows landing in the wrong month is exactly the mistake
+      // someone wants back immediately, and undoing it row by row is no undo.
+      const ids = new Set(created.map((entry) => entry.id));
+      useUndoStore.getState().push("undoneImport", () => {
+        const at2 = nowInstant();
+        commit((db) => ({
+          ...db,
+          transactions: db.transactions.map((entry) =>
+            ids.has(entry.id) ? { ...entry, deletedAt: at2, updatedAt: at2 } : entry,
+          ),
+        }));
+      });
+
+      return created.length;
     },
 
     /**

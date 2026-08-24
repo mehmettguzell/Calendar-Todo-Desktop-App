@@ -65,6 +65,22 @@ export interface Transaction {
   recurrenceSourceId?: string | null;
   /** Template only: the last date it has already produced an entry for. */
   lastGeneratedFor?: LocalDate | null;
+  /**
+   * Who was paid, canonicalised: "Migros", not "MIGROS TIC.A.S.-ISTANBUL TR".
+   *
+   * Kept beside `categoryId` rather than folded into it because the two answer
+   * different questions. "How much on groceries" is the category; "how much at
+   * Migros specifically" is the merchant, and a budget that can only answer the
+   * first one cannot tell you which shop the money actually goes to.
+   */
+  merchant?: string | null;
+  /**
+   * Identity of the statement row this entry came from.
+   *
+   * Re-importing the same statement, or an overlapping one, has to be a no-op —
+   * a ledger that silently doubles a month is worse than one with a gap.
+   */
+  externalId?: string | null;
   createdAt: Instant;
   updatedAt: Instant;
   /** Soft delete, like tasks: the record of a month must not silently change. */
@@ -447,41 +463,117 @@ export function burnRatePerDay(
  * category management, and every one of them is deletable once the user's own
  * labels take over.
  */
-type SeedCategory = Omit<BudgetCategory, "id" | "updatedAt" | "name"> & {
+/**
+ * Every category the app knows how to name, in both languages.
+ *
+ * Only a handful ship with a new document (`SEEDED_KEYS`); the rest exist so
+ * the statement importer has somewhere to put a petrol station or a streaming
+ * subscription. They are created the first time a statement actually contains
+ * one — a category list should grow out of what you spend, not out of what the
+ * developer imagined you might.
+ */
+export type CategoryKey =
+  | "salary"
+  | "sideIncome"
+  | "rent"
+  | "groceries"
+  | "transport"
+  | "bills"
+  | "eatingOut"
+  | "health"
+  | "fun"
+  | "savings"
+  | "investments"
+  | "fuel"
+  | "clothing"
+  | "subscriptions"
+  | "personalCare"
+  | "education"
+  | "electronics"
+  | "home"
+  | "cash"
+  | "fees";
+
+interface CatalogueEntry {
   tr: string;
   en: string;
+  flow: MoneyFlow;
+  color: string;
+  icon: string;
+}
+
+export const CATEGORY_CATALOGUE: Record<CategoryKey, CatalogueEntry> = {
+  salary: { tr: "Maaş", en: "Salary", flow: "INCOME", color: "#22c55e", icon: "💼" },
+  sideIncome: { tr: "Ek gelir", en: "Side income", flow: "INCOME", color: "#14b8a6", icon: "✨" },
+  rent: { tr: "Kira", en: "Rent", flow: "EXPENSE", color: "#ef4444", icon: "🏠" },
+  groceries: { tr: "Market", en: "Groceries", flow: "EXPENSE", color: "#f97316", icon: "🛒" },
+  transport: { tr: "Ulaşım", en: "Transport", flow: "EXPENSE", color: "#eab308", icon: "🚌" },
+  bills: { tr: "Faturalar", en: "Bills", flow: "EXPENSE", color: "#8b5cf6", icon: "🧾" },
+  eatingOut: { tr: "Yeme & içme", en: "Eating out", flow: "EXPENSE", color: "#ec4899", icon: "🍽️" },
+  health: { tr: "Sağlık", en: "Health", flow: "EXPENSE", color: "#06b6d4", icon: "💊" },
+  fun: { tr: "Eğlence", en: "Fun", flow: "EXPENSE", color: "#a855f7", icon: "🎬" },
+  savings: { tr: "Birikim", en: "Savings", flow: "INVESTMENT", color: "#3b82f6", icon: "🏦" },
+  investments: { tr: "Yatırım", en: "Investments", flow: "INVESTMENT", color: "#0ea5e9", icon: "📈" },
+  fuel: { tr: "Akaryakıt", en: "Fuel", flow: "EXPENSE", color: "#f59e0b", icon: "⛽" },
+  clothing: { tr: "Giyim", en: "Clothing", flow: "EXPENSE", color: "#d946ef", icon: "👕" },
+  subscriptions: { tr: "Abonelikler", en: "Subscriptions", flow: "EXPENSE", color: "#6366f1", icon: "🔁" },
+  personalCare: { tr: "Kişisel bakım", en: "Personal care", flow: "EXPENSE", color: "#fb7185", icon: "💇" },
+  education: { tr: "Eğitim", en: "Education", flow: "EXPENSE", color: "#0891b2", icon: "🎓" },
+  electronics: { tr: "Teknoloji", en: "Electronics", flow: "EXPENSE", color: "#64748b", icon: "💻" },
+  home: { tr: "Ev", en: "Home", flow: "EXPENSE", color: "#84cc16", icon: "🛋️" },
+  cash: { tr: "Nakit çekim", en: "Cash withdrawal", flow: "EXPENSE", color: "#78716c", icon: "🏧" },
+  fees: { tr: "Banka ücretleri", en: "Bank fees", flow: "EXPENSE", color: "#94a3b8", icon: "🏛️" },
 };
 
-const SEEDS: SeedCategory[] = [
-  { tr: "Maaş", en: "Salary", flow: "INCOME", color: "#22c55e", icon: "💼", builtIn: true, order: 0 },
-  { tr: "Ek gelir", en: "Side income", flow: "INCOME", color: "#14b8a6", icon: "✨", builtIn: true, order: 1 },
-  { tr: "Kira", en: "Rent", flow: "EXPENSE", color: "#ef4444", icon: "🏠", builtIn: true, order: 2 },
-  { tr: "Market", en: "Groceries", flow: "EXPENSE", color: "#f97316", icon: "🛒", builtIn: true, order: 3 },
-  { tr: "Ulaşım", en: "Transport", flow: "EXPENSE", color: "#eab308", icon: "🚌", builtIn: true, order: 4 },
-  { tr: "Faturalar", en: "Bills", flow: "EXPENSE", color: "#8b5cf6", icon: "🧾", builtIn: true, order: 5 },
-  { tr: "Yeme & içme", en: "Eating out", flow: "EXPENSE", color: "#ec4899", icon: "🍽️", builtIn: true, order: 6 },
-  { tr: "Sağlık", en: "Health", flow: "EXPENSE", color: "#06b6d4", icon: "💊", builtIn: true, order: 7 },
-  { tr: "Eğlence", en: "Fun", flow: "EXPENSE", color: "#a855f7", icon: "🎬", builtIn: true, order: 8 },
-  { tr: "Birikim", en: "Savings", flow: "INVESTMENT", color: "#3b82f6", icon: "🏦", builtIn: true, order: 9 },
-  { tr: "Yatırım", en: "Investments", flow: "INVESTMENT", color: "#0ea5e9", icon: "📈", builtIn: true, order: 10 },
+/** What a brand-new document starts with. The rest arrive when they are needed. */
+const SEEDED_KEYS: CategoryKey[] = [
+  "salary",
+  "sideIncome",
+  "rent",
+  "groceries",
+  "transport",
+  "bills",
+  "eatingOut",
+  "health",
+  "fun",
+  "savings",
+  "investments",
 ];
 
 /**
- * The starting set, named in the language the app is set to.
+ * The name a category key carries in a given language.
  *
- * They are seeded once and then belong to the user, so this is a starting
- * name rather than a translation: switching language later renames nothing,
- * because renaming rows someone may have already edited would be worse than
- * leaving them in the language they were created in.
+ * Both spellings are exported because an existing document may hold either: a
+ * user who started the app in English has a category called "Groceries", and
+ * the importer has to recognise it rather than create a second one called
+ * "Market" beside it.
  */
+export function categoryNamesFor(key: CategoryKey): [string, string] {
+  const entry = CATEGORY_CATALOGUE[key];
+  return [entry.tr, entry.en];
+}
+
+export function categoryNameFor(key: CategoryKey, language: "tr" | "en"): string {
+  const entry = CATEGORY_CATALOGUE[key];
+  return language === "tr" ? entry.tr : entry.en;
+}
+
 export function seedBudgetCategories(
   language: "tr" | "en" = "en",
 ): Omit<BudgetCategory, "id" | "updatedAt">[] {
-  return SEEDS.map(({ tr, en, ...rest }) => ({
-    ...rest,
-    name: language === "tr" ? tr : en,
-  }));
+  return SEEDED_KEYS.map((key, order) => {
+    const entry = CATEGORY_CATALOGUE[key];
+    return {
+      name: language === "tr" ? entry.tr : entry.en,
+      flow: entry.flow,
+      color: entry.color,
+      icon: entry.icon,
+      builtIn: true,
+      order,
+    };
+  });
 }
+
 
 export const BUDGET_CATEGORY_COLORS = [
   "#ef4444",

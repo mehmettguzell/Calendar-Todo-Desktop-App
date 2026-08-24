@@ -56,6 +56,9 @@ describe("the dictionaries", () => {
       // someone looking for English cannot read "İngilizce" to find it.
       "langTr",
       "langEn",
+      // A sample of what a bank prints. Translating it would make it a worse
+      // example of the thing the user is about to paste.
+      "importPastePlaceholder",
     ]);
 
     const untranslated = Object.keys(tr).filter(

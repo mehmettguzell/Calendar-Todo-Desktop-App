@@ -183,6 +183,19 @@
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
+  /* Scale rather than a slide: a popover can open upwards or downwards from
+     its trigger, and growing in place is the one entrance that reads right
+     either way. */
+  animation: popover-in 120ms ease-out;
+}
+
+@keyframes popover-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover { animation: none; }
 }
 
 .popover button.menu-item {

@@ -1,0 +1,388 @@
+import { useMemo, useRef, useState } from "react";
+import { AlertTriangle, Check, FileUp, Upload } from "lucide-react";
+import { localeTag } from "@/domain/datetime";
+import { CATEGORY_CATALOGUE, formatMoney, type CategoryKey } from "@/domain/money";
+import { parseStatement, type StatementSource } from "@/domain/statement";
+import { buildImportPlan, draftsFrom, type ImportPlan } from "@/domain/statementImport";
+import { cn } from "@/lib/cn";
+import { extractPdfText, looksLikePdf, PdfTextError } from "@/services/pdfText";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { useStore } from "@/state/store";
+import { Modal } from "@/ui/components/primitives";
+
+/**
+ * Bringing a bank statement into the ledger.
+ *
+ * Deliberately a two-step wizard with a preview in the middle. An importer that
+ * writes straight from the file is a tool you can only use once — the first
+ * wrong guess about a column or a category is in the ledger before you see it,
+ * and unpicking eighty rows by hand costs more than typing them would have. The
+ * preview is where the guesses are still cheap.
+ */
+export function StatementImport({ onClose }: { onClose: () => void }) {
+  const { t, language } = useI18n();
+  const categories = useStore((s) => s.db.budgetCategories);
+  const transactions = useStore((s) => s.db.transactions);
+  const currency = useStore((s) => s.db.settings.currency ?? "TRY");
+  const ensureCategories = useStore((s) => s.ensureCategoriesForKeys);
+  const importTransactions = useStore((s) => s.importTransactions);
+
+  const [text, setText] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [error, setError] = useState<TranslationKey | null>(null);
+  const [sourceOverride, setSourceOverride] = useState<StatementSource | null>(null);
+  const [included, setIncluded] = useState<Record<string, boolean>>({});
+  const [choices, setChoices] = useState<Record<string, string>>({});
+  const [dragging, setDragging] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [done, setDone] = useState<number | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const plan: ImportPlan | null = useMemo(() => {
+    if (!text.trim()) return null;
+    const parsed = parseStatement(text, sourceOverride ? { source: sourceOverride } : {});
+    return buildImportPlan(
+      parsed.lines,
+      parsed.skipped,
+      transactions,
+      categories,
+      parsed.source,
+    );
+  }, [text, sourceOverride, transactions, categories]);
+
+  const isIncluded = (id: string, fallback: boolean) => included[id] ?? fallback;
+  const chosenCategory = (id: string, fallback: string) => choices[id] ?? fallback;
+
+  /** Existing categories, plus the ones this statement would create. */
+  const options = useMemo(() => {
+    const existing = categories.map((category) => ({
+      value: category.id,
+      label: `${category.icon} ${category.name}`,
+      pending: false,
+    }));
+    const pending = (plan?.missingCategories ?? []).map((key) => {
+      const entry = CATEGORY_CATALOGUE[key];
+      return {
+        value: `new:${key}`,
+        label: `${entry.icon} ${language === "tr" ? entry.tr : entry.en} +`,
+        pending: true,
+      };
+    });
+    return [...existing, ...pending];
+  }, [categories, plan?.missingCategories, language]);
+
+  const defaultChoice = (row: ImportPlan["rows"][number]) =>
+    row.categoryId ?? (row.categoryKey ? `new:${row.categoryKey}` : "");
+
+  const selectedCount = plan
+    ? plan.rows.filter((row) => isIncluded(row.externalId, row.include)).length
+    : 0;
+
+  /** What went wrong with a PDF, in a sentence the user can act on. */
+  const PDF_ERRORS: Record<string, TranslationKey> = {
+    password: "importPdfPassword",
+    unreadable: "importPdfUnreadable",
+    "no-text": "importPdfNoText",
+  };
+
+  const readFile = async (file: File) => {
+    setError(null);
+    setFileName(file.name);
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    // A real .xlsx is a ZIP. Nothing here can read one, and saying so beats
+    // showing a preview full of mojibake.
+    if (head[0] === 0x50 && head[1] === 0x4b) {
+      setText("");
+      setError("importXlsxHint");
+      return;
+    }
+
+    /*
+     * The bytes decide, not the extension: a statement saved as `ekstre.txt`
+     * out of a mail client is still a PDF, and a `.pdf` that is really a CSV
+     * should still import.
+     */
+    if (looksLikePdf(head)) {
+      setText("");
+      setReading(true);
+      try {
+        setText(await extractPdfText(await file.arrayBuffer()));
+      } catch (failure) {
+        const reason = failure instanceof PdfTextError ? failure.reason : "unreadable";
+        setError(PDF_ERRORS[reason] ?? "importPdfUnreadable");
+      } finally {
+        setReading(false);
+      }
+      return;
+    }
+
+    setText(await file.text());
+  };
+
+  const confirm = () => {
+    if (!plan) return;
+    const rows = plan.rows.filter((row) => isIncluded(row.externalId, row.include));
+
+    // Create only the categories the ticked rows actually land in.
+    const neededKeys = new Set<CategoryKey>();
+    for (const row of rows) {
+      const choice = chosenCategory(row.externalId, defaultChoice(row));
+      if (choice.startsWith("new:")) neededKeys.add(choice.slice(4) as CategoryKey);
+    }
+    const created = ensureCategories([...neededKeys]);
+
+    const drafts = draftsFrom({ ...plan, rows }).map((draft, index) => {
+      const row = rows[index];
+      const choice = row ? chosenCategory(row.externalId, defaultChoice(row)) : "";
+      const categoryId = choice.startsWith("new:")
+        ? (created[choice.slice(4)] ?? null)
+        : choice || null;
+      return { ...draft, categoryId };
+    });
+
+    setDone(importTransactions(drafts));
+  };
+
+  if (done !== null) {
+    return (
+      <Modal title={t("importTitle")} onClose={onClose} width={420}>
+        <div className="col" style={{ gap: 10, alignItems: "center", padding: 12 }}>
+          <Check size={32} style={{ color: "var(--success)" }} />
+          <strong style={{ fontSize: 16 }}>{t("importDone", { n: done })}</strong>
+          <p className="faint" style={{ margin: 0, textAlign: "center", fontSize: 12.5 }}>
+            {t("importDoneHint")}
+          </p>
+          <button type="button" className="btn primary" onClick={onClose}>
+            {t("close")}
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal
+      title={t("importTitle")}
+      onClose={onClose}
+      width={880}
+      footer={
+        <>
+          <span className="grow faint" style={{ fontSize: 12 }}>
+            {plan ? t("importSelected", { n: selectedCount }) : t("importPickFile")}
+          </span>
+          <button type="button" className="btn" onClick={onClose}>
+            {t("cancel")}
+          </button>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={selectedCount === 0}
+            onClick={confirm}
+          >
+            {t("importConfirm", { n: selectedCount })}
+          </button>
+        </>
+      }
+    >
+      {!plan ? (
+        <div className="col" style={{ gap: 12 }}>
+          <div
+            className={cn("import-drop", dragging && "over")}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              const file = e.dataTransfer.files[0];
+              if (file) void readFile(file);
+            }}
+            onClick={() => inputRef.current?.click()}
+          >
+            <Upload size={26} />
+            <strong>{t("importDropTitle")}</strong>
+            <span className="faint" style={{ fontSize: 12.5, textAlign: "center" }}>
+              {t("importDropHint")}
+            </span>
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".pdf,.csv,.txt,.xls,.tsv,application/pdf,text/csv,text/plain"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void readFile(file);
+              }}
+            />
+          </div>
+
+          {reading ? <p className="faint">{t("importReadingPdf")}</p> : null}
+
+          {error ? (
+            <p className="import-error">
+              <AlertTriangle size={14} /> {t(error)}
+            </p>
+          ) : null}
+
+          <label className="field">
+            <span>{t("importPasteLabel")}</span>
+            <textarea
+              className="textarea mono"
+              rows={6}
+              placeholder={t("importPastePlaceholder")}
+              onChange={(e) => {
+                setFileName(null);
+                setError(null);
+                setText(e.target.value);
+              }}
+            />
+          </label>
+        </div>
+      ) : (
+        <div className="col" style={{ gap: 10 }}>
+          <div className="import-summary">
+            <span className="import-chip">
+              <FileUp size={13} /> {fileName ?? t("importPasted")}
+            </span>
+            <span className="import-chip">
+              {t("importReadCount", { n: plan.counts.total })}
+            </span>
+            {plan.counts.duplicate > 0 ? (
+              <span className="import-chip warn">
+                {t("importDuplicateCount", { n: plan.counts.duplicate })}
+              </span>
+            ) : null}
+            {plan.skipped.length > 0 ? (
+              <span className="import-chip">
+                {t("importSkippedCount", { n: plan.skipped.length })}
+              </span>
+            ) : null}
+            {plan.range ? (
+              <span className="import-chip">
+                {plan.range.from} → {plan.range.to}
+              </span>
+            ) : null}
+
+            <span className="grow" />
+
+            {/* The one guess worth making reversible in one click. */}
+            <div className="segmented sm">
+              {(["card", "account"] as StatementSource[]).map((source) => (
+                <button
+                  key={source}
+                  type="button"
+                  aria-pressed={plan.source === source}
+                  onClick={() => setSourceOverride(source)}
+                >
+                  {t(source === "card" ? "importSourceCard" : "importSourceAccount")}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="import-table-wrap scroll">
+            <table className="import-table">
+              <thead>
+                <tr>
+                  <th />
+                  <th>{t("fieldDate")}</th>
+                  <th>{t("importMerchant")}</th>
+                  <th>{t("formCategory")}</th>
+                  <th style={{ textAlign: "right" }}>{t("budgetAmount")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {plan.rows.map((row) => {
+                  const on = isIncluded(row.externalId, row.include);
+                  return (
+                    <tr
+                      key={row.externalId}
+                      className={cn(
+                        row.status !== "new" && "is-known",
+                        !on && "is-off",
+                      )}
+                    >
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          aria-label={row.merchant.name}
+                          onChange={(e) =>
+                            setIncluded((prev) => ({
+                              ...prev,
+                              [row.externalId]: e.target.checked,
+                            }))
+                          }
+                        />
+                      </td>
+                      <td className="mono">
+                        {new Date(`${row.line.date}T00:00:00`).toLocaleDateString(
+                          localeTag(),
+                          { day: "2-digit", month: "short" },
+                        )}
+                      </td>
+                      <td>
+                        <span className="import-merchant">{row.merchant.name}</span>
+                        <span className="import-raw truncate">{row.line.description}</span>
+                        {row.status !== "new" ? (
+                          <span className="import-flag">
+                            {t(
+                              row.status === "duplicate"
+                                ? "importAlreadyThere"
+                                : "importLooksSame",
+                            )}
+                          </span>
+                        ) : null}
+                        {row.line.kind !== "spend" ? (
+                          <span className="import-flag kind">
+                            {t(`importKind_${row.line.kind}` as TranslationKey)}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td>
+                        <select
+                          className="select sm"
+                          value={chosenCategory(row.externalId, defaultChoice(row))}
+                          onChange={(e) =>
+                            setChoices((prev) => ({
+                              ...prev,
+                              [row.externalId]: e.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">{t("budgetUncategorised")}</option>
+                          {options.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td
+                        className={cn(
+                          "mono import-amount",
+                          row.line.flow === "INCOME" && "in",
+                        )}
+                      >
+                        {row.line.flow === "INCOME" ? "+" : "−"}
+                        {formatMoney(row.line.amountMinor, currency)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {plan.unknownMerchants.length > 0 ? (
+            <p className="faint" style={{ margin: 0, fontSize: 12 }}>
+              {t("importUnknownHint", { n: plan.unknownMerchants.length })}
+            </p>
+          ) : null}
+        </div>
+      )}
+    </Modal>
+  );
+}

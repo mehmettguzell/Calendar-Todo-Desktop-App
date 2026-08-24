@@ -1,6 +1,10 @@
 .app {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
+  /* Three tracks at all times, the last one collapsed while nothing is
+     selected. A track list only interpolates when its length stays the same,
+     so switching between two and three columns is what made the detail panel
+     appear with a bang; 0px -> var(--panel-w) is a plain length animation. */
+  grid-template-columns: var(--sidebar-w) 1fr 0px;
   /* The row has to be pinned to the window. Left implicit it is `auto`, so it
      grows to whatever the tallest column holds: the shell then reaches past the
      bottom of the window, `body { overflow: hidden }` cuts the overhang off, and
@@ -10,10 +14,22 @@
   grid-template-rows: minmax(0, 1fr);
   height: 100%;
   background: var(--bg);
+  /* Closing. The panel is already on its way out, so this curve leaves
+     promptly and eases into the gap it frees. */
+  transition: grid-template-columns 240ms cubic-bezier(0.4, 0.14, 0.3, 1);
 }
 
 .app.has-panel {
   grid-template-columns: var(--sidebar-w) 1fr var(--panel-w);
+  /* Opening. Declared on the destination state so each direction can have its
+     own curve: quick off the mark, long settle — the panel arrives rather
+     than lands. */
+  transition: grid-template-columns 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app,
+  .app.has-panel { transition: none; }
 }
 
 /* ---------------------------------------------------------- sidebar */
