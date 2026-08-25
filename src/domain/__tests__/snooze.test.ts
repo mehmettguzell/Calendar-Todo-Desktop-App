@@ -78,33 +78,49 @@ describe("resolveSnooze", () => {
     expect(toLocalTime(new Date(outcome.until!))).toBe(DEFAULT_SETTINGS.allDayReminderTime);
   });
 
-  it("counts 'tomorrow' from the task's own day even when that day has passed", () => {
-    const now = atTime("2026-08-28", "10:00");
+  it("does not reschedule a future-dated task when given a short snooze", () => {
+    const now = atTime("2026-08-25", "14:00");
+    const futureTask = presentation({ dueDate: "2026-08-28" });
     const outcome = resolveSnooze(
-      instanceOf(presentation(), now),
-      "tomorrow",
+      instanceOf(futureTask, now),
+      "10m",
       DEFAULT_SETTINGS,
       now,
     );
 
-    // The task sits on the 25th, so "tomorrow" is the 26th regardless of the
-    // clock: the distance a preset moves a task must not depend on when the
-    // menu happened to be opened.
-    expect(outcome.reschedule?.date).toBe("2026-08-26");
+    // The task should stay on August 28 and NOT be moved to today (August 25)
+    expect(outcome.reschedule).toBeNull();
+    expect(toLocalTime(new Date(outcome.until!))).toBe("14:10");
   });
 
-  it("does not leave a snooze pointing at an instant that already passed", () => {
-    const now = atTime("2026-08-28", "10:00");
+  it("does not reschedule an unscheduled task when given a short snooze", () => {
+    const now = atTime("2026-08-25", "14:00");
+    const noDateTask = presentation({ dueDate: null, startTime: null });
     const outcome = resolveSnooze(
-      instanceOf(presentation(), now),
+      toInstance(noDateTask, null, null, now),
+      "1h",
+      DEFAULT_SETTINGS,
+      now,
+    );
+
+    expect(outcome.reschedule).toBeNull();
+    expect(toLocalTime(new Date(outcome.until!))).toBe("15:00");
+  });
+
+  it("snoozes an overdue task until tomorrow relative to today", () => {
+    const now = atTime("2026-08-28", "10:00");
+    const overdueTask = presentation({ dueDate: "2026-08-25" });
+    const outcome = resolveSnooze(
+      instanceOf(overdueTask, now),
       "tomorrow",
       DEFAULT_SETTINGS,
       now,
     );
 
-    // Moving to the 26th cannot also suppress the task until the 26th — that
-    // moment is behind us. The move stands; the postponement does not.
-    expect(outcome.until).toBeNull();
+    // Snoozing an overdue task until tomorrow moves it to tomorrow from today (Aug 29)
+    expect(outcome.reschedule?.date).toBe("2026-08-29");
+    expect(toLocalDate(new Date(outcome.until!))).toBe("2026-08-29");
+    expect(toLocalTime(new Date(outcome.until!))).toBe("14:00");
   });
 
   it("counts 'tomorrow' from a future task's day, not from today", () => {

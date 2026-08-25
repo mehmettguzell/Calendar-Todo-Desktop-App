@@ -4,7 +4,12 @@ import { deduplicateCategories, pruneTombstones } from "@/data/db";
 import { useAuthStore } from "@/state/authStore";
 import { persist, useStore } from "@/state/store";
 import { isOnline, useSyncStore } from "@/state/syncStore";
-import { formatErrorMessage } from "@/lib/errors";
+import {
+  classifySyncError,
+  formatErrorMessage,
+  isRetryableSyncFailure,
+  type SyncFailureKind,
+} from "@/lib/errors";
 import type {
   Category,
   FocusSession,
@@ -143,22 +148,28 @@ let syncedNamespace: string | null = null;
 /* ------------------------------------------------------------------ */
 
 /**
- * Whether a column or table the schema migration adds is actually present.
+ * Whether a table the schema migration adds is actually present.
  *
  * A user who has not run the latest SQL must still be able to sync everything
- * else, so a missing column downgrades that one feature rather than taking the
- * whole pass down with it.
+ * else, so a missing table downgrades that one feature rather than taking the
+ * whole pass down with it. Missing *columns* are handled the same way, by
+ * `OPTIONAL_COLUMNS` further down.
  */
-let hasEndDateColumn: boolean | null = null;
 const availableTables = new Map<string, boolean>();
 
 function isMissingRelation(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
+  const message = error.message ?? "";
+  // PGRST204 is the *column* case ("Could not find the 'x' column of 'y' in
+  // the schema cache") and reads almost identically to the table one. Treating
+  // it as a missing table would quietly disable syncing a whole collection
+  // over one column, so it is excluded here and handled as an optional column.
+  if (error.code === "PGRST204" || /column/i.test(message)) return false;
   // 42P01 undefined_table, PGRST205 unknown relation in the PostgREST cache.
   return (
     error.code === "42P01" ||
     error.code === "PGRST205" ||
-    /does not exist|schema cache/i.test(error.message ?? "")
+    /does not exist|schema cache/i.test(message)
   );
 }
 
@@ -329,6 +340,11 @@ async function handleAccountChange(userId: string | null): Promise<void> {
   stopSync();
   forgetSyncedState();
   clearPending();
+  // Signing in is a condition too — and neither the failures nor the recent
+  // answers of the account being signed out of may carry over to the new one.
+  resetRetryBudget();
+  lastReport = null;
+  lastReportAt = 0;
 
   await useStore.getState().switchAccount(userId);
 
@@ -356,12 +372,13 @@ async function startSync(userId: string) {
     // blind push of every local row followed by a blind pull of every cloud
     // row, so logging in rewrote the user's entire table twice.
     const report = await syncDifferences();
-    if (!report.success && report.error && report.error !== "OFFLINE") {
+    if (!report.success && report.error && report.error !== "offline") {
       console.warn("[tempo sync] initial sync failed:", report.error);
     }
   } catch (err) {
-    console.error("Cloud sync error:", err);
-    useSyncStore.getState().setPhase("error", formatErrorMessage(err));
+    const kind = classifySyncError(err);
+    console.error(`[tempo sync] startup failed (${kind}):`, formatErrorMessage(err));
+    useSyncStore.getState().setPhase("error", kind);
   } finally {
     isSyncing = false;
   }
@@ -387,26 +404,95 @@ function stopSync() {
 
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryDelayMs = 0;
+let retryAttempt = 0;
+let retryPausedUntil = 0;
 
-/** Doubling backoff, capped so a long outage still retries a few times an hour. */
+/**
+ * A few automatic attempts, then stop and wait for something to change.
+ *
+ * Doubling backoff covers the failure this design actually expects: a blip that
+ * clears itself within a minute or two. Past that, repeating the same request
+ * forever is not persistence, it is a background process burning battery and
+ * quota against a wall — a signed-out session, an expired token or a cloud
+ * project missing a column will fail identically on attempt one and attempt
+ * four hundred. So the budget is finite. When it runs out, sync goes quiet and
+ * comes back only on a *condition*: the network returns, the window is focused
+ * again, the user presses the button, or the cooldown lapses. Nothing is at
+ * risk in the meantime — local writes have already succeeded, the ids stay
+ * queued, and `syncDifferences` finds the same rows by content whenever it
+ * next runs.
+ */
 const RETRY_BASE_MS = 5_000;
-const RETRY_MAX_MS = 5 * 60_000;
+const RETRY_MAX_MS = 60_000;
+const MAX_AUTO_RETRIES = 4;
+/** How long a spent budget stays spent before one more attempt is allowed. */
+const RETRY_COOLDOWN_MS = 10 * 60_000;
 
-function scheduleRetry(): void {
+function publishRetryState(): void {
+  useSyncStore.getState().setRetry(retryAttempt, retryPausedUntil > 0);
+}
+
+/** Stops automatic attempts until a condition revives them. */
+function pauseRetries(): void {
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  retryPausedUntil = Date.now() + RETRY_COOLDOWN_MS;
+  publishRetryState();
+}
+
+function scheduleRetry(kind: SyncFailureKind): void {
   if (retryTimer || !currentUserId()) return;
+
+  // Nothing about a schema mismatch or a rejected token improves by asking
+  // again a second later. Those wait for a condition from the start.
+  if (!isRetryableSyncFailure(kind) || retryAttempt >= MAX_AUTO_RETRIES) {
+    pauseRetries();
+    return;
+  }
+
+  retryAttempt += 1;
   retryDelayMs = retryDelayMs === 0 ? RETRY_BASE_MS : Math.min(retryDelayMs * 2, RETRY_MAX_MS);
+  publishRetryState();
   retryTimer = setTimeout(() => {
     retryTimer = null;
     if (currentUserId() && isOnline()) void syncDifferences();
   }, retryDelayMs);
 }
 
-function cancelRetry(): void {
+/**
+ * May sync touch the network right now?
+ *
+ * False only while a spent budget is cooling down. Every caller that answers
+ * "no" leaves its work queued rather than dropping it.
+ */
+function retriesAllowed(): boolean {
+  if (retryPausedUntil === 0) return true;
+  if (Date.now() >= retryPausedUntil) {
+    // The cooldown lapsed — that is itself the condition. One fresh budget.
+    resetRetryBudget();
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Back to a clean slate: no pending attempt, no cooldown, a full budget.
+ *
+ * Called on success, and on every condition that makes another attempt worth
+ * making — the network returning, the window being focused, a sign-in, the
+ * user pressing the button.
+ */
+function resetRetryBudget(): void {
   if (retryTimer) {
     clearTimeout(retryTimer);
     retryTimer = null;
   }
   retryDelayMs = 0;
+  retryAttempt = 0;
+  retryPausedUntil = 0;
+  publishRetryState();
 }
 
 /**
@@ -422,8 +508,10 @@ function cancelRetry(): void {
 function watchConnectivity(): void {
   if (typeof window === "undefined") return;
 
+  // The network coming back is the strongest condition of all: whatever the
+  // last four attempts failed on, the world has demonstrably changed.
   window.addEventListener("online", () => {
-    cancelRetry();
+    resetRetryBudget();
     const id = currentUserId();
     if (!id) return;
     console.info("[tempo sync] back online — reconciling");
@@ -438,11 +526,22 @@ function watchConnectivity(): void {
 
   if (typeof document !== "undefined") {
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "visible") return;
+      if (document.visibilityState !== "visible") {
+        // Leaving is the one moment a gathering window costs something real:
+        // the lid closes mid-window and the edit waits for the next launch to
+        // be reconciled. Send what is queued instead of waiting it out.
+        void drainPendingWrites();
+        return;
+      }
       const id = currentUserId();
+      if (!id || !isOnline()) return;
       // Coming back to a window that has been in the background for a while is
-      // the cheapest moment to notice a dropped channel.
-      if (id && isOnline() && useSyncStore.getState().realtime !== "connected") {
+      // the cheapest moment to notice a dropped channel — and a good moment to
+      // grant a paused retry budget one more run, since minutes have usually
+      // passed and whatever broke may well be fixed.
+      const paused = useSyncStore.getState().autoRetryPaused;
+      if (paused) resetRetryBudget();
+      if (paused || useSyncStore.getState().realtime !== "connected") {
         setupRealtime(id);
         void syncDifferences();
       }
@@ -528,12 +627,12 @@ export function localTaskFingerprint(task: Task): string {
     nz(task.status),
     (task.tags ?? []).map(String),
     nz(task.dueDate),
-    hasEndDateColumn === false ? null : nz(task.endDate),
+    columnDropped("tasks", "end_date") ? null : nz(task.endDate),
     Boolean(task.allDay),
     nz(task.startTime),
     nz(task.endTime),
     canonicalRecurrence(task.recurrence),
-    task.estimateMinutes ?? null,
+    columnDropped("tasks", "estimate_minutes") ? null : (task.estimateMinutes ?? null),
     nz(task.snoozedUntil),
     nzInstant(task.completedAt),
     task.deletedAt !== null,
@@ -550,12 +649,14 @@ export function cloudTaskFingerprint(row: Record<string, unknown>): string {
     nz(row.status),
     ((row.tags as string[] | null) ?? []).map(String),
     nz(row.due_date),
-    hasEndDateColumn === false ? null : nz(row.end_date),
+    columnDropped("tasks", "end_date") ? null : nz(row.end_date),
     Boolean(row.all_day),
     nz(row.start_time),
     nz(row.end_time),
     canonicalRecurrence(row.recurrence),
-    (row.estimate_minutes as number) ?? null,
+    columnDropped("tasks", "estimate_minutes")
+      ? null
+      : ((row.estimate_minutes as number) ?? null),
     nz(row.snoozed_until),
     nzInstant(row.completed_at),
     Boolean(row.is_deleted),
@@ -717,7 +818,22 @@ function forgetSyncedState() {
  * fingerprint check runs before anything is sent, a mutation that did not
  * actually change a synced field costs no request at all.
  */
-const FLUSH_DELAY_MS = 600;
+/**
+ * How long changes gather before one batched write goes up.
+ *
+ * Measured against a real document rather than guessed: 677 edits over five
+ * days, and 72 of one day's 117 gaps between consecutive edits were under two
+ * seconds. People work in bursts — tick, tick, retype the title, drag it a day
+ * — so the window is what decides how many requests those bursts become. At
+ * 600ms that document costs 537 writes; at 2.5s it costs ~420; at 30s it would
+ * cost 186, but the last figure buys its saving with half a minute of lag on
+ * every other device, which is the wrong trade for a calendar.
+ *
+ * Nothing is at stake in the delay itself: the local write already succeeded,
+ * and `syncDifferences` finds by content whatever a crash in this window would
+ * have skipped.
+ */
+const FLUSH_DELAY_MS = 2_500;
 const pendingTaskIds = new Set<string>();
 const pendingCategoryIds = new Set<string>();
 const pendingOccurrenceIds = new Set<string>();
@@ -750,8 +866,20 @@ const ALL_QUEUES = [
   pendingHistoryIds,
 ];
 
+/**
+ * Queues the user is actually waiting on.
+ *
+ * The activity trail is not one of them. It is append-only, nobody is looking
+ * at another device for it, and `syncDifferences` uploads every entry the
+ * cloud lacks by id — so history rides along with whatever flush happens next
+ * instead of paying for a request of its own. That is roughly one HTTP call
+ * saved per burst of editing, for a lag no one can perceive on data no one is
+ * waiting for.
+ */
+const USER_QUEUES = ALL_QUEUES.filter((queue) => queue !== pendingHistoryIds);
+
 function pendingCount(): number {
-  return ALL_QUEUES.reduce((total, queue) => total + queue.size, 0);
+  return USER_QUEUES.reduce((total, queue) => total + queue.size, 0);
 }
 
 function clearPending(): void {
@@ -792,6 +920,12 @@ async function flushPendingWrites(): Promise<void> {
     // Nothing is lost: the ids stay queued and `syncDifferences` would find the
     // same rows by content even if this process never runs again.
     useSyncStore.getState().setPhase("offline");
+    return;
+  }
+  // Same reasoning while the retry budget is spent: keep editing, keep queuing,
+  // just stop calling a server that has said no four times in a row.
+  if (!retriesAllowed()) {
+    useSyncStore.getState().setPending(pendingCount());
     return;
   }
 
@@ -956,7 +1090,7 @@ async function flushPendingWrites(): Promise<void> {
     if (useSyncStore.getState().phase !== "syncing") {
       useSyncStore.getState().setPhase("idle");
     }
-    cancelRetry();
+    resetRetryBudget();
   } catch (err) {
     // Re-queue so the next flush (or a manual sync) retries instead of losing
     // the change. Fingerprints were only committed for rows that succeeded.
@@ -976,11 +1110,13 @@ async function flushPendingWrites(): Promise<void> {
     for (const id of focusIds) pendingFocusIds.add(id);
     for (const id of historyIds) pendingHistoryIds.add(id);
 
-    const message = formatErrorMessage(err);
+    const kind = classifySyncError(err);
     useSyncStore.getState().setPending(pendingCount());
-    useSyncStore.getState().setPhase(isOnline() ? "error" : "offline", message);
-    console.warn("[tempo sync] batched write failed:", message);
-    scheduleRetry();
+    useSyncStore.getState().setPhase(isOnline() ? "error" : "offline", kind);
+    // Full detail to the console only: the message can name tables, columns
+    // and constraints, which is not the user's business.
+    console.warn(`[tempo sync] batched write failed (${kind}):`, formatErrorMessage(err));
+    scheduleRetry(kind);
   }
 }
 
@@ -988,10 +1124,17 @@ async function flushPendingWrites(): Promise<void> {
 /* Serialisation                                                       */
 /* ------------------------------------------------------------------ */
 
+/**
+ * A task as the cloud stores it.
+ *
+ * Columns the project turned out not to have are stripped on the way out —
+ * PostgREST rejects the entire batch over one unknown key, and a task manager
+ * that stops syncing because the user has not re-run a migration is worse than
+ * one that syncs everything except an estimate.
+ */
 export function serializeTaskForCloud(
   task: Task,
   userId: string,
-  includeEndDate: boolean,
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     id: task.id,
@@ -1016,23 +1159,23 @@ export function serializeTaskForCloud(
     updated_at: task.updatedAt || new Date().toISOString(),
   };
 
-  if (includeEndDate && task.endDate) {
+  if (task.endDate) {
     payload.end_date = task.endDate;
   }
 
-  return payload;
+  return withoutMissingColumns("tasks", payload);
 }
 
 export async function upsertTasksToCloud(tasks: Task[], userId: string) {
   if (!supabase || !userId || tasks.length === 0) return { error: null };
   const client = supabase;
 
-  const send = (batch: Task[], includeEndDate: boolean) =>
+  const send = (batch: Task[]) =>
     withTimeout(
       client
         .from("tasks")
         .upsert(
-          batch.map((t) => serializeTaskForCloud(t, userId, includeEndDate)),
+          batch.map((t) => serializeTaskForCloud(t, userId)),
           { onConflict: "id,user_id" },
         ),
       "task upsert",
@@ -1041,15 +1184,13 @@ export async function upsertTasksToCloud(tasks: Task[], userId: string) {
   // PostgREST has a request-size ceiling, so a large first sync must go up in
   // slices rather than as one giant body.
   for (const batch of chunked(tasks, UPSERT_CHUNK_SIZE)) {
-    let includeEndDate = hasEndDateColumn !== false;
-    let res = await send(batch, includeEndDate);
+    let res = await send(batch);
 
-    if (res.error && res.error.message.includes("end_date")) {
-      hasEndDateColumn = false;
-      includeEndDate = false;
-      res = await send(batch, false);
-    } else if (!res.error && includeEndDate) {
-      hasEndDateColumn = true;
+    // Each round trip names at most one unknown column, so give up on it and
+    // try again — bounded by how many columns are optional in the first place.
+    for (let i = 0; res.error && i < optionalColumnCount("tasks"); i += 1) {
+      if (!dropOptionalColumn("tasks", res.error)) break;
+      res = await send(batch);
     }
 
     if (
@@ -1057,7 +1198,7 @@ export async function upsertTasksToCloud(tasks: Task[], userId: string) {
       (res.error.message.includes("profiles") || res.error.code === "23503")
     ) {
       await ensureProfileRow(userId);
-      res = await send(batch, includeEndDate);
+      res = await send(batch);
     }
 
     if (res.error) return res;
@@ -1105,10 +1246,42 @@ export interface SyncContext {
  * not", which is a far better outcome than a red sync badge.
  */
 const OPTIONAL_COLUMNS: Record<string, string[]> = {
+  tasks: ["end_date", "estimate_minutes"],
   transactions: ["merchant", "external_id"],
 };
 
 const droppedColumns = new Map<string, Set<string>>();
+
+function optionalColumnCount(table: string): number {
+  return (OPTIONAL_COLUMNS[table] ?? []).length;
+}
+
+/** True once this session has stopped sending `column` to `table`. */
+function columnDropped(table: string, column: string): boolean {
+  return droppedColumns.get(table)?.has(column) === true;
+}
+
+/**
+ * Give up on the column this error names, if it is one we can live without.
+ *
+ * Returns whether anything was dropped, so the caller knows a retry is worth
+ * making. Only the named column goes: `tasks.end_date` and
+ * `tasks.estimate_minutes` ship in the same migration but not necessarily in
+ * the same project, and discarding a column that does exist would silently
+ * stop syncing a field for the rest of the session.
+ */
+function dropOptionalColumn(table: string, error: unknown): boolean {
+  const column = missingOptionalColumn(table, error);
+  if (!column) return false;
+  const gone = droppedColumns.get(table) ?? new Set<string>();
+  gone.add(column);
+  droppedColumns.set(table, gone);
+  console.info(
+    `[tempo sync] public.${table}.${column} is not in this project yet — ` +
+      "syncing without it. Run supabase/schema.sql to restore the field.",
+  );
+  return true;
+}
 
 function withoutMissingColumns(
   table: string,
@@ -1159,14 +1332,8 @@ async function writeCollection<T>(
 
     let { error } = await send();
 
-    const absent = error ? missingOptionalColumn(spec.table, error) : null;
-    if (absent) {
-      const gone = droppedColumns.get(spec.table) ?? new Set<string>();
-      // Give up on every optional column at once: they arrive in the same
-      // migration, so a project missing one is missing all of them, and
-      // retrying per column would cost a round trip each.
-      for (const column of OPTIONAL_COLUMNS[spec.table] ?? []) gone.add(column);
-      droppedColumns.set(spec.table, gone);
+    for (let i = 0; error && i < optionalColumnCount(spec.table); i += 1) {
+      if (!dropOptionalColumn(spec.table, error)) break;
       ({ error } = await send());
     }
 
@@ -1551,10 +1718,11 @@ export interface SyncDifferenceReport {
   uploadedCategories: number;
   downloadedCategories: number;
   totalDifferences: number;
-  error?: string;
+  /** A failure *code*, never backend text. See `SyncFailureKind`. */
+  error?: SyncFailureKind;
 }
 
-function emptyReport(error: string): SyncDifferenceReport {
+function emptyReport(error: SyncFailureKind): SyncDifferenceReport {
   return {
     success: false,
     uploadedTasks: 0,
@@ -1567,6 +1735,35 @@ function emptyReport(error: string): SyncDifferenceReport {
 }
 
 let differencesInFlight: Promise<SyncDifferenceReport> | null = null;
+let lastReport: SyncDifferenceReport | null = null;
+let lastReportAt = 0;
+
+/**
+ * The floor between two full reconciliations.
+ *
+ * One pass reads every row of nine tables in both directions. That is the
+ * right price to pay once; it is the wrong price to pay eleven times because
+ * somebody drummed the button. Two presses a second apart already share one
+ * pass through `differencesInFlight` — this covers the case that guard cannot,
+ * where each press lands *after* the previous pass returned.
+ *
+ * A press inside the window is not ignored: queued local edits are still
+ * flushed, which is the cheap half and the half that actually carries the
+ * user's work. Only the expensive full read is skipped, and the answer given
+ * back is the one the last pass established seconds ago.
+ */
+const MIN_FULL_SYNC_INTERVAL_MS = 15_000;
+
+function unchangedReport(): SyncDifferenceReport {
+  return {
+    success: true,
+    uploadedTasks: 0,
+    downloadedTasks: 0,
+    uploadedCategories: 0,
+    downloadedCategories: 0,
+    totalDifferences: 0,
+  };
+}
 
 /**
  * Reconcile local and cloud in both directions, by content.
@@ -1579,24 +1776,51 @@ let differencesInFlight: Promise<SyncDifferenceReport> | null = null;
  * Concurrent callers share one pass — the manual button, the reconnect handler
  * and the realtime catch-up all fire at moments that overlap.
  */
-export async function syncDifferences(): Promise<SyncDifferenceReport> {
+export async function syncDifferences(
+  options: { manual?: boolean } = {},
+): Promise<SyncDifferenceReport> {
+  // Pressing the button is the clearest condition there is: the user is asking
+  // for one more attempt, so the spent budget is restored before the check.
+  if (options.manual) resetRetryBudget();
+  if (!retriesAllowed()) {
+    return emptyReport(useSyncStore.getState().lastFailure ?? "unknown");
+  }
   if (differencesInFlight) return differencesInFlight;
-  differencesInFlight = runSyncDifferences().finally(() => {
-    differencesInFlight = null;
-  });
+
+  if (lastReport && Date.now() - lastReportAt < MIN_FULL_SYNC_INTERVAL_MS) {
+    // Still worth pushing whatever was typed in the meantime — that is one
+    // small upsert, not a re-read of the whole account.
+    await drainPendingWrites();
+    // That flush is the freshest thing that happened, so it, not the cached
+    // pass, decides the answer: a toast saying "up to date" over a red badge
+    // would be the app contradicting itself.
+    const failure = useSyncStore.getState().lastFailure;
+    if (failure) return emptyReport(failure);
+    return lastReport.success ? unchangedReport() : emptyReport(lastReport.error ?? "unknown");
+  }
+
+  differencesInFlight = runSyncDifferences()
+    .then((report) => {
+      lastReport = report;
+      lastReportAt = Date.now();
+      return report;
+    })
+    .finally(() => {
+      differencesInFlight = null;
+    });
   return differencesInFlight;
 }
 
 async function runSyncDifferences(): Promise<SyncDifferenceReport> {
   if (!isOnline()) {
     useSyncStore.getState().setPhase("offline");
-    return emptyReport("OFFLINE");
+    return emptyReport("offline");
   }
 
   const userId = currentUserId();
   if (!supabase || !userId) {
     useSyncStore.getState().setPhase("disabled");
-    return emptyReport("AUTH_REQUIRED");
+    return emptyReport("auth");
   }
 
   useSyncStore.getState().setPhase("syncing");
@@ -1946,7 +2170,7 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
 
     useSyncStore.getState().markSynced();
     useSyncStore.getState().setPending(pendingCount());
-    cancelRetry();
+    resetRetryBudget();
 
     return {
       success: true,
@@ -1958,10 +2182,10 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
         uploadedTasks + downloadedTasks + uploadedCategories + downloadedCategories,
     };
   } catch (err: unknown) {
-    const errorMsg = formatErrorMessage(err);
-    console.error("syncDifferences failed:", err);
-    useSyncStore.getState().setPhase(isOnline() ? "error" : "offline", errorMsg);
-    scheduleRetry();
+    const kind = classifySyncError(err);
+    console.error(`[tempo sync] reconciliation failed (${kind}):`, err);
+    useSyncStore.getState().setPhase(isOnline() ? "error" : "offline", kind);
+    scheduleRetry(kind);
     return {
       success: false,
       uploadedTasks,
@@ -1969,7 +2193,7 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       uploadedCategories,
       downloadedCategories,
       totalDifferences: 0,
-      error: errorMsg,
+      error: kind,
     };
   } finally {
     isApplyingRemoteUpdate = false;
@@ -2128,6 +2352,45 @@ function applyRemote(mutate: () => void): void {
   persist(useStore.getState().db);
 }
 
+/**
+ * Whether a row arriving on the realtime channel may overwrite what is here.
+ *
+ * Every write this device makes comes straight back to it as an echo, because
+ * the channel does not distinguish "someone else changed this" from "you did".
+ * Two of those echoes used to do real damage:
+ *
+ * - Emptying the Trash purges the rows here and sends `is_deleted = true` to
+ *   the cloud. The echo of that update arrived as a row this device no longer
+ *   had, and the handler dutifully re-inserted it — the task reappeared in the
+ *   Trash, undeleted, which is exactly what the user reported.
+ * - An edit made while the previous write was still in flight was overwritten
+ *   by that older write's echo, so a task moved to tomorrow quietly moved back.
+ *
+ * Hence the order below: a purge here is a decision and outranks anything the
+ * cloud says; a queued local write is newer than any echo by construction; and
+ * otherwise the ordinary rule applies — last write wins on `updated_at`, ties
+ * to the cloud (DECISIONS.md §11).
+ */
+export function acceptsRemoteTask(input: {
+  remoteUpdatedAt: string;
+  remoteDeleted: boolean;
+  /** `null` when this device has no such row. */
+  localUpdatedAt: string | null;
+  tombstoned: boolean;
+  queued: boolean;
+}): boolean {
+  if (input.tombstoned) return false;
+  if (input.queued) return false;
+  // Nothing to show and nothing to restore: a trashed row this device does not
+  // have is either its own purge coming home or another device deleting
+  // something already gone from here.
+  if (input.localUpdatedAt === null && input.remoteDeleted) return false;
+  if (input.localUpdatedAt !== null && input.localUpdatedAt > input.remoteUpdatedAt) {
+    return false;
+  }
+  return true;
+}
+
 function handleRealtimeTaskChange(payload: {
   eventType: string;
   new: Record<string, unknown>;
@@ -2137,6 +2400,22 @@ function handleRealtimeTaskChange(payload: {
 
   if (eventType === "INSERT" || eventType === "UPDATE") {
     const task = taskFromCloud(newRecord, 0);
+    const db = useStore.getState().db;
+    const existingTask = db.tasks.find((t) => t.id === task.id);
+
+    if (
+      !acceptsRemoteTask({
+        remoteUpdatedAt: task.updatedAt,
+        remoteDeleted: task.deletedAt !== null,
+        localUpdatedAt: existingTask?.updatedAt ?? null,
+        tombstoned: db.tombstones.some(
+          (stone) => stone.kind === "task" && stone.id === task.id,
+        ),
+        queued: pendingTaskIds.has(task.id) || pendingDeletedTaskIds.has(task.id),
+      })
+    ) {
+      return;
+    }
 
     // A soft delete is a state, not a disappearance: keeping the row is what
     // lets Trash show it and Restore undo it on this device too.

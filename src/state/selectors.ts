@@ -225,6 +225,31 @@ export function useTodoGroups(filters: Filters): TodoGroup[] {
     const push = (id: string, instance: TaskInstance) =>
       buckets.get(id)?.push(instance);
 
+    // One row per task *per day*: the same run must never be listed twice
+    // because it is both the representative and today's occurrence.
+    const seen = new Set<string>();
+    const place = (instance: TaskInstance) => {
+      const key = `${instance.task.id}:${instance.date ?? "someday"}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      if (instance.status === "COMPLETED") {
+        if (filters.showCompleted) push("completed", instance);
+      } else if (!instance.date) {
+        push("someday", instance);
+      } else if (instance.status === "OVERDUE") {
+        push("overdue", instance);
+      } else if (instance.date === today) {
+        push("today", instance);
+      } else if (instance.date === tomorrow) {
+        push("tomorrow", instance);
+      } else if (instance.date <= weekEnd) {
+        push("week", instance);
+      } else {
+        push("later", instance);
+      }
+    };
+
     const parentCache = new Map<string, Task>();
     for (const t of tasks) parentCache.set(t.id, t);
 
@@ -247,21 +272,16 @@ export function useTodoGroups(filters: Filters): TodoGroup[] {
 
       if (!matchesFilters(task, filters)) continue;
 
-      const instance = representativeInstance(task, occurrences, now);
-      if (instance.status === "COMPLETED") {
-        if (filters.showCompleted) push("completed", instance);
-      } else if (!instance.date) {
-        push("someday", instance);
-      } else if (instance.status === "OVERDUE") {
-        push("overdue", instance);
-      } else if (instance.date === today) {
-        push("today", instance);
-      } else if (instance.date === tomorrow) {
-        push("tomorrow", instance);
-      } else if (instance.date <= weekEnd) {
-        push("week", instance);
-      } else {
-        push("later", instance);
+      // The oldest run still open is what a task shows when it shows once.
+      place(representativeInstance(task, occurrences, now));
+
+      // …but a task can be put on extra days of its own week, and those days
+      // are the entire point of that feature: if the calendar draws this task
+      // on Wednesday, "Tomorrow" has to list it on Wednesday too. Only the two
+      // day-level buckets are filled per occurrence — Week and Later stay one
+      // row per task, or a daily habit would fill them with itself.
+      for (const instance of instancesInRange(task, today, tomorrow, occurrences, now)) {
+        place(instance);
       }
     }
 

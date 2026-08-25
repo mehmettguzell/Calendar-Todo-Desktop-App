@@ -184,7 +184,9 @@ export function TaskPanel({
             className="btn primary"
             onClick={() => toggleComplete(instance)}
           >
-            {instance.storedStatus === "COMPLETED" ? t("menuReopen") : t("menuComplete")}
+            {instance.storedStatus === "COMPLETED"
+              ? t("menuReopen")
+              : t("menuComplete")}
           </button>
           <button
             type="button"
@@ -213,7 +215,11 @@ export function TaskPanel({
             aria-label={t("menuCopy")}
             title={`${t("menuCopy")} — ${t("calendarDayHint")}`}
             onClick={() =>
-              copyToClipboard(task.id, task.title, instance.date ?? task.dueDate)
+              copyToClipboard(
+                task.id,
+                task.title,
+                instance.date ?? task.dueDate,
+              )
             }
           >
             <Copy size={14} />
@@ -266,9 +272,6 @@ export function TaskPanel({
                   className="input"
                   type="date"
                   value={task.dueDate ?? ""}
-                  onChange={(e) =>
-                    updateTask(task.id, { dueDate: e.target.value || null })
-                  }
                 />
               </Field>
               <Field label={t("formEndDate")}>

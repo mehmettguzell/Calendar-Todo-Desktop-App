@@ -190,7 +190,12 @@ interface StoreState {
   addReminder(
     reminder: Omit<
       Reminder,
-      "id" | "createdAt" | "updatedAt" | "status" | "snoozedUntil" | "lastFiredFor"
+      | "id"
+      | "createdAt"
+      | "updatedAt"
+      | "status"
+      | "snoozedUntil"
+      | "lastFiredFor"
     >,
   ): void;
   removeReminder(reminderId: string): void;
@@ -679,8 +684,10 @@ export const useStore = create<StoreState>((set, get) => {
           ...entries,
         );
       });
-      const updated = get().db.tasks.find((t) => t.id === taskId);
-      if (updated) void syncTaskToCloud(updated);
+      // The whole subtree was trashed, so the whole subtree has to travel:
+      // queueing only the root left the children alive in the cloud, and the
+      // next device to look saw half a deleted task.
+      syncSubtree(get().db, taskId);
 
       // The reversal is the ordinary restore, so the trail records both the
       // delete and the undo rather than quietly rewinding to before either.
@@ -703,8 +710,7 @@ export const useStore = create<StoreState>((set, get) => {
           ...ids.map((id) => historyEntry({ taskId: id, kind: "RESTORED" })),
         );
       });
-      const updated = get().db.tasks.find((t) => t.id === taskId);
-      if (updated) void syncTaskToCloud(updated);
+      syncSubtree(get().db, taskId);
     },
 
     /** Hard delete. History rows survive: they are the record that it existed. */
@@ -736,7 +742,8 @@ export const useStore = create<StoreState>((set, get) => {
     toggleComplete(instance) {
       const ref = refOf(instance);
       const previous = instance.storedStatus;
-      const next: StoredStatus = previous === "COMPLETED" ? "TODO" : "COMPLETED";
+      const next: StoredStatus =
+        previous === "COMPLETED" ? "TODO" : "COMPLETED";
       // Read before the write: these are the subtasks the completion is about
       // to carry with it, and the undo has to know how to put them back.
       const cascaded =
@@ -780,7 +787,10 @@ export const useStore = create<StoreState>((set, get) => {
       commit((db) => {
         const task = db.tasks.find((t) => t.id === taskId);
         if (!task) return db;
-        const patch: TaskPatch = { dueDate, endDate: shiftedEnd(task, dueDate) };
+        const patch: TaskPatch = {
+          dueDate,
+          endDate: shiftedEnd(task, dueDate),
+        };
         if (startTime !== undefined) {
           patch.startTime = startTime;
           patch.endTime = shiftedEndTime(task, startTime);
@@ -1172,7 +1182,10 @@ export const useStore = create<StoreState>((set, get) => {
         updatedAt: at,
         deletedAt: null,
       };
-      commit((db) => ({ ...db, transactions: [...db.transactions, transaction] }));
+      commit((db) => ({
+        ...db,
+        transactions: [...db.transactions, transaction],
+      }));
       return transaction;
     },
 
@@ -1265,7 +1278,12 @@ export const useStore = create<StoreState>((set, get) => {
         ...db,
         budgetCategories: db.budgetCategories.map((c) =>
           c.id === id
-            ? { ...c, ...patch, name: (patch.name ?? c.name).trim(), updatedAt: nowInstant() }
+            ? {
+                ...c,
+                ...patch,
+                name: (patch.name ?? c.name).trim(),
+                updatedAt: nowInstant(),
+              }
             : c,
         ),
       }));
@@ -1351,7 +1369,9 @@ export const useStore = create<StoreState>((set, get) => {
             // A run that never finished restarts today rather than keeping an
             // end date that is now behind its own start.
             endDate:
-              task.endDate && task.endDate < date ? null : (task.endDate ?? null),
+              task.endDate && task.endDate < date
+                ? null
+                : (task.endDate ?? null),
             snoozedUntil: null,
             updatedAt: at,
           };
@@ -1406,7 +1426,9 @@ export const useStore = create<StoreState>((set, get) => {
         // Both spellings count as "already there": a document started in
         // English holds "Groceries", and adding "Market" beside it would split
         // the very total the import exists to build.
-        const wanted = [entry.tr, entry.en].map((name) => name.toLocaleLowerCase("tr"));
+        const wanted = [entry.tr, entry.en].map((name) =>
+          name.toLocaleLowerCase("tr"),
+        );
         const existing = get().db.budgetCategories.find((category) =>
           wanted.includes(category.name.trim().toLocaleLowerCase("tr")),
         );
@@ -1456,7 +1478,9 @@ export const useStore = create<StoreState>((set, get) => {
       const fresh = drafts.filter((draft) => !taken.has(draft.externalId));
       // A merge whose fingerprint has since been written by another import is
       // no longer a merge; the row it would settle is already settled.
-      const settling = merges.filter((merge) => !taken.has(merge.patch.externalId));
+      const settling = merges.filter(
+        (merge) => !taken.has(merge.patch.externalId),
+      );
       if (fresh.length === 0 && settling.length === 0) return 0;
 
       const at = nowInstant();
@@ -1484,7 +1508,9 @@ export const useStore = create<StoreState>((set, get) => {
        * were: a merge edits a row the user wrote, and an undo that left the
        * bank's merchant and fingerprint behind would not be an undo.
        */
-      const patchById = new Map(settling.map((merge) => [merge.entryId, merge.patch]));
+      const patchById = new Map(
+        settling.map((merge) => [merge.entryId, merge.patch]),
+      );
       const before = new Map(
         get()
           .db.transactions.filter((entry) => patchById.has(entry.id))
@@ -1510,7 +1536,8 @@ export const useStore = create<StoreState>((set, get) => {
         commit((db) => ({
           ...db,
           transactions: db.transactions.map((entry) => {
-            if (ids.has(entry.id)) return { ...entry, deletedAt: at2, updatedAt: at2 };
+            if (ids.has(entry.id))
+              return { ...entry, deletedAt: at2, updatedAt: at2 };
             const original = before.get(entry.id);
             return original ? { ...original, updatedAt: at2 } : entry;
           }),
@@ -1534,7 +1561,9 @@ export const useStore = create<StoreState>((set, get) => {
       const spending = alerts.filter(isSpendingAlert);
       if (spending.length === 0) return 0;
 
-      const live = get().db.transactions.filter((entry) => entry.deletedAt === null);
+      const live = get().db.transactions.filter(
+        (entry) => entry.deletedAt === null,
+      );
       const taken = new Set(
         live.map((entry) => entry.externalId).filter(Boolean) as string[],
       );
@@ -1554,7 +1583,8 @@ export const useStore = create<StoreState>((set, get) => {
             .filter((key): key is CategoryKey => key !== null),
         ),
       ];
-      const categoryIds = keys.length > 0 ? get().ensureCategoriesForKeys(keys) : {};
+      const categoryIds =
+        keys.length > 0 ? get().ensureCategoriesForKeys(keys) : {};
 
       const matches = matchRows(
         identified.map(({ alert, merchant }) => ({
@@ -1628,7 +1658,10 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     markSpendNudged(date) {
-      commit((db) => ({ ...db, settings: { ...db.settings, lastSpendNudgeOn: date } }));
+      commit((db) => ({
+        ...db,
+        settings: { ...db.settings, lastSpendNudgeOn: date },
+      }));
     },
 
     /**
@@ -1912,7 +1945,8 @@ function shiftedEnd(task: Task, dueDate: LocalDate | null): LocalDate | null {
 
 /** Keep a timed task the same length when its start moves. */
 function shiftedEndTime(task: Task, startTime: string | null): string | null {
-  if (!task.endTime || !task.startTime || !startTime) return task.endTime ?? null;
+  if (!task.endTime || !task.startTime || !startTime)
+    return task.endTime ?? null;
   if (startTime === task.startTime) return task.endTime;
   const delta =
     minutesFromMidnight(startTime) - minutesFromMidnight(task.startTime);

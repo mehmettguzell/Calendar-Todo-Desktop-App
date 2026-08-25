@@ -54,7 +54,7 @@ function readBackFromPostgres(row: Record<string, unknown>) {
 
 function roundTrip(t: Task) {
   return cloudTaskFingerprint(
-    readBackFromPostgres(serializeTaskForCloud(t, USER, true)),
+    readBackFromPostgres(serializeTaskForCloud(t, USER)),
   );
 }
 

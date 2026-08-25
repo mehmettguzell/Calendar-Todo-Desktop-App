@@ -7,7 +7,13 @@ import {
   toLocalDate,
   toLocalTime,
 } from "./datetime";
-import type { Instant, LocalDate, LocalTime, Settings, TaskInstance } from "./types";
+import type {
+  Instant,
+  LocalDate,
+  LocalTime,
+  Settings,
+  TaskInstance,
+} from "./types";
 
 export type SnoozePresetId =
   | "10m"
@@ -77,16 +83,43 @@ export function resolveSnooze(
   // and leave the rule alone.
   if (instance.isRecurring) return { until, reschedule: null };
 
-  const crossesDay = anchorDate === null || targetDate !== anchorDate;
-  if (!crossesDay) return { until, reschedule: null };
+  const isShortPreset =
+    preset === "10m" || preset === "30m" || preset === "1h" || preset === "3h";
 
-  // Keep the clock time the task already had; only the day moves.
-  const keepsTime = !instance.task.allDay && instance.task.startTime !== null;
+  if (isShortPreset) {
+    // Short snoozes only postpone the notification/reminder.
+    // They only reschedule when a task scheduled for today crosses past midnight.
+    const isToday = anchorDate === toLocalDate(now);
+    const crossesMidnight = isToday && targetDate > anchorDate;
+    if (crossesMidnight) {
+      const keepsTime =
+        !instance.task.allDay && instance.task.startTime !== null;
+      return {
+        until,
+        reschedule: {
+          date: targetDate,
+          startTime: keepsTime ? instance.task.startTime : null,
+        },
+      };
+    }
+    return { until, reschedule: null };
+  }
+
+  // Day-jumping presets (tomorrow, monday, custom) move the task to the target day.
+  const keepsTime =
+    preset === "custom"
+      ? !instance.task.allDay
+        ? toLocalTime(target)
+        : null
+      : !instance.task.allDay && instance.task.startTime !== null
+        ? instance.task.startTime
+        : null;
+
   return {
     until,
     reschedule: {
       date: targetDate,
-      startTime: keepsTime ? instance.task.startTime : null,
+      startTime: keepsTime,
     },
   };
 }
@@ -102,7 +135,9 @@ export function snoozePreviewDate(
   now: Date,
   customTarget?: Date,
 ): LocalDate {
-  return toLocalDate(snoozeTarget(instance, preset, settings, now, customTarget));
+  return toLocalDate(
+    snoozeTarget(instance, preset, settings, now, customTarget),
+  );
 }
 
 function snoozeTarget(
@@ -122,26 +157,29 @@ function snoozeTarget(
     case "3h":
       return addHours(now, 3);
     case "tomorrow":
-      return sameTimeOn(addDaysTo(dayAnchor(instance, now), 1), instance, settings);
+      return sameTimeOn(
+        addDaysTo(dayAnchor(instance, now), 1),
+        instance,
+        settings,
+      );
     case "monday":
-      return sameTimeOn(nextMonday(dayAnchor(instance, now)), instance, settings);
+      return sameTimeOn(
+        nextMonday(dayAnchor(instance, now)),
+        instance,
+        settings,
+      );
     case "custom":
       return customTarget ?? addHours(now, 1);
   }
 }
 
 /**
- * Day-jumping presets move relative to the task's own day, never the clock.
+ * Day-jumping presets move relative to the task's day (or today if overdue/unscheduled).
  *
- * "Tomorrow" on a task scheduled for the 25th means the 26th, whether today is
- * the 20th, the 25th or the 28th. Anchoring on the clock instead made the
- * distance depend on when the menu happened to be opened, so the same choice
- * moved an overdue task by one day and a stale one by nine.
- *
- * A task with no date has nothing to count from, so it falls back to today.
+ * For overdue tasks or tasks without a date, snoozing until tomorrow means
+ * tomorrow relative to today so the postponement is always in the future.
  */
 function dayAnchor(instance: TaskInstance, now: Date): Date {
-  if (!instance.date) return startOfDay(now);
   return fromLocalDate(instance.date);
 }
 
@@ -152,7 +190,11 @@ function addDaysTo(date: Date, days: number): Date {
 }
 
 /** Preserve the task's own time of day, falling back to the settings default. */
-function sameTimeOn(day: Date, instance: TaskInstance, settings: Settings): Date {
+function sameTimeOn(
+  day: Date,
+  instance: TaskInstance,
+  settings: Settings,
+): Date {
   const time =
     !instance.task.allDay && instance.task.startTime
       ? instance.task.startTime
@@ -168,5 +210,7 @@ export function describeSnooze(outcome: SnoozeOutcome): string {
   }
   const until = fromInstant(outcome.until);
   const when = `${toLocalDate(until)} ${toLocalTime(until)}`;
-  return outcome.reschedule ? `moved to ${when}` : `reminder postponed to ${when}`;
+  return outcome.reschedule
+    ? `moved to ${when}`
+    : `reminder postponed to ${when}`;
 }

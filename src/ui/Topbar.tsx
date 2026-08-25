@@ -9,7 +9,7 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
-import { formatErrorMessage } from "@/lib/errors";
+import { formatErrorMessage, type SyncFailureKind } from "@/lib/errors";
 import { localeTag } from "@/domain/datetime";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { useAuthStore } from "@/state/authStore";
@@ -46,7 +46,8 @@ function SyncButton() {
   const phase = useSyncStore((s) => s.phase);
   const pending = useSyncStore((s) => s.pendingWrites);
   const lastSyncedAt = useSyncStore((s) => s.lastSyncedAt);
-  const lastError = useSyncStore((s) => s.lastError);
+  const lastFailure = useSyncStore((s) => s.lastFailure);
+  const autoRetryPaused = useSyncStore((s) => s.autoRetryPaused);
   const realtime = useSyncStore((s) => s.realtime);
   const { t } = useI18n();
 
@@ -64,12 +65,13 @@ function SyncButton() {
     // request inside it is bounded, so there is no path where this never
     // returns. The try/catch is for the impossible one.
     try {
-      const report = await syncDifferences();
+      // Manual: the press is the condition that revives a paused retry budget.
+      const report = await syncDifferences({ manual: true });
       if (!report.success) {
         setFeedback(
-          report.error === "OFFLINE"
+          report.error === "offline"
             ? { type: "info", text: t("syncOfflineNotice") }
-            : { type: "error", text: report.error || t("syncFailed") },
+            : { type: "error", text: t(syncFailureKey(report.error ?? "unknown")) },
         );
       } else if (report.totalDifferences === 0) {
         setFeedback({ type: "success", text: t("syncUpToDate") });
@@ -82,14 +84,17 @@ function SyncButton() {
         setFeedback({ type: "success", text: `${t("syncSuccess")} ${parts.join(", ")}` });
       }
     } catch (err: unknown) {
-      setFeedback({ type: "error", text: formatErrorMessage(err) });
+      // The reason belongs in the console; the user gets a sentence, not a
+      // Postgres message naming our tables and columns.
+      console.error("[tempo sync] manual sync failed:", formatErrorMessage(err));
+      setFeedback({ type: "error", text: t("syncFailed") });
     } finally {
       setTimeout(() => setFeedback(null), 5000);
     }
   };
 
   const status = describeSyncStatus(
-    { phase, pending, lastSyncedAt, lastError, realtime },
+    { phase, pending, lastSyncedAt, lastFailure, autoRetryPaused, realtime },
     t,
   );
 
@@ -157,13 +162,34 @@ function SyncButton() {
   );
 }
 
+/**
+ * The one sentence a failure kind is allowed to become.
+ *
+ * Deliberately vague about the backend: what the user can act on is "your data
+ * is safe here and we will try again", plus a nudge when only they can fix it.
+ */
+function syncFailureKey(kind: SyncFailureKind): TranslationKey {
+  switch (kind) {
+    case "offline":
+    case "timeout":
+      return "syncFailNetwork";
+    case "server":
+      return "syncFailServer";
+    case "auth":
+      return "syncFailAccount";
+    default:
+      return "syncFailed";
+  }
+}
+
 /** One colour and one sentence for whatever the sync layer is doing. */
 function describeSyncStatus(
   s: {
     phase: SyncPhase;
     pending: number;
     lastSyncedAt: number | null;
-    lastError: string | null;
+    lastFailure: SyncFailureKind | null;
+    autoRetryPaused: boolean;
     realtime: "connected" | "connecting" | "down";
   },
   t: (key: TranslationKey) => string,
@@ -184,7 +210,9 @@ function describeSyncStatus(
     case "error":
       return {
         color: "#ef4444",
-        tooltip: `${s.lastError ?? t("syncFailed")} · ${last}`,
+        tooltip:
+          `${t(syncFailureKey(s.lastFailure ?? "unknown"))} · ${last}` +
+          (s.autoRetryPaused ? ` · ${t("syncRetryPaused")}` : ""),
       };
     case "disabled":
       return { color: "var(--text-faint)", tooltip: t("syncLoginRequired") };

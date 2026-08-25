@@ -56,7 +56,9 @@ describe("opening a task", () => {
 
     let taskId = "";
     act(() => {
-      taskId = useStore.getState().createTask({ title: "Dentist", dueDate: today }).id;
+      taskId = useStore
+        .getState()
+        .createTask({ title: "Dentist", dueDate: today }).id;
       useStore.getState().addReminder({
         taskId,
         kind: "RELATIVE",
@@ -70,8 +72,6 @@ describe("opening a task", () => {
       row.click();
     });
 
-    expect(
-      screen.getByText(/10 (minutes before|dakika önce)/),
-    ).toBeDefined();
+    expect(screen.getByText(/10 (minutes before|dakika önce)/)).toBeDefined();
   });
 });
