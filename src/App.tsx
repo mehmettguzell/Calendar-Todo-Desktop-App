@@ -4,7 +4,14 @@ import { occurrenceId } from "@/domain/ids";
 import { toInstance } from "@/domain/task";
 import type { LocalDate, TaskInstance } from "@/domain/types";
 import { ensureNotificationPermission } from "@/services/notifications";
-import { QUICK_CAPTURE_EVENT, onDesktopEvent } from "@/services/desktop";
+import {
+  QUICK_CAPTURE_EVENT,
+  QUICK_SPEND_EVENT,
+  onDesktopEvent,
+} from "@/services/desktop";
+import { useSpendFeed } from "@/services/spendFeed";
+import { notify } from "@/services/notifications";
+import { spendNudgeDue } from "@/domain/spendLog";
 import { useReminderScheduler } from "@/services/scheduler";
 import {
   EMPTY_FILTERS,
@@ -27,6 +34,8 @@ import {
 } from "@/ui/views/CalendarView";
 import { FocusView } from "@/ui/views/FocusView";
 import { BudgetView } from "@/ui/views/BudgetView";
+import { SpendCapture } from "@/ui/budget/SpendCapture";
+import { DaySpendPrompt } from "@/ui/budget/DaySpendPrompt";
 import { TasksView } from "@/ui/views/TasksView";
 import { PlansView } from "@/ui/views/PlansView";
 import { NotesView } from "@/ui/views/NotesView";
@@ -94,6 +103,8 @@ export function App() {
   const [quickAdd, setQuickAdd] = useState<QuickAddSeed | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [spendOpen, setSpendOpen] = useState(false);
+  const [dayPromptOpen, setDayPromptOpen] = useState(false);
   /**
    * The calendar day a keyboard paste lands on.
    *
@@ -136,6 +147,45 @@ export function App() {
       unlisten?.();
     };
   }, []);
+
+  // The tray's "Harcama ekle". A separate door from the task box on purpose:
+  // the two are reached at different moments, and neither should cost a detour
+  // through the other.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void onDesktopEvent(QUICK_SPEND_EVENT, () => setSpendOpen(true)).then((off) => {
+      if (cancelled) off();
+      else unlisten = off;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
+  // Poll the bank's notification mailbox while the app is open.
+  useSpendFeed();
+
+  /*
+   * The evening prompt.
+   *
+   * Driven by `now`, which the scheduler already advances once a minute, so
+   * this needs no clock of its own. The day is marked as soon as the prompt is
+   * raised rather than when it is answered: a question asked and ignored has
+   * still been asked, and asking it twice is how a nudge gets switched off.
+   */
+  useEffect(() => {
+    if (!ready || dayPromptOpen) return;
+    if (!spendNudgeDue(settings, new Date(now))) return;
+
+    setDayPromptOpen(true);
+    useStore.getState().markSpendNudged(toLocalDate(new Date(now)));
+    void notify({
+      title: t("spendNudgeNotifyTitle"),
+      body: t("spendNudgeNotifyBody"),
+    }).catch(() => undefined);
+  }, [ready, now, settings, dayPromptOpen, t]);
 
   /**
    * The panel re-derives its instance from the live store on every render, so
@@ -330,6 +380,17 @@ export function App() {
         />
       ) : null}
 
+      {spendOpen ? (
+        <SpendCapture
+          onClose={() => setSpendOpen(false)}
+          onOpenBudget={() => setView("budget")}
+        />
+      ) : null}
+
+      {dayPromptOpen ? (
+        <DaySpendPrompt onClose={() => setDayPromptOpen(false)} />
+      ) : null}
+
       {settingsOpen ? (
         <SettingsModal onClose={() => setSettingsOpen(false)} />
       ) : null}
@@ -347,6 +408,7 @@ export function App() {
         onClose={() => setPaletteOpen(false)}
         onView={setView}
         onNewTask={() => setQuickAdd({ date: anchor, time: null })}
+        onNewSpend={() => setSpendOpen(true)}
         onOpenTask={(taskId) => openTaskId(taskId)}
         onSettings={() => setSettingsOpen(true)}
       />

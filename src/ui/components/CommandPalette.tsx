@@ -51,6 +51,7 @@ export function CommandPalette({
   onClose,
   onView,
   onNewTask,
+  onNewSpend,
   onOpenTask,
   onSettings,
 }: {
@@ -58,6 +59,7 @@ export function CommandPalette({
   onClose: () => void;
   onView: (view: ViewId) => void;
   onNewTask: () => void;
+  onNewSpend: () => void;
   onOpenTask: (taskId: string) => void;
   onSettings: () => void;
 }) {
@@ -84,6 +86,7 @@ export function CommandPalette({
   const actions: PaletteAction[] = useMemo(
     () => [
       { id: "new", label: t("paletteNewTask"), hint: "N", icon: <Plus size={15} />, run: onNewTask },
+      { id: "spend", label: t("paletteQuickSpend"), icon: <Wallet size={15} />, run: onNewSpend },
       { id: "today", label: t("navToday"), icon: <Sun size={15} />, run: () => onView("today") },
       { id: "calendar", label: t("navCalendar"), icon: <CalendarDays size={15} />, run: () => onView("calendar") },
       { id: "tasks", label: t("navTasks"), icon: <ListChecks size={15} />, run: () => onView("tasks") },
@@ -94,7 +97,7 @@ export function CommandPalette({
       { id: "sync", label: t("syncWithServer"), icon: <RefreshCw size={15} />, run: () => void syncDifferences() },
       { id: "settings", label: t("navSettings"), icon: <SettingsIcon size={15} />, run: onSettings },
     ],
-    [t, onView, onNewTask, onSettings],
+    [t, onView, onNewTask, onNewSpend, onSettings],
   );
 
   const results = useMemo(() => {

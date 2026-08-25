@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { BudgetCategory, Transaction } from "../money";
-import { buildImportPlan, draftsFrom, externalIdFor, resolveCategory } from "../statementImport";
+import {
+  buildImportPlan,
+  draftsFrom,
+  externalIdFor,
+  mergesFrom,
+  resolveCategory,
+} from "../statementImport";
 import { parseStatement } from "../statement";
 import { analyseSpending, merchantTotal, searchMerchants } from "../spending";
 
@@ -259,14 +265,55 @@ describe("importing the same statement twice", () => {
     expect(second.rows.map((r) => r.externalId)).toEqual(first.rows.map((r) => r.externalId));
   });
 
-  it("warns about an entry that was typed in by hand first", () => {
+  /**
+   * The entry the user typed at the pump is the same purchase as the row the
+   * bank printed weeks later. It is settled in place rather than repeated, so
+   * the import creates nothing for it and the ledger keeps one record.
+   */
+  it("settles an entry that was typed in by hand first", () => {
     const typed: Transaction[] = [
       entry({ date: "2026-08-13", amountMinor: 89000, merchant: "", note: "benzin", externalId: null }),
     ];
     const plan = buildImportPlan(parsed.lines, parsed.skipped, typed, CATEGORIES, parsed.source);
     const shell = plan.rows.find((row) => row.merchant.name === "Shell");
     expect(shell?.status).toBe("similar");
-    expect(shell?.include).toBe(false);
+    expect(shell?.merge).toBe(true);
+    expect(shell?.existingId).toBe(typed[0]?.id);
+
+    expect(draftsFrom(plan).some((draft) => draft.merchant === "Shell")).toBe(false);
+    const merges = mergesFrom(plan, AT);
+    expect(merges).toHaveLength(1);
+    expect(merges[0]?.patch.externalId).toBe(shell?.externalId);
+    expect(merges[0]?.patch.confirmedAt).toBe(AT);
+  });
+
+  /** A day's drift is the normal case for a card, not an exception. */
+  it("still recognises it when the bank posted it two days later", () => {
+    const typed: Transaction[] = [
+      entry({ date: "2026-08-11", amountMinor: 89000, merchant: "Shell", note: "benzin", externalId: null }),
+    ];
+    const plan = buildImportPlan(parsed.lines, parsed.skipped, typed, CATEGORIES, parsed.source);
+    const shell = plan.rows.find((row) => row.merchant.name === "Shell");
+    expect(shell?.status).toBe("similar");
+    expect(shell?.match?.distanceDays).toBe(-2);
+  });
+
+  /** Two cards, two purchases, same day, same amount — and two rows. */
+  it("does not settle a purchase made on a different card", () => {
+    const typed: Transaction[] = [
+      entry({
+        date: "2026-08-13",
+        amountMinor: 89000,
+        merchant: "Shell",
+        note: "benzin",
+        externalId: null,
+        account: "World ••9012",
+      }),
+    ];
+    const plan = buildImportPlan(parsed.lines, parsed.skipped, typed, CATEGORIES, parsed.source, {
+      account: "Bonus ••1234",
+    });
+    expect(plan.rows.find((row) => row.merchant.name === "Shell")?.status).toBe("new");
   });
 });
 

@@ -59,6 +59,12 @@ describe("the dictionaries", () => {
       // A sample of what a bank prints. Translating it would make it a worse
       // example of the thing the user is about to paste.
       "importPastePlaceholder",
+      // Likewise: an example of a card label, which is not a sentence.
+      "spendCardPlaceholder",
+      // Protocol vocabulary. "Port" and "SSL/TLS" are the words on the mail
+      // provider's own help page, in both languages.
+      "mailPort",
+      "mailSecure",
     ]);
 
     const untranslated = Object.keys(tr).filter(

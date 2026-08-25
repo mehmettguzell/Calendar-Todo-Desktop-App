@@ -178,6 +178,70 @@ export interface Settings {
   dayEndHour: number;
   /** Time given to an all-day task when a snooze needs a clock time. */
   allDayReminderTime: LocalTime;
+
+  /* Budget capture ------------------------------------------------- */
+
+  /**
+   * The evening prompt to write down what was spent today.
+   *
+   * A ledger is only worth reading if it is complete, and the gap between
+   * "I'll add it later" and "later" is where completeness dies. One nudge a
+   * day, at an hour the user picks, is the cheapest thing that closes it.
+   */
+  spendNudgeEnabled?: boolean;
+  spendNudgeTime?: LocalTime;
+  /** The last day the nudge was delivered, so it fires once and not again. */
+  lastSpendNudgeOn?: LocalDate | null;
+
+  /** Reading the bank's transaction notification mail. See `mail.ts`. */
+  mailSync?: MailSyncSettings;
+}
+
+/**
+ * Where the automatic spending feed comes from.
+ *
+ * A Turkish bank will not hand account data to a personal application — that
+ * needs a payment-services licence — but it will send a message per
+ * transaction. Reading that mailbox is the only route by which a purchase can
+ * reach the ledger without anyone typing it.
+ *
+ * The password is deliberately absent: it lives in the OS credential store,
+ * reachable only by the native side. This object is written to the same plain
+ * JSON document as everything else, and a mailbox password in a file the user
+ * can open is a mailbox password in every backup they ever make.
+ */
+export interface MailSyncSettings {
+  enabled: boolean;
+  host: string;
+  port: number;
+  /** TLS on connect (993). Off means STARTTLS on 143. */
+  secure: boolean;
+  username: string;
+  /** The mailbox to read; a filing rule may put bank mail outside INBOX. */
+  folder: string;
+  /**
+   * Addresses or domains whose mail is read at all.
+   *
+   * Empty means "read everything in the folder", which is only sensible for a
+   * mailbox that exists solely for bank notifications.
+   */
+  senders: string[];
+  /** How often to look, in minutes. */
+  everyMinutes: number;
+  /**
+   * Write recognised purchases straight to the ledger.
+   *
+   * When off, they wait in a review list. On is the point of the feature — an
+   * entry that needs confirming is an entry that needs attention, which is the
+   * cost the automatic feed exists to remove — but the ledger is the user's,
+   * so they get to say.
+   */
+  autoRecord: boolean;
+  /** Highest message id already read, so a poll asks only for what is new. */
+  lastUid?: number | null;
+  lastSyncAt?: Instant | null;
+  /** What went wrong last time, shown in Settings rather than swallowed. */
+  lastError?: string | null;
 }
 
 /**

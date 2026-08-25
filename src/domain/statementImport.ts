@@ -5,6 +5,13 @@ import {
   type CategoryKey,
   type Transaction,
 } from "./money";
+import {
+  matchableEntries,
+  matchRows,
+  settlePatch,
+  type Match,
+  type SettlePatch,
+} from "./reconcile";
 import type { SkippedRow, StatementLine, StatementSource } from "./statement";
 import type { LocalDate } from "./types";
 
@@ -36,6 +43,21 @@ export interface ImportRow {
   status: "new" | "duplicate" | "similar";
   /** The entry it repeats, for `duplicate` and `similar`. */
   existingId: string | null;
+  /**
+   * Why this row was thought to be the same purchase, for `similar`.
+   *
+   * Carried so the preview can say "two days apart, same shop" instead of
+   * asking the user to take the match on faith.
+   */
+  match: Match | null;
+  /**
+   * Settle the matched entry instead of creating a second one.
+   *
+   * This is what makes logging a spend at the till safe: the statement finds
+   * the row the user already wrote and confirms it, rather than filing a twin
+   * beside it. On by default whenever a match was found.
+   */
+  merge: boolean;
   /** Ticked in the preview. Transfers arrive unticked. */
   include: boolean;
 }
@@ -115,6 +137,16 @@ export function resolveCategory(
 export interface PlanOptions {
   /** Rows whose merchant is unrecognised still get this category, if given. */
   fallbackCategoryKey?: CategoryKey | null;
+  /**
+   * The card this file belongs to.
+   *
+   * Stops a purchase on one card being matched against an identical one on
+   * another, which is the failure mode that appears the moment someone imports
+   * statements from two banks.
+   */
+  account?: string | null;
+  /** How far the posting date may drift from the entry's. See `reconcile`. */
+  matchWindowDays?: number;
 }
 
 export function buildImportPlan(
@@ -131,17 +163,6 @@ export function buildImportPlan(
     if (entry.externalId) byExternalId.set(entry.externalId, entry);
   }
 
-  /*
-   * A softer net for entries typed in by hand before the statement arrived.
-   * They carry no fingerprint, so only the shape of the movement can betray
-   * them: same day, same amount, same direction.
-   */
-  const bySignature = new Map<string, Transaction>();
-  for (const entry of live) {
-    if (entry.externalId) continue;
-    bySignature.set(`${entry.date}|${entry.amountMinor}|${entry.flow}`, entry);
-  }
-
   const seen = new Map<string, number>();
   const rows: ImportRow[] = [];
   const missing = new Set<CategoryKey>();
@@ -155,7 +176,6 @@ export function buildImportPlan(
 
     const externalId = externalIdFor(line, merchant.name, occurrence);
     const alreadyImported = byExternalId.get(externalId);
-    const lookAlike = bySignature.get(`${line.date}|${line.amountMinor}|${line.flow}`);
 
     const categoryKey =
       KIND_CATEGORY[line.kind] ??
@@ -166,24 +186,53 @@ export function buildImportPlan(
     if (categoryKey && !category) missing.add(categoryKey);
     if (merchant.confidence === "none") unknown.add(merchant.name);
 
-    const status: ImportRow["status"] = alreadyImported
-      ? "duplicate"
-      : lookAlike
-        ? "similar"
-        : "new";
-
     rows.push({
       line,
       merchant,
       externalId,
       categoryKey,
       categoryId: category?.id ?? null,
-      status,
-      existingId: alreadyImported?.id ?? lookAlike?.id ?? null,
-      // Anything already in the ledger arrives unticked. The user can still
-      // tick a "similar" row — it may genuinely be a second identical purchase.
-      include: status === "new" && includeByDefault(line.kind),
+      status: alreadyImported ? "duplicate" : "new",
+      existingId: alreadyImported?.id ?? null,
+      match: null,
+      merge: false,
+      include: !alreadyImported && includeByDefault(line.kind),
     });
+  }
+
+  /*
+   * Everything that is not already in the ledger by fingerprint is offered to
+   * the reconciler, which looks for the entry the user (or their bank's
+   * notification mail) already wrote for this purchase.
+   *
+   * Allocation happens across the whole file at once rather than row by row:
+   * two identical purchases in the same week would otherwise both claim the
+   * first entry that fitted. See `reconcile`.
+   */
+  const claimable = rows.filter((row) => row.status === "new");
+  const matches = matchRows(
+    claimable.map((row) => ({
+      key: row.externalId,
+      date: row.line.date,
+      amountMinor: row.line.amountMinor,
+      flow: row.line.flow,
+      merchant: row.merchant.name,
+      account: options.account ?? null,
+    })),
+    matchableEntries(live),
+    (row) => row.key,
+    { account: options.account ?? null, windowDays: options.matchWindowDays },
+  );
+
+  for (const row of claimable) {
+    const match = matches.get(row.externalId);
+    if (!match) continue;
+    row.status = "similar";
+    row.existingId = match.entry.id;
+    row.match = match;
+    // Merging is the right default: the entry exists because the user logged
+    // the purchase, and the statement is here to confirm it, not to repeat it.
+    row.merge = true;
   }
 
   const dates = lines.map((line) => line.date).sort();
@@ -227,7 +276,9 @@ export interface ImportDraft {
  */
 export function draftsFrom(plan: ImportPlan): ImportDraft[] {
   return plan.rows
-    .filter((row) => row.include)
+    // A row being merged settles an entry that already exists; creating one as
+    // well would be the very duplicate the match was found to prevent.
+    .filter((row) => row.include && !row.merge)
     .map((row) => ({
       date: row.line.date,
       amountMinor: row.line.amountMinor,
@@ -237,4 +288,47 @@ export function draftsFrom(plan: ImportPlan): ImportDraft[] {
       merchant: row.merchant.name,
       externalId: row.externalId,
     }));
+}
+
+
+/** One matched entry, and what the statement teaches it. */
+export interface ImportMerge {
+  entryId: string;
+  patch: SettlePatch;
+  /** For the preview and the undo toast. */
+  merchant: string;
+}
+
+/**
+ * The entries a confirmed plan settles rather than repeats.
+ *
+ * This is the other half of `draftsFrom`, and the half that makes logging a
+ * spend the moment it happens safe: the statement arrives weeks later, finds
+ * the row already there, and confirms it in place. One purchase, one record —
+ * the same rule the task side of the app is built on.
+ */
+export function mergesFrom(
+  plan: ImportPlan,
+  at: string,
+  options: { account?: string | null; keepDate?: boolean } = {},
+): ImportMerge[] {
+  const merges: ImportMerge[] = [];
+  for (const row of plan.rows) {
+    if (!row.include || !row.merge || !row.match) continue;
+    merges.push({
+      entryId: row.match.entry.id,
+      merchant: row.merchant.name,
+      patch: settlePatch(
+        row.match.entry,
+        {
+          externalId: row.externalId,
+          merchant: row.merchant.name,
+          categoryId: row.categoryId,
+          date: row.line.date,
+        },
+        { at, account: options.account ?? null, keepDate: options.keepDate },
+      ),
+    });
+  }
+  return merges;
 }

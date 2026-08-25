@@ -14,6 +14,15 @@ import { isTauri } from "@/lib/env";
 export const QUICK_CAPTURE_EVENT = "tempo://quick-capture";
 
 /**
+ * The same idea for money, fired by the tray's "Harcama ekle".
+ *
+ * A separate event rather than a mode on the task one: a purchase is logged
+ * standing at a till, and a capture box that first asks whether this is a task
+ * or a spend has already cost more than the entry is worth.
+ */
+export const QUICK_SPEND_EVENT = "tempo://quick-spend";
+
+/**
  * Fired by a native thread every 30 seconds.
  *
  * WebView2 throttles timers in a hidden window, which would stretch the

@@ -31,14 +31,22 @@ import { createId, occurrenceId } from "@/domain/ids";
 import { copySubtree, type CopyTarget } from "@/domain/copy";
 import { toInstance } from "@/domain/task";
 import { resolveSnooze, type SnoozePresetId } from "@/domain/snooze";
-import type { BudgetCategory, MoneyFlow, Transaction } from "@/domain/money";
+import type {
+  BudgetCategory,
+  MoneyFlow,
+  Transaction,
+  TransactionOrigin,
+} from "@/domain/money";
 import {
   BUDGET_CATEGORY_COLORS,
   CATEGORY_CATALOGUE,
   dueRecurringTransactions,
   type CategoryKey,
 } from "@/domain/money";
-import type { ImportDraft } from "@/domain/statementImport";
+import type { ImportDraft, ImportMerge } from "@/domain/statementImport";
+import { isSpendingAlert, type BankAlert } from "@/domain/bankAlert";
+import { identifyMerchant } from "@/domain/merchant";
+import { matchRows, matchableEntries } from "@/domain/reconcile";
 import {
   syncDeleteCategoryToCloud,
   syncDeleteTaskToCloud,
@@ -105,12 +113,30 @@ export interface TransactionDraft {
   categoryId: string | null;
   note?: string;
   recurrence?: Recurrence | null;
+  /** The card this went through. See `Transaction.account`. */
+  account?: string | null;
+  /** Canonical shop, when something recognised one. */
+  merchant?: string | null;
+  /** How it reached the ledger. Defaults to hand-typed. */
+  origin?: TransactionOrigin;
+  /** Identity of the source record, for alerts and imports. */
+  externalId?: string | null;
 }
 
 export type TransactionPatch = Partial<
   Pick<
     Transaction,
-    "date" | "amountMinor" | "flow" | "categoryId" | "note" | "recurrence"
+    | "date"
+    | "amountMinor"
+    | "flow"
+    | "categoryId"
+    | "note"
+    | "recurrence"
+    | "account"
+    | "merchant"
+    | "externalId"
+    | "origin"
+    | "confirmedAt"
   >
 >;
 
@@ -209,7 +235,19 @@ interface StoreState {
    * already in the ledger are skipped here as well as in the plan, so a stale
    * preview can never double a month.
    */
-  importTransactions(drafts: ImportDraft[]): number;
+  importTransactions(drafts: ImportDraft[], merges?: ImportMerge[]): number;
+  /**
+   * Write what the bank's notification mail said.
+   *
+   * Returns how many entries the ledger gained. An alert whose purchase is
+   * already there — because the user typed it at the till a minute earlier —
+   * settles that entry instead of adding a second one, so the count can be
+   * smaller than the number of alerts handed in, and that is the feature
+   * working rather than a message being lost.
+   */
+  recordBankAlerts(alerts: BankAlert[]): number;
+  /** Remember that today's spending prompt has been shown. */
+  markSpendNudged(date: LocalDate): void;
   updateBudgetCategory(
     id: string,
     patch: Partial<
@@ -1123,6 +1161,13 @@ export const useStore = create<StoreState>((set, get) => {
         recurrence: draft.recurrence ?? null,
         recurrenceSourceId: null,
         lastGeneratedFor: null,
+        account: draft.account?.trim() || null,
+        merchant: draft.merchant?.trim() || null,
+        origin: draft.origin ?? "manual",
+        externalId: draft.externalId ?? null,
+        // Nothing typed or pushed is confirmed. Only a statement can say what
+        // a purchase finally cost.
+        confirmedAt: null,
         createdAt: at,
         updatedAt: at,
         deletedAt: null,
@@ -1398,8 +1443,8 @@ export const useStore = create<StoreState>((set, get) => {
      * hundred separate writes would be a hundred renders and a hundred disk
      * flushes for what the user experienced as a single action.
      */
-    importTransactions(drafts) {
-      if (drafts.length === 0) return 0;
+    importTransactions(drafts, merges = []) {
+      if (drafts.length === 0 && merges.length === 0) return 0;
 
       const taken = new Set(
         get()
@@ -1409,7 +1454,10 @@ export const useStore = create<StoreState>((set, get) => {
       // The preview may have been built minutes ago; the ledger is the
       // authority on what is already in it.
       const fresh = drafts.filter((draft) => !taken.has(draft.externalId));
-      if (fresh.length === 0) return 0;
+      // A merge whose fingerprint has since been written by another import is
+      // no longer a merge; the row it would settle is already settled.
+      const settling = merges.filter((merge) => !taken.has(merge.patch.externalId));
+      if (fresh.length === 0 && settling.length === 0) return 0;
 
       const at = nowInstant();
       const created: Transaction[] = fresh.map((draft) => ({
@@ -1429,7 +1477,30 @@ export const useStore = create<StoreState>((set, get) => {
         deletedAt: null,
       }));
 
-      commit((db) => ({ ...db, transactions: [...db.transactions, ...created] }));
+      /*
+       * The entries this statement settles rather than repeats.
+       *
+       * Their previous shape is kept so undo can put them back exactly as they
+       * were: a merge edits a row the user wrote, and an undo that left the
+       * bank's merchant and fingerprint behind would not be an undo.
+       */
+      const patchById = new Map(settling.map((merge) => [merge.entryId, merge.patch]));
+      const before = new Map(
+        get()
+          .db.transactions.filter((entry) => patchById.has(entry.id))
+          .map((entry) => [entry.id, entry] as const),
+      );
+
+      commit((db) => ({
+        ...db,
+        transactions: [
+          ...db.transactions.map((entry) => {
+            const patch = patchById.get(entry.id);
+            return patch ? { ...entry, ...patch, updatedAt: at } : entry;
+          }),
+          ...created,
+        ],
+      }));
 
       // A hundred rows landing in the wrong month is exactly the mistake
       // someone wants back immediately, and undoing it row by row is no undo.
@@ -1438,13 +1509,126 @@ export const useStore = create<StoreState>((set, get) => {
         const at2 = nowInstant();
         commit((db) => ({
           ...db,
-          transactions: db.transactions.map((entry) =>
-            ids.has(entry.id) ? { ...entry, deletedAt: at2, updatedAt: at2 } : entry,
-          ),
+          transactions: db.transactions.map((entry) => {
+            if (ids.has(entry.id)) return { ...entry, deletedAt: at2, updatedAt: at2 };
+            const original = before.get(entry.id);
+            return original ? { ...original, updatedAt: at2 } : entry;
+          }),
         }));
       });
 
+      return created.length + settling.length;
+    },
+
+    /**
+     * Write what the bank's notification mail said.
+     *
+     * Every alert goes through the same reconciler a statement does, for the
+     * same reason: someone who types "migros 250" at the till and then gets the
+     * bank's mail two minutes later has made one purchase, and a feed that
+     * cannot see that turns the convenience into a chore. The alert settles the
+     * entry that is already there — teaching it the shop and the card — rather
+     * than filing a twin beside it.
+     */
+    recordBankAlerts(alerts) {
+      const spending = alerts.filter(isSpendingAlert);
+      if (spending.length === 0) return 0;
+
+      const live = get().db.transactions.filter((entry) => entry.deletedAt === null);
+      const taken = new Set(
+        live.map((entry) => entry.externalId).filter(Boolean) as string[],
+      );
+      const incoming = spending.filter((alert) => !taken.has(alert.externalId));
+      if (incoming.length === 0) return 0;
+
+      // The shop the bank named decides the category, exactly as it does for a
+      // statement row — the two are the same descriptor arriving by two doors.
+      const identified = incoming.map((alert) => ({
+        alert,
+        merchant: identifyMerchant(alert.description),
+      }));
+      const keys = [
+        ...new Set(
+          identified
+            .map(({ merchant }) => merchant.categoryKey)
+            .filter((key): key is CategoryKey => key !== null),
+        ),
+      ];
+      const categoryIds = keys.length > 0 ? get().ensureCategoriesForKeys(keys) : {};
+
+      const matches = matchRows(
+        identified.map(({ alert, merchant }) => ({
+          key: alert.externalId,
+          date: alert.date,
+          amountMinor: alert.amountMinor,
+          flow: alert.flow,
+          merchant: merchant.name,
+          account: alert.account,
+        })),
+        matchableEntries(live).filter((entry) => !entry.externalId),
+        (row) => row.key,
+      );
+
+      const at = nowInstant();
+      const created: Transaction[] = [];
+      const patches = new Map<string, Partial<Transaction>>();
+
+      for (const { alert, merchant } of identified) {
+        const categoryId = merchant.categoryKey
+          ? (categoryIds[merchant.categoryKey] ?? null)
+          : null;
+        const match = matches.get(alert.externalId);
+
+        if (match) {
+          patches.set(match.entry.id, {
+            externalId: alert.externalId,
+            merchant: match.entry.merchant ?? merchant.name,
+            account: match.entry.account ?? alert.account,
+            categoryId: match.entry.categoryId ?? categoryId,
+            // Deliberately NOT confirmed: an alert announces what the merchant
+            // asked for, not what the bank finally charged.
+            updatedAt: at,
+          });
+          continue;
+        }
+
+        created.push({
+          id: createId("x"),
+          date: alert.date,
+          amountMinor: alert.amountMinor,
+          flow: alert.flow,
+          categoryId,
+          note: alert.description,
+          merchant: merchant.name,
+          account: alert.account,
+          origin: "alert",
+          externalId: alert.externalId,
+          confirmedAt: null,
+          recurrence: null,
+          recurrenceSourceId: null,
+          lastGeneratedFor: null,
+          createdAt: at,
+          updatedAt: at,
+          deletedAt: null,
+        });
+      }
+
+      commit((db) => ({
+        ...db,
+        transactions: [
+          ...db.transactions.map((entry) => {
+            const patch = patches.get(entry.id);
+            return patch ? { ...entry, ...patch } : entry;
+          }),
+          ...created,
+        ],
+      }));
+
       return created.length;
+    },
+
+    markSpendNudged(date) {
+      commit((db) => ({ ...db, settings: { ...db.settings, lastSpendNudgeOn: date } }));
     },
 
     /**

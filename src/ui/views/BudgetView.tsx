@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -11,8 +11,11 @@ import {
   Wallet,
 } from "lucide-react";
 import { formatDate, toLocalDate } from "@/domain/datetime";
+import { fold } from "@/domain/merchant";
 import {
+  accountNames,
   burnRatePerDay,
+  isProvisional,
   formatMoney,
   limitStatus,
   MONEY_FLOWS,
@@ -31,6 +34,7 @@ import { cn } from "@/lib/cn";
 import { useNow, useStore } from "@/state/store";
 import { SpendingBreakdown } from "@/ui/budget/SpendingBreakdown";
 import { StatementImport } from "@/ui/budget/StatementImport";
+import { SpendFeedReview } from "@/ui/budget/SpendFeedReview";
 
 type PeriodId = "day" | "week" | "month" | "year";
 
@@ -189,6 +193,8 @@ export function BudgetView() {
         />
       </section>
 
+      <SpendFeedReview />
+
       <QuickEntry defaultDate={clampToRange(toLocalDate(now), range)} />
 
       {generated > 0 ? (
@@ -336,10 +342,31 @@ export function BudgetView() {
                         <span className="budget-row-note truncate">
                           {row.recurrence ? `↻ ${t("budgetRepeating")} · ` : null}
                           {row.recurrenceSourceId ? `${t("budgetGenerated")} · ` : null}
+                          {/* The shop, unless the note already says it — the
+                              user who typed "migros" does not need "Migros ·
+                              migros" read back to them. */}
+                          {row.merchant && fold(row.merchant) !== fold(row.note)
+                            ? `${row.merchant} · `
+                            : null}
                           {row.note}
                         </span>
                       ) : null}
                     </span>
+                    {/*
+                      An entry no statement has confirmed yet. Worth a mark
+                      rather than a footnote: it is the difference between a
+                      number the bank has charged and one it has only announced.
+                    */}
+                    {isProvisional(row) ? (
+                      <span className="spend-badge" title={t("spendProvisionalHint")}>
+                        {t("spendProvisional")}
+                      </span>
+                    ) : (
+                      // An empty cell rather than nothing: the ledger is a grid,
+                      // and a column that appears only on some rows makes every
+                      // amount below it sit in a different place.
+                      <span />
+                    )}
                     <span className={cn("budget-row-amount mono", row.flow.toLowerCase())}>
                       {row.flow === "INCOME" ? "+" : "−"}
                       {formatMoney(row.amountMinor, currency)}
@@ -404,15 +431,31 @@ function QuickEntry({ defaultDate }: { defaultDate: string }) {
   const ensureBudgetCategory = useStore((s) => s.ensureBudgetCategory);
   const categories = useStore((s) => s.db.budgetCategories);
 
+  const transactions = useStore((s) => s.db.transactions);
+
   const [amount, setAmount] = useState("");
   const [flow, setFlow] = useState<MoneyFlow>("EXPENSE");
   const [categoryName, setCategoryName] = useState("");
   const [note, setNote] = useState("");
+  const [account, setAccount] = useState("");
   const [date, setDate] = useState(defaultDate);
   const [repeat, setRepeat] = useState<RepeatId>("none");
   const [error, setError] = useState<string | null>(null);
+  const amountRef = useRef<HTMLInputElement>(null);
 
   const suggestions = categories.filter((c) => c.flow === flow);
+  const cards = useMemo(() => accountNames(transactions), [transactions]);
+
+  /*
+   * The cursor starts in the amount box.
+   *
+   * The view exists to answer "where do I stand", but the reason someone opens
+   * it in a hurry is to put a number in — and a number that costs a click to
+   * start typing is a number that gets typed later, or not at all.
+   */
+  useEffect(() => {
+    amountRef.current?.focus();
+  }, []);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -432,6 +475,7 @@ function QuickEntry({ defaultDate }: { defaultDate: string }) {
       flow,
       categoryId: category?.id ?? null,
       note,
+      account,
       recurrence: REPEAT_RULES[repeat],
     });
 
@@ -439,6 +483,9 @@ function QuickEntry({ defaultDate }: { defaultDate: string }) {
     setNote("");
     setRepeat("none");
     setError(null);
+    // The card is almost always the same one twice running; the amount never
+    // is. Keeping it saves a field on every entry after the first.
+    amountRef.current?.focus();
   };
 
   return (
@@ -457,6 +504,7 @@ function QuickEntry({ defaultDate }: { defaultDate: string }) {
       </div>
 
       <input
+        ref={amountRef}
         className="input budget-amount"
         inputMode="decimal"
         placeholder={t("budgetAmount")}
@@ -487,6 +535,20 @@ function QuickEntry({ defaultDate }: { defaultDate: string }) {
         value={note}
         onChange={(e) => setNote(e.target.value)}
       />
+
+      <input
+        className="input budget-account"
+        list="budget-account-options"
+        placeholder={t("budgetAccount")}
+        aria-label={t("budgetAccount")}
+        value={account}
+        onChange={(e) => setAccount(e.target.value)}
+      />
+      <datalist id="budget-account-options">
+        {cards.map((card) => (
+          <option key={card} value={card} />
+        ))}
+      </datalist>
 
       <input
         className="input budget-date"

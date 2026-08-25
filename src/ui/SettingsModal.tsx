@@ -20,6 +20,7 @@ import {
   QUICK_CAPTURE_SHORTCUT,
 } from "@/services/desktop";
 import { useNow, useStore } from "@/state/store";
+import { SpendFeedSettings } from "@/ui/budget/SpendFeedSettings";
 import { ConfirmButton, Field, Modal, Switch } from "./components/primitives";
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
@@ -154,6 +155,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       <Field label={t("notifications")} hint={t("notificationsHint")}>
         <NotificationCheck />
       </Field>
+
+      <SpendFeedSettings />
 
       <ExportSection />
 

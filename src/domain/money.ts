@@ -17,6 +17,16 @@ export type MoneyFlow = "INCOME" | "EXPENSE" | "INVESTMENT";
 export const MONEY_FLOWS: MoneyFlow[] = ["INCOME", "EXPENSE", "INVESTMENT"];
 
 /**
+ * How an entry got into the ledger.
+ *
+ * Kept because the three sources deserve different trust, not different tables:
+ * a statement row is what the bank charged, a notification mail is what it
+ * intended to charge, and a hand-typed row is what the user remembers. All
+ * three describe the same purchase and merge into the same record.
+ */
+export type TransactionOrigin = "manual" | "alert" | "statement";
+
+/**
  * A spending/earning label.
  *
  * The app seeds a useful starting set, but a category the user types becomes a
@@ -81,6 +91,32 @@ export interface Transaction {
    * a ledger that silently doubles a month is worse than one with a gap.
    */
   externalId?: string | null;
+  /**
+   * The card or account the money moved through, as the user names it.
+   *
+   * Free text rather than a table of its own: a card has a name and nothing
+   * else worth storing, and the whole benefit is being able to say "this
+   * statement is the Bonus card" so the reconciler stops matching a Bonus
+   * purchase against a Ziraat one for the same amount on the same day.
+   */
+  account?: string | null;
+  /**
+   * Where the entry came from. Absent means hand-typed, which is the default
+   * for every entry written before this field existed.
+   */
+  origin?: TransactionOrigin;
+  /**
+   * When a statement vouched for this entry.
+   *
+   * A purchase reaches the ledger up to three times: typed at the till, pushed
+   * by the bank's notification mail minutes later, and printed on the statement
+   * weeks after that. They are ONE purchase, so they are one row — and this is
+   * the field that says the bank has now confirmed the number. Until it is set
+   * the amount is provisional: an authorisation hold, a tip, a currency
+   * conversion and an instalment plan all settle at a different figure than the
+   * one the notification announced.
+   */
+  confirmedAt?: Instant | null;
   createdAt: Instant;
   updatedAt: Instant;
   /** Soft delete, like tasks: the record of a month must not silently change. */
@@ -587,3 +623,39 @@ export const BUDGET_CATEGORY_COLORS = [
   "#ec4899",
   "#64748b",
 ];
+
+/* ------------------------------------------------------------------ */
+/* Accounts and provenance                                             */
+/* ------------------------------------------------------------------ */
+
+export function originOf(entry: Transaction): TransactionOrigin {
+  if (entry.origin) return entry.origin;
+  // Entries written before the field existed: a fingerprint means a statement
+  // put it there, anything else was typed.
+  return entry.externalId ? "statement" : "manual";
+}
+
+/**
+ * An entry the bank has not settled yet.
+ *
+ * Only ever true for something the app heard about before the statement did —
+ * a notification mail, or a row typed at the till. The distinction is worth a
+ * badge in the ledger because the number really can still change.
+ */
+export function isProvisional(entry: Transaction): boolean {
+  return originOf(entry) !== "statement" && !entry.confirmedAt;
+}
+
+/** Card/account labels already in use, most-used first, for a datalist. */
+export function accountNames(transactions: Transaction[]): string[] {
+  const counts = new Map<string, number>();
+  for (const entry of transactions) {
+    if (entry.deletedAt !== null) continue;
+    const name = entry.account?.trim();
+    if (!name) continue;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([name]) => name);
+}

@@ -1,3 +1,5 @@
+mod mail;
+
 use std::fs;
 use std::path::PathBuf;
 use tauri::menu::{Menu, MenuItem};
@@ -8,6 +10,14 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 
 /// The event the frontend listens for to open its capture box.
 const QUICK_CAPTURE_EVENT: &str = "tempo://quick-capture";
+
+/// The same idea for money: log a spend without first finding the window.
+///
+/// A separate event rather than a mode on the task one, because the two are
+/// reached at different moments and neither should cost a detour through the
+/// other. A purchase logged three taps later is a purchase that does not get
+/// logged.
+const QUICK_SPEND_EVENT: &str = "tempo://quick-spend";
 
 /// Tells the frontend to re-read the clock and deliver anything that is due.
 const HEARTBEAT_EVENT: &str = "tempo://heartbeat";
@@ -230,8 +240,9 @@ fn start_heartbeat(app: tauri::AppHandle) {
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Tempo'yu aç", true, None::<&str>)?;
     let capture = MenuItem::with_id(app, "capture", "Hızlı görev ekle", true, None::<&str>)?;
+    let spend = MenuItem::with_id(app, "spend", "Harcama ekle", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &capture, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &capture, &spend, &quit])?;
 
     TrayIconBuilder::with_id("main")
         .icon(app.default_window_icon().cloned().ok_or_else(|| {
@@ -247,6 +258,10 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             "capture" => {
                 reveal(app);
                 let _ = app.emit(QUICK_CAPTURE_EVENT, ());
+            }
+            "spend" => {
+                reveal(app);
+                let _ = app.emit(QUICK_SPEND_EVENT, ());
             }
             "quit" => app.exit(0),
             _ => {}
@@ -331,7 +346,12 @@ pub fn run() {
             focus_main_window,
             quit_app,
             autostart_enabled,
-            set_autostart
+            set_autostart,
+            mail::mail_fetch,
+            mail::mail_probe,
+            mail::mail_set_password,
+            mail::mail_has_password,
+            mail::mail_clear_password
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

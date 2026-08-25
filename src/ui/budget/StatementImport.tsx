@@ -1,9 +1,19 @@
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, FileUp, Upload } from "lucide-react";
+import { AlertTriangle, Check, FileUp, Link2, Upload } from "lucide-react";
 import { localeTag } from "@/domain/datetime";
-import { CATEGORY_CATALOGUE, formatMoney, type CategoryKey } from "@/domain/money";
+import {
+  accountNames,
+  CATEGORY_CATALOGUE,
+  formatMoney,
+  type CategoryKey,
+} from "@/domain/money";
 import { parseStatement, type StatementSource } from "@/domain/statement";
-import { buildImportPlan, draftsFrom, type ImportPlan } from "@/domain/statementImport";
+import {
+  buildImportPlan,
+  draftsFrom,
+  mergesFrom,
+  type ImportPlan,
+} from "@/domain/statementImport";
 import { cn } from "@/lib/cn";
 import { extractPdfText, looksLikePdf, PdfTextError } from "@/services/pdfText";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
@@ -32,10 +42,19 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<TranslationKey | null>(null);
   const [sourceOverride, setSourceOverride] = useState<StatementSource | null>(null);
   const [included, setIncluded] = useState<Record<string, boolean>>({});
+  /**
+   * Which card this file belongs to.
+   *
+   * The one piece of context the file itself never carries reliably, and the
+   * one that stops a 250 TL purchase on the Bonus card being matched against an
+   * identical one on the World card the same afternoon.
+   */
+  const [account, setAccount] = useState("");
+  const [merging, setMerging] = useState<Record<string, boolean>>({});
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [dragging, setDragging] = useState(false);
   const [reading, setReading] = useState(false);
-  const [done, setDone] = useState<number | null>(null);
+  const [done, setDone] = useState<{ created: number; merged: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const plan: ImportPlan | null = useMemo(() => {
@@ -47,10 +66,13 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
       transactions,
       categories,
       parsed.source,
+      { account: account.trim() || null },
     );
-  }, [text, sourceOverride, transactions, categories]);
+  }, [text, sourceOverride, transactions, categories, account]);
 
   const isIncluded = (id: string, fallback: boolean) => included[id] ?? fallback;
+  const isMerging = (id: string, fallback: boolean) => merging[id] ?? fallback;
+  const knownCards = useMemo(() => accountNames(transactions), [transactions]);
   const chosenCategory = (id: string, fallback: string) => choices[id] ?? fallback;
 
   /** Existing categories, plus the ones this statement would create. */
@@ -121,26 +143,39 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
 
   const confirm = () => {
     if (!plan) return;
-    const rows = plan.rows.filter((row) => isIncluded(row.externalId, row.include));
+    const picked = plan.rows.filter((row) => isIncluded(row.externalId, row.include));
 
     // Create only the categories the ticked rows actually land in.
     const neededKeys = new Set<CategoryKey>();
-    for (const row of rows) {
+    for (const row of picked) {
       const choice = chosenCategory(row.externalId, defaultChoice(row));
       if (choice.startsWith("new:")) neededKeys.add(choice.slice(4) as CategoryKey);
     }
-    const created = ensureCategories([...neededKeys]);
+    const createdCategories = ensureCategories([...neededKeys]);
 
-    const drafts = draftsFrom({ ...plan, rows }).map((draft, index) => {
-      const row = rows[index];
-      const choice = row ? chosenCategory(row.externalId, defaultChoice(row)) : "";
+    /*
+     * Resolve the two per-row decisions into the rows themselves before
+     * splitting the plan, so `draftsFrom` and `mergesFrom` read the same
+     * answers. Remapping afterwards by array position was only ever correct
+     * while every ticked row produced exactly one draft, which stopped being
+     * true the moment a row could settle an entry instead of creating one.
+     */
+    const rows = picked.map((row) => {
+      const choice = chosenCategory(row.externalId, defaultChoice(row));
       const categoryId = choice.startsWith("new:")
-        ? (created[choice.slice(4)] ?? null)
+        ? (createdCategories[choice.slice(4)] ?? null)
         : choice || null;
-      return { ...draft, categoryId };
+      return { ...row, categoryId, merge: isMerging(row.externalId, row.merge) };
     });
 
-    setDone(importTransactions(drafts));
+    const resolved = { ...plan, rows };
+    const drafts = draftsFrom(resolved);
+    const merges = mergesFrom(resolved, new Date().toISOString(), {
+      account: account.trim() || null,
+    });
+
+    importTransactions(drafts, merges);
+    setDone({ created: drafts.length, merged: merges.length });
   };
 
   if (done !== null) {
@@ -148,7 +183,12 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
       <Modal title={t("importTitle")} onClose={onClose} width={420}>
         <div className="col" style={{ gap: 10, alignItems: "center", padding: 12 }}>
           <Check size={32} style={{ color: "var(--success)" }} />
-          <strong style={{ fontSize: 16 }}>{t("importDone", { n: done })}</strong>
+          <strong style={{ fontSize: 16 }}>{t("importDone", { n: done.created })}</strong>
+          {done.merged > 0 ? (
+            <strong style={{ fontSize: 13 }}>
+              {t("importDoneMerged", { n: done.merged })}
+            </strong>
+          ) : null}
           <p className="faint" style={{ margin: 0, textAlign: "center", fontSize: 12.5 }}>
             {t("importDoneHint")}
           </p>
@@ -254,6 +294,11 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
                 {t("importDuplicateCount", { n: plan.counts.duplicate })}
               </span>
             ) : null}
+            {plan.counts.similar > 0 ? (
+              <span className="import-chip match">
+                <Link2 size={13} /> {t("importMergedCount", { n: plan.counts.similar })}
+              </span>
+            ) : null}
             {plan.skipped.length > 0 ? (
               <span className="import-chip">
                 {t("importSkippedCount", { n: plan.skipped.length })}
@@ -282,6 +327,25 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
+          <label className="field import-account">
+            <span>{t("importAccountLabel")}</span>
+            <input
+              className="input"
+              list="import-card-options"
+              placeholder={t("spendCardPlaceholder")}
+              value={account}
+              onChange={(e) => setAccount(e.target.value)}
+            />
+            <datalist id="import-card-options">
+              {knownCards.map((card) => (
+                <option key={card} value={card} />
+              ))}
+            </datalist>
+            <span className="faint" style={{ fontSize: 11 }}>
+              {t("importAccountHint")}
+            </span>
+          </label>
+
           <div className="import-table-wrap scroll">
             <table className="import-table">
               <thead>
@@ -290,6 +354,7 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
                   <th>{t("fieldDate")}</th>
                   <th>{t("importMerchant")}</th>
                   <th>{t("formCategory")}</th>
+                  <th>{t("importMatchColumn")}</th>
                   <th style={{ textAlign: "right" }}>{t("budgetAmount")}</th>
                 </tr>
               </thead>
@@ -360,6 +425,35 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
                           ))}
                         </select>
                       </td>
+                      <td className="import-match">
+                        {row.match ? (
+                          <label className="import-merge">
+                            <input
+                              type="checkbox"
+                              checked={isMerging(row.externalId, row.merge)}
+                              onChange={(e) =>
+                                setMerging((prev) => ({
+                                  ...prev,
+                                  [row.externalId]: e.target.checked,
+                                }))
+                              }
+                            />
+                            <span>
+                              {isMerging(row.externalId, row.merge)
+                                ? t("importMerge")
+                                : t("importMergeNew")}
+                            </span>
+                            <span className="import-match-why">
+                              {row.match.distanceDays === 0
+                                ? t("importMatchSameDay")
+                                : t("importMatchDays", {
+                                    n: Math.abs(row.match.distanceDays),
+                                  })}
+                              {row.match.sameMerchant ? ` · ${t("importMatchMerchant")}` : ""}
+                            </span>
+                          </label>
+                        ) : null}
+                      </td>
                       <td
                         className={cn(
                           "mono import-amount",
@@ -375,6 +469,12 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
               </tbody>
             </table>
           </div>
+
+          {plan.counts.similar > 0 ? (
+            <p className="faint" style={{ margin: 0, fontSize: 12 }}>
+              {t("importMergeHint")}
+            </p>
+          ) : null}
 
           {plan.unknownMerchants.length > 0 ? (
             <p className="faint" style={{ margin: 0, fontSize: 12 }}>
