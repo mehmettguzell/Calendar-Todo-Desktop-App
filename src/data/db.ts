@@ -200,10 +200,10 @@ export function migrate(raw: unknown): Database {
     version: DB_VERSION,
     tasks: cleanTasks,
     occurrences: Array.isArray(doc.occurrences)
-      ? doc.occurrences.map(normaliseOccurrence)
+      ? doc.occurrences.filter(isAddressableOccurrence).map(normaliseOccurrence)
       : base.occurrences,
     reminders: Array.isArray(doc.reminders)
-      ? doc.reminders.map(normaliseReminder)
+      ? doc.reminders.filter(isAddressableReminder).map(normaliseReminder)
       : base.reminders,
     categories: cleanCategories,
     history: Array.isArray(doc.history) ? doc.history : base.history,
@@ -232,6 +232,24 @@ export function migrate(raw: unknown): Database {
  * conflict against a row that has one, rather than win by accident.
  */
 const EPOCH = new Date(0).toISOString();
+
+/**
+ * Drop occurrence and reminder rows that name no task.
+ *
+ * Both are per-task state, addressed as `${taskId}::${date}` and by `taskId`
+ * respectively, so a row without one is already invisible to every reader —
+ * it cannot be shown, completed, or fired. What it *can* still do is travel:
+ * `task_id` is NOT NULL in the cloud, so the row is rejected on every push and
+ * takes the whole reconciliation down with it. Discarding it on load loses
+ * nothing a user could reach and un-wedges sync on the next pass.
+ */
+function isAddressableOccurrence(occurrence: Occurrence): boolean {
+  return Boolean(occurrence?.taskId) && Boolean(occurrence?.date);
+}
+
+function isAddressableReminder(reminder: Reminder): boolean {
+  return Boolean(reminder?.taskId);
+}
 
 function normaliseOccurrence(occurrence: Occurrence): Occurrence {
   return { ...occurrence, updatedAt: occurrence.updatedAt ?? EPOCH };

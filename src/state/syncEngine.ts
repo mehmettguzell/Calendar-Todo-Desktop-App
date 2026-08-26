@@ -173,6 +173,19 @@ function isMissingRelation(error: { code?: string; message?: string } | null): b
   );
 }
 
+/** Ids already reported as unsendable, so a poisoned row warns once, not hourly. */
+const unsendableRows = new Set<string>();
+
+function warnUnsendable(table: string, id: string): void {
+  const key = `${table}:${id}`;
+  if (unsendableRows.has(key)) return;
+  unsendableRows.add(key);
+  console.warn(
+    `[tempo sync] ${table} row "${id}" is missing required fields and was left out of the push. ` +
+      `It is local-only bookkeeping; the rest of this device still syncs.`,
+  );
+}
+
 /** Records that a table is absent so later passes stop asking for it. */
 function noteRelationMissing(table: string): void {
   if (availableTables.get(table) !== false) {
@@ -1226,6 +1239,15 @@ export interface CollectionSpec<T> {
   fromCloud(row: Record<string, unknown>): T;
   /** Cloud rows that reference something this device no longer has. */
   isOrphan?(row: Record<string, unknown>, context: SyncContext): boolean;
+  /**
+   * Whether a local row is structurally fit to be sent.
+   *
+   * A row that violates a NOT NULL or CHECK constraint is rejected by Postgres
+   * for the whole batch, so one corrupt row stops every other collection from
+   * syncing too — and keeps doing so on every retry, forever. Dropping it from
+   * the push instead keeps the damage to the row that is actually broken.
+   */
+  isUploadable?(row: T): boolean;
   /** What the cloud is believed to hold, so unchanged rows are never re-sent. */
   synced: Map<string, string>;
 }
@@ -1312,9 +1334,16 @@ async function writeCollection<T>(
 ): Promise<void> {
   if (!supabase || !tableAvailable(spec.table)) return;
 
-  const toWrite = rows.filter(
+  const changed = rows.filter(
     (row) => spec.synced.get(spec.idOf(row)) !== spec.localFingerprint(row),
   );
+  const toWrite = spec.isUploadable
+    ? changed.filter((row) => {
+        if (spec.isUploadable!(row)) return true;
+        warnUnsendable(spec.table, spec.idOf(row));
+        return false;
+      })
+    : changed;
 
   for (const batch of chunked(toWrite, UPSERT_CHUNK_SIZE)) {
     const send = () =>
@@ -1445,6 +1474,9 @@ const OCCURRENCE_SPEC: CollectionSpec<Occurrence> = {
   cloudFingerprint: cloudOccurrenceFingerprint,
   // State about a task that no longer exists here is orphaned bookkeeping.
   isOrphan: (row, ctx) => !ctx.liveTaskIds.has(row.task_id as string),
+  // `task_id` and `date` are NOT NULL in the cloud, and an occurrence without
+  // them is unreachable locally too: lookups go through `${taskId}::${date}`.
+  isUploadable: (o) => Boolean(o.taskId) && Boolean(o.date),
   toCloud: (o, userId) => ({
     id: o.id,
     user_id: userId,
@@ -1459,9 +1491,16 @@ const OCCURRENCE_SPEC: CollectionSpec<Occurrence> = {
   fromCloud: occurrenceFromCloud,
 };
 
+/** Mirrors the CHECK constraint on `public.reminders.status`. */
+const REMINDER_STATUSES = new Set<string>(["PENDING", "FIRED", "DISMISSED"]);
+
 const REMINDER_SPEC: CollectionSpec<Reminder> = {
   table: "reminders",
   synced: syncedReminderFingerprints,
+  // `task_id` is NOT NULL and `status` is a CHECK constraint; a reminder that
+  // fails either takes the entire push down with it.
+  isUploadable: (r) =>
+    Boolean(r.taskId) && REMINDER_STATUSES.has(r.status as string),
   idOf: (r) => r.id,
   updatedAtOf: (r) => r.updatedAt,
   localFingerprint: localReminderFingerprint,
@@ -1484,6 +1523,9 @@ const REMINDER_SPEC: CollectionSpec<Reminder> = {
   fromCloud: reminderFromCloud,
 };
 
+/** Mirrors the CHECK constraint `flow` carries on both money tables. */
+const MONEY_FLOWS = new Set<string>(["INCOME", "EXPENSE", "INVESTMENT"]);
+
 const TRANSACTION_SPEC: CollectionSpec<Transaction> = {
   table: "transactions",
   synced: syncedTransactionFingerprints,
@@ -1491,6 +1533,9 @@ const TRANSACTION_SPEC: CollectionSpec<Transaction> = {
   updatedAtOf: (t) => t.updatedAt,
   localFingerprint: localTransactionFingerprint,
   cloudFingerprint: cloudTransactionFingerprint,
+  // `date` and `amount_minor` are NOT NULL and `flow` is a CHECK constraint.
+  isUploadable: (t) =>
+    Boolean(t.date) && Number.isFinite(t.amountMinor) && MONEY_FLOWS.has(t.flow as string),
   toCloud: (t, userId) => ({
     id: t.id,
     user_id: userId,
@@ -1518,6 +1563,8 @@ const BUDGET_CATEGORY_SPEC: CollectionSpec<BudgetCategory> = {
   updatedAtOf: (c) => c.updatedAt,
   localFingerprint: localBudgetCategoryFingerprint,
   cloudFingerprint: cloudBudgetCategoryFingerprint,
+  // `name` is NOT NULL and `flow` is the same CHECK constraint.
+  isUploadable: (c) => Boolean(c.name) && MONEY_FLOWS.has(c.flow as string),
   toCloud: (c, userId) => ({
     id: c.id,
     user_id: userId,
@@ -2275,6 +2322,38 @@ const REALTIME_RECONNECT_MAX_MS = 60_000;
  * dropped channel reconnects and then runs a full reconciliation, because
  * anything that changed while the socket was down was never delivered at all.
  */
+/**
+ * Run a realtime handler only for rows that actually came from its table.
+ *
+ * One channel carries six `postgres_changes` bindings that differ solely by
+ * table name. When the server's binding ids and the client's list fall out of
+ * step — a reconnect, a binding the project cannot serve — supabase-js fans a
+ * payload out to handlers it was never meant for, and a `tasks` row arrives at
+ * `handleRealtimeOccurrenceChange`. The mappers below are tolerant by design
+ * (`row.task_id as string`, `?? null`), so instead of failing they mint a
+ * plausible-looking occurrence with no `taskId` and no `date`. That row is
+ * unreachable locally — nothing looks up an occurrence by bare task id — but
+ * every later push sends it to a column declared NOT NULL, Postgres rejects
+ * the batch, and the whole reconciliation dies. One stray payload is enough to
+ * stop sync permanently, which is exactly what happened here.
+ *
+ * The payload carries the table it came from. Checking it costs nothing.
+ */
+function onlyFrom<P>(
+  table: string,
+  handle: (payload: P) => void,
+): (payload: P & { table?: string }) => void {
+  return (payload) => {
+    if (payload.table !== undefined && payload.table !== table) {
+      console.warn(
+        `[tempo sync] realtime payload from "${payload.table}" was delivered to the "${table}" handler — ignored.`,
+      );
+      return;
+    }
+    applyRemote(() => handle(payload));
+  };
+}
+
 function setupRealtime(userId: string) {
   if (!supabase) return;
   if (realtimeChannel) {
@@ -2287,25 +2366,15 @@ function setupRealtime(userId: string) {
 
   realtimeChannel = supabase
     .channel(`user-sync-${userId}`)
-    .on("postgres_changes", { event: "*", table: "tasks", ...forUser }, (payload) =>
-      applyRemote(() => handleRealtimeTaskChange(payload)),
-    )
-    .on("postgres_changes", { event: "*", table: "categories", ...forUser }, (payload) =>
-      applyRemote(() => handleRealtimeCategoryChange(payload)),
-    )
-    .on("postgres_changes", { event: "*", table: "occurrences", ...forUser }, (payload) =>
-      applyRemote(() => handleRealtimeOccurrenceChange(payload)),
-    )
-    .on("postgres_changes", { event: "*", table: "reminders", ...forUser }, (payload) =>
-      applyRemote(() => handleRealtimeReminderChange(payload)),
-    )
-    .on("postgres_changes", { event: "*", table: "transactions", ...forUser }, (payload) =>
-      applyRemote(() => handleRealtimeTransactionChange(payload)),
-    )
+    .on("postgres_changes", { event: "*", table: "tasks", ...forUser }, onlyFrom("tasks", handleRealtimeTaskChange))
+    .on("postgres_changes", { event: "*", table: "categories", ...forUser }, onlyFrom("categories", handleRealtimeCategoryChange))
+    .on("postgres_changes", { event: "*", table: "occurrences", ...forUser }, onlyFrom("occurrences", handleRealtimeOccurrenceChange))
+    .on("postgres_changes", { event: "*", table: "reminders", ...forUser }, onlyFrom("reminders", handleRealtimeReminderChange))
+    .on("postgres_changes", { event: "*", table: "transactions", ...forUser }, onlyFrom("transactions", handleRealtimeTransactionChange))
     .on(
       "postgres_changes",
       { event: "*", table: "budget_categories", ...forUser },
-      (payload) => applyRemote(() => handleRealtimeBudgetCategoryChange(payload)),
+      onlyFrom("budget_categories", handleRealtimeBudgetCategoryChange),
     )
     .subscribe((status) => {
       if (status === "SUBSCRIBED") {

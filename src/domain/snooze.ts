@@ -180,7 +180,16 @@ function snoozeTarget(
  * tomorrow relative to today so the postponement is always in the future.
  */
 function dayAnchor(instance: TaskInstance, now: Date): Date {
-  return fromLocalDate(instance.date);
+  const today = startOfDay(now);
+  // No day of its own to move from: `fromLocalDate(null)` is an Invalid Date,
+  // and every formatter downstream throws a RangeError on it.
+  if (!instance.date) return today;
+  const own = fromLocalDate(instance.date);
+  // A task still ahead of us keeps its own day, so "Tomorrow" on an Aug 25 task
+  // means Aug 26 even when read on Aug 20. A task already behind us anchors on
+  // today instead — postponing to the day after a date that has passed would
+  // schedule it into the past, which is not a postponement at all.
+  return own.getTime() > today.getTime() ? own : today;
 }
 
 function addDaysTo(date: Date, days: number): Date {
