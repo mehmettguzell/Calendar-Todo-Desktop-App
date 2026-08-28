@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import {
   AlarmClock,
   Clock,
+  GripVertical,
   Play,
   Repeat,
   Square,
@@ -19,6 +20,7 @@ import {
 } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
 import { Checkbox, StatusBadge } from "@/ui/components/primitives";
+import type { RowReorder } from "./useListReorder";
 import { SnoozeMenu } from "./SnoozeMenu";
 
 /**
@@ -32,11 +34,21 @@ export function TaskRow({
   selected,
   onOpen,
   showDate = true,
+  reorder,
+  onContextMenu,
 }: {
   instance: TaskInstance;
   selected?: boolean;
   onOpen: (instance: TaskInstance) => void;
   showDate?: boolean;
+  /**
+   * Supplied by a list that can be rearranged. Left out — in Trash, in search
+   * results — the row has no grip and no drag behaviour at all, which is the
+   * point: a task looks exactly as movable as it actually is.
+   */
+  reorder?: RowReorder;
+  /** Right-click. Left out, the row has no menu — as in Trash and search. */
+  onContextMenu?: (event: MouseEvent<HTMLDivElement>, task: TaskInstance) => void;
 }) {
   const { task } = instance;
   const { t } = useI18n();
@@ -67,8 +79,17 @@ export function TaskRow({
         : task.startTime
       : null;
 
+  const drag: Partial<RowReorder> = reorder ?? {};
+  const { onGripKeyDown, className: dragClass, ...dragHandlers } = drag;
+
   return (
-    <div className={cn("task-row", done && "done", selected && "selected")}>
+    <div
+      className={cn("task-row", done && "done", selected && "selected", dragClass)}
+      {...dragHandlers}
+      onContextMenu={
+        onContextMenu ? (event) => onContextMenu(event, instance) : undefined
+      }
+    >
       <div className={cn("prio", task.priority)} aria-hidden />
       <div style={{ paddingTop: 1 }}>
         <Checkbox done={done} onToggle={() => toggleComplete(instance)} />
@@ -136,6 +157,21 @@ export function TaskRow({
       </button>
 
       <div className="task-actions" style={{ position: "relative" }}>
+        {/* The handle sits with the other row controls rather than in front of
+            the title: a list nobody is dragging has to look exactly as it did
+            before it could be dragged, and the left edge is where that shows. */}
+        {reorder ? (
+          <div
+            role="button"
+            tabIndex={0}
+            className="task-grip"
+            aria-label={t("taskReorderAria", { title: task.title })}
+            title={t("taskReorderHint")}
+            onKeyDown={onGripKeyDown}
+          >
+            <GripVertical size={14} />
+          </div>
+        ) : null}
         <button
           type="button"
           className="btn ghost icon"

@@ -3,8 +3,10 @@ import {
   AlarmClock,
   Copy,
   Play,
+  Plus,
   Square,
   Trash2,
+  Unlink,
   X,
   ArrowLeft,
 } from "lucide-react";
@@ -22,6 +24,7 @@ import { useStore } from "@/state/store";
 import { Field, StatusBadge, Switch } from "@/ui/components/primitives";
 import { useClipboardStore } from "@/state/clipboardStore";
 import { ExtraDaysPicker } from "./ExtraDaysPicker";
+import { taskResistance } from "@/domain/resistance";
 import { HistoryTimeline } from "./HistoryTimeline";
 import { RecurrenceEditor } from "./RecurrenceEditor";
 import { ReminderEditor } from "./ReminderEditor";
@@ -54,6 +57,10 @@ export function TaskPanel({
   const toggleComplete = useStore((s) => s.toggleComplete);
   const setStatus = useStore((s) => s.setStatus);
   const clearSnooze = useStore((s) => s.clearSnooze);
+  const reschedule = useStore((s) => s.reschedule);
+  const setParent = useStore((s) => s.setParent);
+  const makePlan = useStore((s) => s.makePlan);
+  const createTask = useStore((s) => s.createTask);
   const startFocus = useStore((s) => s.startFocus);
   const stopFocus = useStore((s) => s.stopFocus);
   const runningFocus = useStore((s) => s.runningFocus);
@@ -63,6 +70,14 @@ export function TaskPanel({
   const { t } = useI18n();
   const history = useTaskHistory(task.id);
   const tracked = useTrackedSeconds(task.id);
+
+  /**
+   * What the task's own history says about how it is going.
+   *
+   * Reading only — nothing is stored and nothing changes. Below three
+   * postponements this is `none` and the panel renders exactly as before.
+   */
+  const resistance = useMemo(() => taskResistance(history), [history]);
 
   /**
    * How the estimate held up.
@@ -145,23 +160,34 @@ export function TaskPanel({
 
       <div className="panel-body scroll">
         {parentTask ? (
-          <button
-            type="button"
-            className="btn ghost sm"
-            style={{
-              alignSelf: "flex-start",
-              marginBottom: 12,
-              paddingLeft: 4,
-              paddingRight: 8,
-            }}
-            onClick={() => onOpenTask(parentTask.id)}
-            title={t("backTo", { title: parentTask.title })}
+          <div
+            className="row"
+            style={{ alignSelf: "flex-start", marginBottom: 12, gap: 2 }}
           >
-            <ArrowLeft size={14} />{" "}
-            <span className="truncate" style={{ maxWidth: 220 }}>
-              {parentTask.title}
-            </span>
-          </button>
+            <button
+              type="button"
+              className="btn ghost sm"
+              style={{ paddingLeft: 4, paddingRight: 8 }}
+              onClick={() => onOpenTask(parentTask.id)}
+              title={t("backTo", { title: parentTask.title })}
+            >
+              <ArrowLeft size={14} />{" "}
+              <span className="truncate" style={{ maxWidth: 220 }}>
+                {parentTask.title}
+              </span>
+            </button>
+            {/* Filing a task under a parent has to be as undoable as it was
+                easy, or the breadcrumb is a one-way door. */}
+            <button
+              type="button"
+              className="btn ghost icon"
+              title={t("detachFromParent", { title: parentTask.title })}
+              aria-label={t("detachFromParent", { title: parentTask.title })}
+              onClick={() => setParent(task.id, null)}
+            >
+              <Unlink size={13} />
+            </button>
+          </div>
         ) : null}
         <textarea
           ref={titleRef}
@@ -272,6 +298,10 @@ export function TaskPanel({
                   className="input"
                   type="date"
                   value={task.dueDate ?? ""}
+                  // Through `reschedule`, not `updateTask`: typing a date here
+                  // is the same act as dragging the task onto that day, so it
+                  // carries the same end-date shift, history entry and undo.
+                  onChange={(e) => reschedule(task.id, e.target.value || null)}
                 />
               </Field>
               <Field label={t("formEndDate")}>
@@ -459,6 +489,45 @@ export function TaskPanel({
           </button>
         </div>
 
+        {resistance.level !== "none" ? (
+          <div className={cn("card", "resistance", resistance.level)}>
+            <div className="resistance-head">
+              <AlarmClock size={14} aria-hidden />
+              <span>
+                {t(
+                  resistance.level === "stuck"
+                    ? "resistanceStuck"
+                    : "resistanceNoticed",
+                  { count: resistance.postponements },
+                )}
+              </span>
+            </div>
+            {resistance.since ? (
+              <p className="faint">
+                {t("resistanceSince", {
+                  date: new Date(resistance.since).toLocaleDateString(localeTag()),
+                })}
+              </p>
+            ) : null}
+            <p className="faint">{t("resistanceHint")}</p>
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() =>
+                createTask({
+                  title: t("resistanceFirstStep"),
+                  parentId: task.id,
+                  categoryId: task.categoryId,
+                  estimateMinutes: 10,
+                })
+              }
+            >
+              <Plus size={14} />
+              {t("resistanceAction")}
+            </button>
+          </div>
+        ) : null}
+
         <div className="card">
           <div className="card-head">{t("formHistory")}</div>
           <HistoryTimeline entries={history} />
@@ -487,15 +556,9 @@ export function TaskPanel({
           <button
             type="button"
             className="btn ghost sm"
-            onClick={() => {
-              updateTask(task.id, {
-                tags: [...task.tags.filter((t) => t !== "plan"), "plan"],
-                dueDate: null,
-                startTime: null,
-                endTime: null,
-                allDay: true,
-              });
-            }}
+            // One implementation of "become a plan", shared with the row menu,
+            // so the two cannot drift into producing different plans.
+            onClick={() => makePlan(task.id)}
           >
             {t("moveToPlans")}
           </button>

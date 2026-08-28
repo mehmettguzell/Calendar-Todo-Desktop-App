@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { addDaysLocal, localeTag, toLocalDate } from "@/domain/datetime";
 import { occurrenceId } from "@/domain/ids";
+import { arrangePinned, pinOf } from "@/domain/manualOrder";
 import { instancesInRange, representativeInstance } from "@/domain/task";
 import type {
   Category,
@@ -159,6 +160,18 @@ export function compareInstances(a: TaskInstance, b: TaskInstance): number {
   );
 }
 
+/**
+ * A list exactly as it reads on screen: the automatic sort, then manual pins.
+ *
+ * Every list-shaped view goes through here, so a task dragged in Today sits
+ * where it was dropped in Todo too — one task, one arrangement.
+ */
+export function arrangeInstances(instances: TaskInstance[]): TaskInstance[] {
+  return arrangePinned([...instances].sort(compareInstances), (i) =>
+    pinOf(i.task),
+  );
+}
+
 export function priorityRank(priority: Priority): number {
   return { NONE: 0, LOW: 1, MEDIUM: 2, HIGH: 3 }[priority];
 }
@@ -288,7 +301,7 @@ export function useTodoGroups(filters: Filters): TodoGroup[] {
     return TODO_GROUPS.map(([id, labelKey]) => ({
       id,
       labelKey,
-      instances: (buckets.get(id) ?? []).sort(compareInstances),
+      instances: arrangeInstances(buckets.get(id) ?? []),
     })).filter((group) => group.instances.length > 0);
   }, [tasks, occurrences, filters, now]);
 }

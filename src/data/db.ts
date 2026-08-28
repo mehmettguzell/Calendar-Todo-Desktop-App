@@ -300,6 +300,8 @@ function normaliseTask(task: Task): Task {
     status: task.status ?? "TODO",
     allDay: task.allDay ?? true,
     order: typeof task.order === "number" ? task.order : 0,
+    manualOrder:
+      typeof task.manualOrder === "number" ? task.manualOrder : null,
     parentId: task.parentId ?? null,
     categoryId: task.categoryId ?? null,
     recurrence: task.recurrence ?? null,

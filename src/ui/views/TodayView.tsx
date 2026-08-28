@@ -12,12 +12,12 @@ import {
 } from "lucide-react";
 import { formatTracked, toLocalDate } from "@/domain/datetime";
 import { getMotivationalMessage } from "@/domain/gamification";
-import type { Priority, TaskInstance } from "@/domain/types";
+import type { Priority, Task, TaskInstance } from "@/domain/types";
 import { fireConfetti } from "@/lib/confetti";
 import { cn } from "@/lib/cn";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
-  compareInstances,
+  arrangeInstances,
   useFocusSessions,
   useGamificationStats,
   useInstancesInRange,
@@ -29,7 +29,8 @@ import { useNow, useStore } from "@/state/store";
 import { Empty } from "@/ui/components/primitives";
 import { ProgressRing } from "@/ui/components/ProgressRing";
 import { WeeklyBarChart } from "@/ui/components/WeeklyBarChart";
-import { TaskRow } from "@/ui/task/TaskRow";
+import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
+import { TaskList } from "@/ui/task/TaskList";
 
 /**
  * Today: Command center with progress ring, inline quick add,
@@ -81,7 +82,7 @@ export function TodayView({
   );
 
   const done = todays.filter((i) => i.storedStatus === "COMPLETED").length;
-  const sorted = [...todays].sort(compareInstances);
+  const sorted = arrangeInstances(todays);
   const openCount = sorted.length - done;
 
   /*
@@ -298,14 +299,12 @@ export function TodayView({
             ) : null
           }
         >
-          {overdue.map((instance) => (
-            <TaskRow
-              key={instance.key}
-              instance={instance}
-              selected={instance.key === selectedKey}
-              onOpen={onOpen}
-            />
-          ))}
+          <TaskList
+            listId="today:overdue"
+            instances={overdue}
+            selectedKey={selectedKey}
+            onOpen={onOpen}
+          />
         </Section>
       ) : null}
 
@@ -315,16 +314,15 @@ export function TodayView({
           title={t("todayTimed")}
           count={timedTasks.length}
           icon={<Clock size={14} />}
+          tasks={timedTasks.map((instance) => instance.task)}
         >
-          {timedTasks.map((instance) => (
-            <TaskRow
-              key={instance.key}
-              instance={instance}
-              showDate={false}
-              selected={instance.key === selectedKey}
-              onOpen={onOpen}
-            />
-          ))}
+          <TaskList
+            listId="today:timed"
+            instances={timedTasks}
+            showDate={false}
+            selectedKey={selectedKey}
+            onOpen={onOpen}
+          />
         </Section>
       ) : null}
 
@@ -333,6 +331,7 @@ export function TodayView({
         title={t("todayAllDay")}
         count={allDayTasks.length}
         icon={<Sun size={14} />}
+        tasks={allDayTasks.map((instance) => instance.task)}
       >
         {allDayTasks.length === 0 && timedTasks.length === 0 ? (
           <Empty
@@ -341,15 +340,13 @@ export function TodayView({
             hint={t("todayEmptyHint")}
           />
         ) : (
-          allDayTasks.map((instance) => (
-            <TaskRow
-              key={instance.key}
-              instance={instance}
-              showDate={false}
-              selected={instance.key === selectedKey}
-              onOpen={onOpen}
-            />
-          ))
+          <TaskList
+            listId="today:allDay"
+            instances={allDayTasks}
+            showDate={false}
+            selectedKey={selectedKey}
+            onOpen={onOpen}
+          />
         )}
       </Section>
 
@@ -372,17 +369,13 @@ export function TodayView({
           </div>
 
           {showCompletedSection && (
-            <div className="task-list">
-              {completedTodayTasks.map((instance) => (
-                <TaskRow
-                  key={instance.key}
-                  instance={instance}
-                  showDate={false}
-                  selected={instance.key === selectedKey}
-                  onOpen={onOpen}
-                />
-              ))}
-            </div>
+            <TaskList
+              listId="today:completed"
+              instances={completedTodayTasks}
+              showDate={false}
+              selectedKey={selectedKey}
+              onOpen={onOpen}
+            />
           )}
         </section>
       ) : null}
@@ -396,6 +389,7 @@ function Section({
   alert,
   icon,
   action,
+  tasks,
   children,
 }: {
   title: string;
@@ -404,6 +398,8 @@ function Section({
   icon?: React.ReactNode;
   /** Optional control on the right of the heading, e.g. "roll these over". */
   action?: React.ReactNode;
+  /** The rows this heading counts — lets it offer a way out of a manual order. */
+  tasks?: Task[];
   children: React.ReactNode;
 }) {
   return (
@@ -412,6 +408,7 @@ function Section({
         {icon}
         <h2>{title}</h2>
         <span className="count">{count}</span>
+        {tasks ? <ResetOrderButton tasks={tasks} /> : null}
         {action ? (
           <>
             <span className="grow" />
@@ -419,7 +416,9 @@ function Section({
           </>
         ) : null}
       </div>
-      <div className="task-list">{children}</div>
+      {/* The children bring their own list container: a reorderable list has to
+          own the element that drops land on. */}
+      {children}
     </section>
   );
 }

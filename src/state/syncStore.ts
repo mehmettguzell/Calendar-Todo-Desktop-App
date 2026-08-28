@@ -22,6 +22,12 @@ export type SyncPhase =
   /** Signed out, or Supabase is not configured. Purely local operation. */
   | "disabled";
 
+/** One local row the cloud will not accept, named so the UI can say how many. */
+export interface SkippedRow {
+  table: string;
+  id: string;
+}
+
 export interface SyncState {
   phase: SyncPhase;
   /** Local milliseconds of the last fully successful reconciliation. */
@@ -40,11 +46,24 @@ export interface SyncState {
   autoRetryPaused: boolean;
   /** Whether the realtime channel is currently carrying other devices' edits. */
   realtime: "connected" | "connecting" | "down";
+  /**
+   * Rows left out of the push because they would be rejected by the cloud.
+   *
+   * Dropping a malformed row is the right call — the alternative is Postgres
+   * rejecting the whole batch and no device syncing anything, which is how a
+   * single corrupt occurrence once stopped this app's sync for good. But a
+   * sync that reports success while quietly leaving rows behind is its own
+   * kind of lie, so the count surfaces on the badge. Rebuilt from scratch on
+   * every pass, so it never shows a problem that has already been repaired.
+   */
+  skipped: SkippedRow[];
 
   setPhase(phase: SyncPhase, failure?: SyncFailureKind | null): void;
   setPending(count: number): void;
   setRetry(attempt: number, paused: boolean): void;
   setRealtime(state: SyncState["realtime"]): void;
+  noteSkipped(row: SkippedRow): void;
+  clearSkipped(): void;
   markSynced(): void;
 }
 
@@ -56,6 +75,7 @@ export const useSyncStore = create<SyncState>((set) => ({
   retryAttempt: 0,
   autoRetryPaused: false,
   realtime: "down",
+  skipped: [],
 
   setPhase: (phase, failure = null) =>
     set((s) => ({
@@ -67,6 +87,13 @@ export const useSyncStore = create<SyncState>((set) => ({
   setPending: (pendingWrites) => set({ pendingWrites }),
   setRetry: (retryAttempt, autoRetryPaused) => set({ retryAttempt, autoRetryPaused }),
   setRealtime: (realtime) => set({ realtime }),
+  noteSkipped: (row) =>
+    set((s) =>
+      s.skipped.some((r) => r.table === row.table && r.id === row.id)
+        ? s
+        : { skipped: [...s.skipped, row] },
+    ),
+  clearSkipped: () => set((s) => (s.skipped.length === 0 ? s : { skipped: [] })),
   markSynced: () =>
     set({
       phase: "idle",

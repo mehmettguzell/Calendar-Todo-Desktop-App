@@ -161,3 +161,38 @@ export function isSubtask(task: Task): boolean {
  * A domain module that spells a word in one language is a module the UI cannot
  * translate. The names ARE the keys: `t("statusOVERDUE")`, `t("priorityHIGH")`.
  */
+
+/** A task's id together with every id beneath it. */
+export function descendantIds(tasks: Task[], rootId: string): Set<string> {
+  const out = new Set<string>([rootId]);
+  let frontier = [rootId];
+  while (frontier.length > 0) {
+    const next = tasks
+      .filter((t) => t.parentId !== null && frontier.includes(t.parentId))
+      .map((t) => t.id)
+      .filter((id) => !out.has(id));
+    for (const id of next) out.add(id);
+    frontier = next;
+  }
+  return out;
+}
+
+/**
+ * The plans `task` could be filed under.
+ *
+ * A plan is a top-level task tagged `plan`. One below `task` is ruled out for
+ * the same reason `setParent` refuses it — filing a task under its own
+ * descendant would cut the subtree loose from every view at once — and so is
+ * the plan it already sits in, which would be a move to where it already is.
+ */
+export function plansAcceptingTask(tasks: Task[], task: Task): Task[] {
+  const blocked = descendantIds(tasks, task.id);
+  return tasks.filter(
+    (plan) =>
+      plan.deletedAt === null &&
+      plan.parentId === null &&
+      plan.tags.includes("plan") &&
+      !blocked.has(plan.id) &&
+      plan.id !== task.parentId,
+  );
+}

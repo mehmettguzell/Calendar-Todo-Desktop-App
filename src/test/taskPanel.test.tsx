@@ -33,8 +33,10 @@ describe("opening a task", () => {
       });
     });
 
+    // Anchored: the row's drag handle is also a button, and it names the task
+    // it would move ("“Prepare…” taşı"), so an unanchored pattern matches both.
     const row = await screen.findByRole("button", {
-      name: /Prepare project presentation/,
+      name: /^Prepare project presentation/,
     });
     act(() => {
       row.click();
@@ -67,7 +69,7 @@ describe("opening a task", () => {
       });
     });
 
-    const row = await screen.findByRole("button", { name: /Dentist/ });
+    const row = await screen.findByRole("button", { name: /^Dentist/ });
     act(() => {
       row.click();
     });

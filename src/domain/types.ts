@@ -75,6 +75,13 @@ export interface Task {
   estimateMinutes?: number | null;
   /** Manual sort position within a day / list. */
   order: number;
+  /**
+   * The slot this task was dragged to, or `null` while it still sorts itself.
+   *
+   * Device-local, like `order`: where a row sits on this screen is not a fact
+   * about the task, so it never travels to the cloud. See `domain/manualOrder`.
+   */
+  manualOrder?: number | null;
   createdAt: Instant;
   updatedAt: Instant;
   completedAt: Instant | null;

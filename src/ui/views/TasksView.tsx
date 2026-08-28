@@ -11,11 +11,13 @@ import {
   Trash2,
 } from "lucide-react";
 import { toLocalDate } from "@/domain/datetime";
+import { insertAt } from "@/domain/manualOrder";
 import { toInstance } from "@/domain/task";
 import type { Priority, Task, TaskInstance } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
+  arrangeInstances,
   useCategories,
   useLiveTasks,
   useTodoGroups,
@@ -26,7 +28,8 @@ import {
 import { useNow, useStore } from "@/state/store";
 import { Empty } from "@/ui/components/primitives";
 import { TrashModal } from "@/ui/components/TrashModal";
-import { TaskRow } from "@/ui/task/TaskRow";
+import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
+import { TaskList } from "@/ui/task/TaskList";
 
 type ViewMode = "list" | "priority" | "category";
 
@@ -326,8 +329,18 @@ function ListView({
 }) {
   const { t } = useI18n();
 
+  // The pill views are one flat list, so they get the same arrangement rule the
+  // grouped view uses rather than whatever order the store happened to hold.
+  const filtered = useMemo(
+    () =>
+      arrangeInstances(
+        filteredTasks.map((task) => toInstance(task, task.dueDate, null, now)),
+      ),
+    [filteredTasks, now],
+  );
+
   if (filterPill !== "all") {
-    if (filteredTasks.length === 0) {
+    if (filtered.length === 0) {
       return (
         <Empty
           icon={<ListChecks size={28} />}
@@ -338,19 +351,12 @@ function ListView({
     }
 
     return (
-      <div className="task-list">
-        {filteredTasks.map((t) => {
-          const instance = toInstance(t, t.dueDate, null, now);
-          return (
-            <TaskRow
-              key={instance.key}
-              instance={instance}
-              selected={instance.key === selectedKey}
-              onOpen={onOpen}
-            />
-          );
-        })}
-      </div>
+      <TaskList
+        listId={`filter:${filterPill}`}
+        instances={filtered}
+        selectedKey={selectedKey}
+        onOpen={onOpen}
+      />
     );
   }
 
@@ -375,17 +381,16 @@ function ListView({
           >
             <h2>{t(group.labelKey as TranslationKey)}</h2>
             <span className="count">{group.instances.length}</span>
+            <ResetOrderButton
+              tasks={group.instances.map((instance) => instance.task)}
+            />
           </div>
-          <div className="task-list">
-            {group.instances.map((instance) => (
-              <TaskRow
-                key={instance.key}
-                instance={instance}
-                selected={instance.key === selectedKey}
-                onOpen={onOpen}
-              />
-            ))}
-          </div>
+          <TaskList
+            listId={`group:${group.id}`}
+            instances={group.instances}
+            selectedKey={selectedKey}
+            onOpen={onOpen}
+          />
         </section>
       ))}
     </div>
@@ -416,35 +421,44 @@ function PriorityKanbanView({
   now: Date;
 }) {
   const { t } = useI18n();
+  const updateTask = useStore((s) => s.updateTask);
+  const reorderTasks = useStore((s) => s.reorderTasks);
+
   return (
     <div className="kanban-grid">
       {PRIORITY_COLUMNS.map((col) => {
-        const colTasks = tasks.filter((t) => t.priority === col.id);
+        const instances = arrangeInstances(
+          tasks
+            .filter((task) => task.priority === col.id)
+            .map((task) => toInstance(task, task.dueDate, null, now)),
+        );
+        const ids = instances.map((instance) => instance.task.id);
+
         return (
           <div key={col.id} className={cn("kanban-column", col.className)}>
             <div className="kanban-column-head">
               <span className="kanban-col-icon">{col.icon}</span>
               <h3 className="kanban-col-title">{t(col.labelKey)}</h3>
-              <span className="count">{colTasks.length}</span>
+              <span className="count">{instances.length}</span>
+              <ResetOrderButton
+                tasks={instances.map((instance) => instance.task)}
+              />
             </div>
 
-            <div className="kanban-cards-list">
-              {colTasks.length === 0 ? (
-                <div className="kanban-empty-slot">{t("tasksNone")}</div>
-              ) : (
-                colTasks.map((t) => {
-                  const instance = toInstance(t, t.dueDate, null, now);
-                  return (
-                    <TaskRow
-                      key={instance.key}
-                      instance={instance}
-                      selected={instance.key === selectedKey}
-                      onOpen={onOpen}
-                    />
-                  );
-                })
-              )}
-            </div>
+            <TaskList
+              listId={`priority:${col.id}`}
+              className="kanban-cards-list"
+              instances={instances}
+              selectedKey={selectedKey}
+              onOpen={onOpen}
+              empty={<div className="kanban-empty-slot">{t("tasksNone")}</div>}
+              // Crossing a column boundary is a priority change, and it goes
+              // through `updateTask` so the task's history records it as one.
+              onAccept={(task, slot) => {
+                updateTask(task.id, { priority: col.id });
+                reorderTasks(insertAt(ids, task.id, slot), task.id);
+              }}
+            />
           </div>
         );
       })}
@@ -466,6 +480,9 @@ function CategoryKanbanView({
   now: Date;
 }) {
   const { t } = useI18n();
+  const updateTask = useStore((s) => s.updateTask);
+  const reorderTasks = useStore((s) => s.reorderTasks);
+
   const allColumns = [
     ...categories,
     { id: "uncategorized", name: t("budgetUncategorised"), color: "var(--border-strong)" },
@@ -474,35 +491,37 @@ function CategoryKanbanView({
   return (
     <div className="kanban-grid">
       {allColumns.map((cat) => {
-        const colTasks = tasks.filter((t) =>
-          cat.id === "uncategorized" ? !t.categoryId : t.categoryId === cat.id,
+        const categoryId = cat.id === "uncategorized" ? null : cat.id;
+        const instances = arrangeInstances(
+          tasks
+            .filter((task) => (task.categoryId ?? null) === categoryId)
+            .map((task) => toInstance(task, task.dueDate, null, now)),
         );
+        const ids = instances.map((instance) => instance.task.id);
 
         return (
           <div key={cat.id} className="kanban-column">
             <div className="kanban-column-head">
               <i className="dot" style={{ background: cat.color }} />
               <h3 className="kanban-col-title">{cat.name}</h3>
-              <span className="count">{colTasks.length}</span>
+              <span className="count">{instances.length}</span>
+              <ResetOrderButton
+                tasks={instances.map((instance) => instance.task)}
+              />
             </div>
 
-            <div className="kanban-cards-list">
-              {colTasks.length === 0 ? (
-                <div className="kanban-empty-slot">{t("tasksNone")}</div>
-              ) : (
-                colTasks.map((t) => {
-                  const instance = toInstance(t, t.dueDate, null, now);
-                  return (
-                    <TaskRow
-                      key={instance.key}
-                      instance={instance}
-                      selected={instance.key === selectedKey}
-                      onOpen={onOpen}
-                    />
-                  );
-                })
-              )}
-            </div>
+            <TaskList
+              listId={`category:${cat.id}`}
+              className="kanban-cards-list"
+              instances={instances}
+              selectedKey={selectedKey}
+              onOpen={onOpen}
+              empty={<div className="kanban-empty-slot">{t("tasksNone")}</div>}
+              onAccept={(task, slot) => {
+                updateTask(task.id, { categoryId });
+                reorderTasks(insertAt(ids, task.id, slot), task.id);
+              }}
+            />
           </div>
         );
       })}

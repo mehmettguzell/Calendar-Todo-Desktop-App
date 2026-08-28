@@ -27,6 +27,7 @@ import {
   toLocalDate,
 } from "@/domain/datetime";
 import { historyEntry } from "@/domain/history";
+import { pinOf } from "@/domain/manualOrder";
 import { createId, occurrenceId } from "@/domain/ids";
 import { copySubtree, type CopyTarget } from "@/domain/copy";
 import { toInstance } from "@/domain/task";
@@ -215,7 +216,41 @@ interface StoreState {
   ): void;
   removeCategory(id: string): void;
 
+  /**
+   * File an existing task under a parent, or set it loose again.
+   *
+   * Deliberately outside `TaskPatch`: a parent link carries invariants a blind
+   * patch cannot see. A task may not be filed under its own descendant — that
+   * would cut the whole subtree loose from every view at once — and the moved
+   * row takes the last place among its new siblings rather than landing on an
+   * `order` one of them already holds.
+   */
+  setParent(taskId: string, parentId: string | null): void;
+
+  /**
+   * Promote a task to a plan of its own.
+   *
+   * A plan is a top-level task tagged `plan` with no schedule of its own — its
+   * steps carry the dates. So this detaches the task from any parent and drops
+   * its times: leaving either behind would make a plan that the Plans view
+   * cannot list and the calendar still draws.
+   */
+  makePlan(taskId: string): void;
+
   reorderSubtasks(parentId: string, orderedIds: string[]): void;
+
+  /**
+   * Record a drag inside one list.
+   *
+   * `orderedIds` is the whole list as it now reads on screen and `movedId` the
+   * row the user actually dragged. Only that row — and rows already pinned by
+   * an earlier drag — take a pin, so priority keeps sorting everything the user
+   * has never touched.
+   */
+  reorderTasks(orderedIds: string[], movedId: string): void;
+
+  /** Let the named tasks sort themselves again. */
+  clearManualOrder(taskIds: string[]): void;
 
   /** Pull unfinished, past-due tasks onto a new date. Returns how many moved. */
   rollOverTo(taskIds: string[], date: LocalDate): number;
@@ -535,6 +570,7 @@ export const useStore = create<StoreState>((set, get) => {
         estimateMinutes: draft.estimateMinutes ?? null,
         snoozedUntil: null,
         order: siblings.length,
+        manualOrder: null,
         createdAt: at,
         updatedAt: at,
         completedAt: null,
@@ -1138,6 +1174,67 @@ export const useStore = create<StoreState>((set, get) => {
      * No history entry: the trail records what happened to a task's schedule and
      * status, and a row that only changed places would bury those in noise.
      */
+    makePlan(taskId) {
+      const task = get().db.tasks.find((t) => t.id === taskId);
+      if (!task || (task.tags.includes("plan") && task.parentId === null)) return;
+      if (task.parentId !== null) get().setParent(taskId, null);
+      get().updateTask(taskId, {
+        tags: [...task.tags.filter((tag) => tag !== "plan"), "plan"],
+        dueDate: null,
+        startTime: null,
+        endTime: null,
+        allDay: true,
+      });
+    },
+
+    setParent(taskId, parentId) {
+      const before = get().db;
+      const task = before.tasks.find((t) => t.id === taskId);
+      if (!task || (task.parentId ?? null) === parentId) return;
+      if (parentId !== null) {
+        const parent = before.tasks.find((t) => t.id === parentId);
+        // Refusing a descendant is what keeps the tree a tree.
+        if (!parent || collectSubtree(before.tasks, taskId).includes(parentId)) {
+          return;
+        }
+      }
+
+      commit((db) => {
+        const siblings = db.tasks.filter(
+          (t) => (t.parentId ?? null) === parentId && t.id !== taskId,
+        );
+        const next: Task = {
+          ...task,
+          parentId,
+          order: siblings.length,
+          // The pin it carried belonged to the list it just left.
+          manualOrder: null,
+          updatedAt: nowInstant(),
+        };
+        const parentTitle =
+          parentId === null
+            ? null
+            : (db.tasks.find((t) => t.id === parentId)?.title ?? "");
+        return appendHistory(
+          { ...db, tasks: db.tasks.map((t) => (t.id === taskId ? next : t)) },
+          historyEntry({
+            taskId,
+            kind: "UPDATED",
+            field: "parent",
+            note:
+              parentTitle === null
+                ? `Detached from "${
+                    before.tasks.find((t) => t.id === task.parentId)?.title ?? ""
+                  }"`
+                : `Filed under "${parentTitle}"`,
+          }),
+        );
+      });
+
+      const updated = get().db.tasks.find((t) => t.id === taskId);
+      if (updated) void syncTaskToCloud(updated);
+    },
+
     reorderSubtasks(parentId, orderedIds) {
       commit((db) => {
         const position = new Map(orderedIds.map((id, index) => [id, index]));
@@ -1153,6 +1250,45 @@ export const useStore = create<StoreState>((set, get) => {
           }),
         };
       });
+    },
+
+    /**
+     * Pin the dragged row, and re-pin whatever was already pinned.
+     *
+     * Re-pinning matters: a pin is a slot, so leaving the old ones on their
+     * stale numbers would let two rows claim one slot and the list would settle
+     * somewhere other than where the user let go.
+     *
+     * `updatedAt` is deliberately left alone. A pin never leaves this device,
+     * and bumping the clock for it would hand this device a win in every
+     * last-write-wins merge over an edit another device really made.
+     */
+    reorderTasks(orderedIds, movedId) {
+      commit((db) => {
+        const position = new Map(orderedIds.map((id, index) => [id, index]));
+        return {
+          ...db,
+          tasks: db.tasks.map((task) => {
+            const slot = position.get(task.id);
+            if (slot === undefined) return task;
+            const pinned = task.id === movedId || pinOf(task) !== null;
+            const next = pinned ? slot : null;
+            return next === pinOf(task) ? task : { ...task, manualOrder: next };
+          }),
+        };
+      });
+    },
+
+    clearManualOrder(taskIds) {
+      const ids = new Set(taskIds);
+      commit((db) => ({
+        ...db,
+        tasks: db.tasks.map((task) =>
+          ids.has(task.id) && pinOf(task) !== null
+            ? { ...task, manualOrder: null }
+            : task,
+        ),
+      }));
     },
 
     /* Budget ---------------------------------------------------------- */

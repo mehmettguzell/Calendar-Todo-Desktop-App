@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { classifySyncError, isRetryableSyncFailure } from "@/lib/errors";
 import { acceptsRemoteTask } from "@/state/syncEngine";
 import { migrate } from "@/data/db";
+import { useSyncStore } from "@/state/syncStore";
 
 /**
  * The retry budget and the badge both hang off this one classification, so it
@@ -186,5 +187,39 @@ describe("migrate drops rows that name no task", () => {
 
     expect(db.reminders).toHaveLength(1);
     expect(db.reminders[0]?.id).toBe("r_1");
+  });
+});
+
+/**
+ * Dropping a row from the batch is the right trade — one corrupt occurrence
+ * must not stop every other collection from syncing — but a pass that reports
+ * success while silently leaving rows behind is its own kind of lie. The badge
+ * is what keeps the trade honest.
+ */
+describe("skipped rows", () => {
+  it("records a row once, however many passes hit it", () => {
+    const store = useSyncStore.getState();
+    store.clearSkipped();
+    store.noteSkipped({ table: "occurrences", id: "t_a" });
+    store.noteSkipped({ table: "occurrences", id: "t_a" });
+    expect(useSyncStore.getState().skipped).toEqual([
+      { table: "occurrences", id: "t_a" },
+    ]);
+  });
+
+  it("keeps the same id from two different tables apart", () => {
+    const store = useSyncStore.getState();
+    store.clearSkipped();
+    store.noteSkipped({ table: "occurrences", id: "t_a" });
+    store.noteSkipped({ table: "reminders", id: "t_a" });
+    expect(useSyncStore.getState().skipped).toHaveLength(2);
+  });
+
+  it("forgets a row once a pass no longer skips it", () => {
+    const store = useSyncStore.getState();
+    store.noteSkipped({ table: "occurrences", id: "t_a" });
+    // A repaired row has to stop counting on the next pass, not at restart.
+    useSyncStore.getState().clearSkipped();
+    expect(useSyncStore.getState().skipped).toEqual([]);
   });
 });

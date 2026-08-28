@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  GripVertical,
   Lightbulb,
   Plus,
   Sun,
@@ -19,6 +20,7 @@ import {
   useLiveTasks,
 } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
+import { useListReorder } from "@/ui/task/useListReorder";
 import { Checkbox, Field, Modal } from "@/ui/components/primitives";
 import { cn } from "@/lib/cn";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
@@ -134,6 +136,9 @@ export function PlansView({
         else map.set(t.parentId, [t]);
       }
     }
+    // By `order`, like `useSubtasks` — otherwise a card and the task panel
+    // would show one plan's steps in two different orders.
+    for (const list of map.values()) list.sort((a, b) => a.order - b.order);
     return map;
   }, [tasks]);
 
@@ -377,6 +382,7 @@ function PlanCard({
   const createTask = useStore((s) => s.createTask);
   const updateTask = useStore((s) => s.updateTask);
   const deleteTask = useStore((s) => s.deleteTask);
+  const reorderSubtasks = useStore((s) => s.reorderSubtasks);
   const categories = useCategoryIndex();
 
   const [expanded, setExpanded] = useState(true);
@@ -414,6 +420,20 @@ function PlanCard({
     ? subtasks
     : subtasks.slice(0, SUBTASK_PREVIEW_COUNT);
   const hiddenSubtaskCount = subtasks.length - visibleSubtasks.length;
+
+  /*
+   * The whole list is handed to the hook, not just the rows on screen.
+   *
+   * `reorderSubtasks` renumbers every id it is given into a dense 0..n-1 run
+   * and leaves the rest alone, so passing only the visible slice would give the
+   * rows hidden behind "+N more" stale numbers that collide with the new ones.
+   * Visible rows are a prefix of the full list, so their indices already line up.
+   */
+  const reorder = useListReorder({
+    listId: `plan:${plan.id}`,
+    ids: subtasks.map((sub) => sub.id),
+    onReorder: (orderedIds) => reorderSubtasks(plan.id, orderedIds),
+  });
 
   const handleAddSubtask = () => {
     const trimmed = newSubtask.trim();
@@ -548,14 +568,21 @@ function PlanCard({
                 Henüz alt hedef eklenmemiş.
               </div>
             ) : (
-              visibleSubtasks.map((sub) => {
+              <div {...reorder.containerProps}>
+                {visibleSubtasks.map((sub, index) => {
                 const subDone = sub.status === "COMPLETED";
                 const subInstance = toInstance(sub, sub.dueDate, null, now);
                 const isSubToday = sub.dueDate === today;
+                const {
+                  onGripKeyDown,
+                  className: dragClass,
+                  ...dragHandlers
+                } = reorder.row(index);
                 return (
                   <div
                     key={sub.id}
-                    className={cn("plan-subtask-item", subDone && "done")}
+                    className={cn("plan-subtask-item", subDone && "done", dragClass)}
+                    {...dragHandlers}
                   >
                     <Checkbox
                       done={subDone}
@@ -576,6 +603,16 @@ function PlanCard({
                         <Sun size={10} /> Bugün
                       </span>
                     )}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className="plan-subtask-grip"
+                      aria-label={t("taskReorderAria", { title: sub.title })}
+                      title={t("taskReorderHint")}
+                      onKeyDown={onGripKeyDown}
+                    >
+                      <GripVertical size={12} />
+                    </div>
                     <button
                       type="button"
                       className={cn(
@@ -596,7 +633,8 @@ function PlanCard({
                     </button>
                   </div>
                 );
-              })
+                })}
+              </div>
             )}
 
             {(hiddenSubtaskCount > 0 || showAllSubtasks) && (

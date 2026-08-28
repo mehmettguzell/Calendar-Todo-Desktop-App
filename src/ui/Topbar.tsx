@@ -15,7 +15,7 @@ import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { useAuthStore } from "@/state/authStore";
 import type { Filters } from "@/state/selectors";
 import { syncDifferences } from "@/state/syncEngine";
-import { useSyncStore, type SyncPhase } from "@/state/syncStore";
+import { useSyncStore, type SkippedRow, type SyncPhase } from "@/state/syncStore";
 import type { CalendarMode } from "./views/CalendarView";
 import type { ViewId } from "./Sidebar";
 import { Switch } from "./components/primitives";
@@ -49,6 +49,7 @@ function SyncButton() {
   const lastFailure = useSyncStore((s) => s.lastFailure);
   const autoRetryPaused = useSyncStore((s) => s.autoRetryPaused);
   const realtime = useSyncStore((s) => s.realtime);
+  const skipped = useSyncStore((s) => s.skipped);
   const { t } = useI18n();
 
   const syncing = phase === "syncing";
@@ -94,7 +95,7 @@ function SyncButton() {
   };
 
   const status = describeSyncStatus(
-    { phase, pending, lastSyncedAt, lastFailure, autoRetryPaused, realtime },
+    { phase, pending, lastSyncedAt, lastFailure, autoRetryPaused, realtime, skipped },
     t,
   );
 
@@ -191,8 +192,9 @@ function describeSyncStatus(
     lastFailure: SyncFailureKind | null;
     autoRetryPaused: boolean;
     realtime: "connected" | "connecting" | "down";
+    skipped: SkippedRow[];
   },
-  t: (key: TranslationKey) => string,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
 ): { color: string; tooltip: string } {
   const last =
     s.lastSyncedAt !== null
@@ -216,14 +218,21 @@ function describeSyncStatus(
       };
     case "disabled":
       return { color: "var(--text-faint)", tooltip: t("syncLoginRequired") };
-    default:
+    default: {
+      // A pass that finished but left rows behind is not a green light. The
+      // rows are safe locally — that is the whole point of dropping them from
+      // the batch rather than letting Postgres reject everything — but the
+      // badge should not claim this device is fully in the cloud when it isn't.
+      const held = s.skipped.length;
       return {
-        color: s.realtime === "connected" ? "#10b981" : "#94a3b8",
+        color: held > 0 ? "#f59e0b" : s.realtime === "connected" ? "#10b981" : "#94a3b8",
         tooltip:
           (s.realtime === "connected" ? `${t("syncLive")} · ` : "") +
           last +
-          (s.pending > 0 ? ` · ${s.pending} ${t("syncPendingHint")}` : ""),
+          (s.pending > 0 ? ` · ${s.pending} ${t("syncPendingHint")}` : "") +
+          (held > 0 ? ` · ${t("syncSkipped", { count: held })}` : ""),
       };
+    }
   }
 }
 

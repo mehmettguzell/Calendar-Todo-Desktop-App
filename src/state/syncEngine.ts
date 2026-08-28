@@ -87,7 +87,10 @@ async function withTimeout<T>(
       work,
       new Promise<never>((_, reject) => {
         timer = setTimeout(
-          () => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
+          () =>
+            reject(
+              new Error(`${label} timed out after ${Math.round(ms / 1000)}s`),
+            ),
           ms,
         );
       }),
@@ -102,8 +105,10 @@ async function withTimeout<T>(
  * row makes every task write fail with 23503. The signup trigger normally
  * creates it; accounts that predate the trigger need it backfilled.
  */
+const verifiedProfiles = new Set<string>();
+
 async function ensureProfileRow(userId: string): Promise<void> {
-  if (!supabase) return;
+  if (!supabase || verifiedProfiles.has(userId)) return;
   const authState = useAuthStore.getState();
   const email = authState.user?.email ?? authState.session?.user?.email ?? "";
   const fullName =
@@ -118,7 +123,10 @@ async function ensureProfileRow(userId: string): Promise<void> {
     "profile lookup",
   );
 
-  if (existing) return;
+  if (existing) {
+    verifiedProfiles.add(userId);
+    return;
+  }
 
   const { error } = await withTimeout(
     supabase.from("profiles").upsert(
@@ -134,6 +142,8 @@ async function ensureProfileRow(userId: string): Promise<void> {
   );
   if (error) {
     console.warn("[tempo sync] Could not ensure profile row:", error.message);
+  } else {
+    verifiedProfiles.add(userId);
   }
 }
 
@@ -157,7 +167,9 @@ let syncedNamespace: string | null = null;
  */
 const availableTables = new Map<string, boolean>();
 
-function isMissingRelation(error: { code?: string; message?: string } | null): boolean {
+function isMissingRelation(
+  error: { code?: string; message?: string } | null,
+): boolean {
   if (!error) return false;
   const message = error.message ?? "";
   // PGRST204 is the *column* case ("Could not find the 'x' column of 'y' in
@@ -177,6 +189,9 @@ function isMissingRelation(error: { code?: string; message?: string } | null): b
 const unsendableRows = new Set<string>();
 
 function warnUnsendable(table: string, id: string): void {
+  // The badge is rebuilt every pass, so it is told each time; the console is
+  // told once, because a stuck row would otherwise log on every retry forever.
+  useSyncStore.getState().noteSkipped({ table, id });
   const key = `${table}:${id}`;
   if (unsendableRows.has(key)) return;
   unsendableRows.add(key);
@@ -216,7 +231,8 @@ export function initSyncEngine() {
   // are ours. Both have to move together, or one account briefly sees the
   // other's tasks.
   useAuthStore.subscribe((state, prevState) => {
-    const prevUserId = prevState.user?.id ?? prevState.session?.user?.id ?? null;
+    const prevUserId =
+      prevState.user?.id ?? prevState.session?.user?.id ?? null;
     const nextUserId = state.user?.id ?? state.session?.user?.id ?? null;
     if (nextUserId === prevUserId) return;
 
@@ -390,7 +406,10 @@ async function startSync(userId: string) {
     }
   } catch (err) {
     const kind = classifySyncError(err);
-    console.error(`[tempo sync] startup failed (${kind}):`, formatErrorMessage(err));
+    console.error(
+      `[tempo sync] startup failed (${kind}):`,
+      formatErrorMessage(err),
+    );
     useSyncStore.getState().setPhase("error", kind);
   } finally {
     isSyncing = false;
@@ -466,7 +485,10 @@ function scheduleRetry(kind: SyncFailureKind): void {
   }
 
   retryAttempt += 1;
-  retryDelayMs = retryDelayMs === 0 ? RETRY_BASE_MS : Math.min(retryDelayMs * 2, RETRY_MAX_MS);
+  retryDelayMs =
+    retryDelayMs === 0
+      ? RETRY_BASE_MS
+      : Math.min(retryDelayMs * 2, RETRY_MAX_MS);
   publishRetryState();
   retryTimer = setTimeout(() => {
     retryTimer = null;
@@ -538,6 +560,9 @@ function watchConnectivity(): void {
   });
 
   if (typeof document !== "undefined") {
+    let lastVisibilitySyncAt = 0;
+    const VISIBILITY_COOLDOWN_MS = 60_000;
+
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState !== "visible") {
         // Leaving is the one moment a gathering window costs something real:
@@ -548,6 +573,12 @@ function watchConnectivity(): void {
       }
       const id = currentUserId();
       if (!id || !isOnline()) return;
+
+      const now = Date.now();
+      const recentlyChecked =
+        now - lastVisibilitySyncAt < VISIBILITY_COOLDOWN_MS;
+      if (recentlyChecked) return;
+
       // Coming back to a window that has been in the background for a while is
       // the cheapest moment to notice a dropped channel — and a good moment to
       // grant a paused retry budget one more run, since minutes have usually
@@ -555,6 +586,7 @@ function watchConnectivity(): void {
       const paused = useSyncStore.getState().autoRetryPaused;
       if (paused) resetRetryBudget();
       if (paused || useSyncStore.getState().realtime !== "connected") {
+        lastVisibilitySyncAt = now;
         setupRealtime(id);
         void syncDifferences();
       }
@@ -645,7 +677,9 @@ export function localTaskFingerprint(task: Task): string {
     nz(task.startTime),
     nz(task.endTime),
     canonicalRecurrence(task.recurrence),
-    columnDropped("tasks", "estimate_minutes") ? null : (task.estimateMinutes ?? null),
+    columnDropped("tasks", "estimate_minutes")
+      ? null
+      : (task.estimateMinutes ?? null),
     nz(task.snoozedUntil),
     nzInstant(task.completedAt),
     task.deletedAt !== null,
@@ -1012,7 +1046,8 @@ async function flushPendingWrites(): Promise<void> {
         "category delete",
       );
       if (error) throw error;
-      for (const id of deletedCategoryIds) syncedCategoryFingerprints.delete(id);
+      for (const id of deletedCategoryIds)
+        syncedCategoryFingerprints.delete(id);
     }
 
     const tasksToWrite: Task[] = [];
@@ -1128,7 +1163,10 @@ async function flushPendingWrites(): Promise<void> {
     useSyncStore.getState().setPhase(isOnline() ? "error" : "offline", kind);
     // Full detail to the console only: the message can name tables, columns
     // and constraints, which is not the user's business.
-    console.warn(`[tempo sync] batched write failed (${kind}):`, formatErrorMessage(err));
+    console.warn(
+      `[tempo sync] batched write failed (${kind}):`,
+      formatErrorMessage(err),
+    );
     scheduleRetry(kind);
   }
 }
@@ -1185,12 +1223,10 @@ export async function upsertTasksToCloud(tasks: Task[], userId: string) {
 
   const send = (batch: Task[]) =>
     withTimeout(
-      client
-        .from("tasks")
-        .upsert(
-          batch.map((t) => serializeTaskForCloud(t, userId)),
-          { onConflict: "id,user_id" },
-        ),
+      client.from("tasks").upsert(
+        batch.map((t) => serializeTaskForCloud(t, userId)),
+        { onConflict: "id,user_id" },
+      ),
       "task upsert",
     );
 
@@ -1348,14 +1384,12 @@ async function writeCollection<T>(
   for (const batch of chunked(toWrite, UPSERT_CHUNK_SIZE)) {
     const send = () =>
       withTimeout(
-        supabase!
-          .from(spec.table)
-          .upsert(
-            batch.map((row) =>
-              withoutMissingColumns(spec.table, spec.toCloud(row, userId)),
-            ),
-            { onConflict: "id,user_id" },
+        supabase!.from(spec.table).upsert(
+          batch.map((row) =>
+            withoutMissingColumns(spec.table, spec.toCloud(row, userId)),
           ),
+          { onConflict: "id,user_id" },
+        ),
         `${spec.table} upsert`,
       );
 
@@ -1425,7 +1459,8 @@ export function planReconciliation<T>(
       toUpload.push(localRow);
       continue;
     }
-    if (spec.cloudFingerprint(cloudRow) === spec.localFingerprint(localRow)) continue;
+    if (spec.cloudFingerprint(cloudRow) === spec.localFingerprint(localRow))
+      continue;
 
     const cloudWins =
       new Date(cloudRow.updated_at as string).getTime() >=
@@ -1535,7 +1570,9 @@ const TRANSACTION_SPEC: CollectionSpec<Transaction> = {
   cloudFingerprint: cloudTransactionFingerprint,
   // `date` and `amount_minor` are NOT NULL and `flow` is a CHECK constraint.
   isUploadable: (t) =>
-    Boolean(t.date) && Number.isFinite(t.amountMinor) && MONEY_FLOWS.has(t.flow as string),
+    Boolean(t.date) &&
+    Number.isFinite(t.amountMinor) &&
+    MONEY_FLOWS.has(t.flow as string),
   toCloud: (t, userId) => ({
     id: t.id,
     user_id: userId,
@@ -1651,7 +1688,8 @@ async function writeHistory(
   entries: HistoryEntry[],
   userId: string,
 ): Promise<void> {
-  if (!supabase || entries.length === 0 || !tableAvailable("task_history")) return;
+  if (!supabase || entries.length === 0 || !tableAvailable("task_history"))
+    return;
 
   for (const batch of chunked(entries, UPSERT_CHUNK_SIZE)) {
     const { error } = await withTimeout(
@@ -1799,7 +1837,7 @@ let lastReportAt = 0;
  * user's work. Only the expensive full read is skipped, and the answer given
  * back is the one the last pass established seconds ago.
  */
-const MIN_FULL_SYNC_INTERVAL_MS = 15_000;
+const MIN_FULL_SYNC_INTERVAL_MS = 60_000;
 
 function unchangedReport(): SyncDifferenceReport {
   return {
@@ -1828,7 +1866,11 @@ export async function syncDifferences(
 ): Promise<SyncDifferenceReport> {
   // Pressing the button is the clearest condition there is: the user is asking
   // for one more attempt, so the spent budget is restored before the check.
-  if (options.manual) resetRetryBudget();
+  if (options.manual) {
+    resetRetryBudget();
+    lastReport = null;
+    lastReportAt = 0;
+  }
   if (!retriesAllowed()) {
     return emptyReport(useSyncStore.getState().lastFailure ?? "unknown");
   }
@@ -1843,8 +1885,14 @@ export async function syncDifferences(
     // would be the app contradicting itself.
     const failure = useSyncStore.getState().lastFailure;
     if (failure) return emptyReport(failure);
-    return lastReport.success ? unchangedReport() : emptyReport(lastReport.error ?? "unknown");
+    return lastReport.success
+      ? unchangedReport()
+      : emptyReport(lastReport.error ?? "unknown");
   }
+
+  // Rebuilt by this pass. A row repaired since the last one must stop counting
+  // the moment it goes through, not at the next restart.
+  useSyncStore.getState().clearSkipped();
 
   differencesInFlight = runSyncDifferences()
     .then((report) => {
@@ -1911,7 +1959,11 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       fetchOptional("reminders", userId),
       fetchOptional("transactions", userId),
       fetchOptional("budget_categories", userId),
-      fetchOptional("task_history", userId),
+      fetchOptional("task_history", userId, {
+        limit: 100,
+        orderColumn: "at",
+        ascending: false,
+      }),
     ]);
 
     if (tasksRes.error) throw tasksRes.error;
@@ -1935,7 +1987,8 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       const cloudCat = cloudCatMap.get(localCat.id);
       if (
         !cloudCat ||
-        cloudCategoryFingerprint(cloudCat) !== localCategoryFingerprint(localCat)
+        cloudCategoryFingerprint(cloudCat) !==
+          localCategoryFingerprint(localCat)
       ) {
         catsToUpload.push(localCat);
         uploadedCategories++;
@@ -2032,7 +2085,14 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
         new Date(localTask.updatedAt).getTime();
 
       if (cloudWins) {
-        mergedTasks.set(localTask.id, taskFromCloud(cloudTask, localTask.order));
+        mergedTasks.set(
+          localTask.id,
+          taskFromCloud(
+            cloudTask,
+            localTask.order,
+            localTask.manualOrder ?? null,
+          ),
+        );
         downloadedTasks++;
       } else {
         tasksToUpload.push(localTask);
@@ -2048,7 +2108,10 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
         resurrectedTaskIds.push(cloudTask.id);
         continue;
       }
-      mergedTasks.set(cloudTask.id, taskFromCloud(cloudTask, mergedTasks.size));
+      mergedTasks.set(
+        cloudTask.id,
+        taskFromCloud(cloudTask, mergedTasks.size, null),
+      );
       downloadedTasks++;
     }
 
@@ -2174,7 +2237,10 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
     }
 
     /* --- COMMIT ------------------------------------------------------- */
-    const nextCategories = deduplicateCategories(mergedCats, nextTasks).categories;
+    const nextCategories = deduplicateCategories(
+      mergedCats,
+      nextTasks,
+    ).categories;
     useStore.setState((s) => ({
       db: {
         ...s.db,
@@ -2210,7 +2276,10 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       syncedTransactionFingerprints.set(t.id, localTransactionFingerprint(t));
     }
     for (const c of mergedBudgetCategories) {
-      syncedBudgetCategoryFingerprints.set(c.id, localBudgetCategoryFingerprint(c));
+      syncedBudgetCategoryFingerprints.set(
+        c.id,
+        localBudgetCategoryFingerprint(c),
+      );
     }
     for (const session of mergedFocus) syncedFocusIds.add(session.id);
     for (const entry of mergedHistory) syncedHistoryIds.add(entry.id);
@@ -2226,7 +2295,10 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       uploadedCategories,
       downloadedCategories,
       totalDifferences:
-        uploadedTasks + downloadedTasks + uploadedCategories + downloadedCategories,
+        uploadedTasks +
+        downloadedTasks +
+        uploadedCategories +
+        downloadedCategories,
     };
   } catch (err: unknown) {
     const kind = classifySyncError(err);
@@ -2251,17 +2323,27 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
 async function fetchOptional(
   table: string,
   userId: string,
+  options?: { limit?: number; orderColumn?: string; ascending?: boolean },
 ): Promise<{ data: Record<string, unknown>[] | null; error: unknown }> {
   if (!supabase || !tableAvailable(table)) return { data: null, error: null };
-  const res = await withTimeout(
-    supabase.from(table).select("*").eq("user_id", userId),
-    `${table} fetch`,
-  );
+  let query = supabase.from(table).select("*").eq("user_id", userId);
+  if (options?.orderColumn) {
+    query = query.order(options.orderColumn, {
+      ascending: options.ascending ?? true,
+    });
+  }
+  if (options?.limit) {
+    query = query.limit(options.limit);
+  }
+  const res = await withTimeout(query, `${table} fetch`);
   if (isMissingRelation(res.error)) {
     noteRelationMissing(table);
     return { data: null, error: null };
   }
-  return { data: res.data as Record<string, unknown>[] | null, error: res.error };
+  return {
+    data: res.data as Record<string, unknown>[] | null,
+    error: res.error,
+  };
 }
 
 function tombstoneIndex(tombstones: Tombstone[]) {
@@ -2276,7 +2358,11 @@ function tombstoneIndex(tombstones: Tombstone[]) {
   return index;
 }
 
-function taskFromCloud(row: Record<string, unknown>, order: number): Task {
+function taskFromCloud(
+  row: Record<string, unknown>,
+  order: number,
+  manualOrder: number | null,
+): Task {
   return {
     id: row.id as string,
     title: (row.title as string) ?? "",
@@ -2299,6 +2385,7 @@ function taskFromCloud(row: Record<string, unknown>, order: number): Task {
     createdAt: (row.created_at as string) ?? new Date().toISOString(),
     updatedAt: (row.updated_at as string) ?? new Date().toISOString(),
     order,
+    manualOrder,
   };
 }
 
@@ -2366,11 +2453,31 @@ function setupRealtime(userId: string) {
 
   realtimeChannel = supabase
     .channel(`user-sync-${userId}`)
-    .on("postgres_changes", { event: "*", table: "tasks", ...forUser }, onlyFrom("tasks", handleRealtimeTaskChange))
-    .on("postgres_changes", { event: "*", table: "categories", ...forUser }, onlyFrom("categories", handleRealtimeCategoryChange))
-    .on("postgres_changes", { event: "*", table: "occurrences", ...forUser }, onlyFrom("occurrences", handleRealtimeOccurrenceChange))
-    .on("postgres_changes", { event: "*", table: "reminders", ...forUser }, onlyFrom("reminders", handleRealtimeReminderChange))
-    .on("postgres_changes", { event: "*", table: "transactions", ...forUser }, onlyFrom("transactions", handleRealtimeTransactionChange))
+    .on(
+      "postgres_changes",
+      { event: "*", table: "tasks", ...forUser },
+      onlyFrom("tasks", handleRealtimeTaskChange),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", table: "categories", ...forUser },
+      onlyFrom("categories", handleRealtimeCategoryChange),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", table: "occurrences", ...forUser },
+      onlyFrom("occurrences", handleRealtimeOccurrenceChange),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", table: "reminders", ...forUser },
+      onlyFrom("reminders", handleRealtimeReminderChange),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", table: "transactions", ...forUser },
+      onlyFrom("transactions", handleRealtimeTransactionChange),
+    )
     .on(
       "postgres_changes",
       { event: "*", table: "budget_categories", ...forUser },
@@ -2381,10 +2488,20 @@ function setupRealtime(userId: string) {
         reconnectDelayMs = 0;
         useSyncStore.getState().setRealtime("connected");
         // Whatever happened while we were not listening was never delivered.
-        if (syncedNamespace === userId && !isSyncing) void syncDifferences();
+        // Reconcile on reconnect only if a sync pass has not just completed.
+        const recentlySynced =
+          lastReportAt > 0 &&
+          Date.now() - lastReportAt < MIN_FULL_SYNC_INTERVAL_MS;
+        if (syncedNamespace === userId && !isSyncing && !recentlySynced) {
+          void syncDifferences();
+        }
         return;
       }
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+      if (
+        status === "CHANNEL_ERROR" ||
+        status === "TIMED_OUT" ||
+        status === "CLOSED"
+      ) {
         useSyncStore.getState().setRealtime("down");
         scheduleRealtimeReconnect(userId);
       }
@@ -2454,7 +2571,10 @@ export function acceptsRemoteTask(input: {
   // have is either its own purge coming home or another device deleting
   // something already gone from here.
   if (input.localUpdatedAt === null && input.remoteDeleted) return false;
-  if (input.localUpdatedAt !== null && input.localUpdatedAt > input.remoteUpdatedAt) {
+  if (
+    input.localUpdatedAt !== null &&
+    input.localUpdatedAt > input.remoteUpdatedAt
+  ) {
     return false;
   }
   return true;
@@ -2468,7 +2588,7 @@ function handleRealtimeTaskChange(payload: {
   const { eventType, new: newRecord, old: oldRecord } = payload;
 
   if (eventType === "INSERT" || eventType === "UPDATE") {
-    const task = taskFromCloud(newRecord, 0);
+    const task = taskFromCloud(newRecord, 0, null);
     const db = useStore.getState().db;
     const existingTask = db.tasks.find((t) => t.id === task.id);
 
@@ -2480,7 +2600,8 @@ function handleRealtimeTaskChange(payload: {
         tombstoned: db.tombstones.some(
           (stone) => stone.kind === "task" && stone.id === task.id,
         ),
-        queued: pendingTaskIds.has(task.id) || pendingDeletedTaskIds.has(task.id),
+        queued:
+          pendingTaskIds.has(task.id) || pendingDeletedTaskIds.has(task.id),
       })
     ) {
       return;
@@ -2496,7 +2617,11 @@ function handleRealtimeTaskChange(payload: {
         return { db: { ...s.db, tasks: [...s.db.tasks, task] } };
       }
       // The remote row does not know this device's manual ordering.
-      const next = { ...task, order: existing.order };
+      const next = {
+        ...task,
+        order: existing.order,
+        manualOrder: existing.manualOrder ?? null,
+      };
       return {
         db: {
           ...s.db,
@@ -2561,7 +2686,9 @@ function handleRealtimeCategoryChange(payload: {
       );
       const nextCategories = existing
         ? s.db.categories.map((c) =>
-            c.id === existing.id ? { ...c, ...cat, id: existing.id, order: c.order } : c,
+            c.id === existing.id
+              ? { ...c, ...cat, id: existing.id, order: c.order }
+              : c,
           )
         : [...s.db.categories, { ...cat, order: s.db.categories.length }];
       return { db: { ...s.db, categories: nextCategories } };
@@ -2651,7 +2778,10 @@ function handleRealtimeTransactionChange(payload: {
   if (eventType === "DELETE") {
     syncedTransactionFingerprints.delete(id);
     useStore.setState((s) => ({
-      db: { ...s.db, transactions: s.db.transactions.filter((t) => t.id !== id) },
+      db: {
+        ...s.db,
+        transactions: s.db.transactions.filter((t) => t.id !== id),
+      },
     }));
     return;
   }
@@ -2659,7 +2789,10 @@ function handleRealtimeTransactionChange(payload: {
   // A soft-deleted transaction is kept: the ledger records what happened, and
   // dropping the row would rewrite a past month with nothing to show for it.
   const transaction = transactionFromCloud(newRecord);
-  syncedTransactionFingerprints.set(id, localTransactionFingerprint(transaction));
+  syncedTransactionFingerprints.set(
+    id,
+    localTransactionFingerprint(transaction),
+  );
   useStore.setState((s) => {
     const exists = s.db.transactions.some((t) => t.id === id);
     return {

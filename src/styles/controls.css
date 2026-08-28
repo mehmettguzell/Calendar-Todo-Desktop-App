@@ -285,6 +285,47 @@
   color: var(--danger);
 }
 
+/* Postponement awareness -------------------------------------------------- */
+/* Deliberately quiet. This card only exists on tasks that have been snoozed
+   three times or more, and it is an observation, not an error — the warning
+   tint carries it at "noticed", and only "stuck" is allowed to raise its
+   voice. Anything louder would nag every time the panel is opened. */
+.card.resistance {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+  background: color-mix(in srgb, var(--warning-soft) 55%, var(--surface-2));
+}
+
+.card.resistance.stuck {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  background: color-mix(in srgb, var(--danger-soft) 55%, var(--surface-2));
+}
+
+.card.resistance .resistance-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--warning);
+}
+
+.card.resistance.stuck .resistance-head {
+  color: var(--danger);
+}
+
+.card.resistance p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.card.resistance .btn {
+  align-self: flex-start;
+}
+
 /* Desktop settings -------------------------------------------------------- */
 .settings-section {
   display: flex;

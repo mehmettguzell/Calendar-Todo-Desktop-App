@@ -45,6 +45,62 @@
   padding: 8px var(--space-2);
   border-radius: var(--radius-sm);
   transition: background 100ms ease;
+  /* Anchors the drop marker drawn in the gaps around this row. */
+  position: relative;
+}
+
+/* -------------------------------------------------- task reordering */
+
+/* Lives inside `.task-actions`, so it fades in with the row's other controls
+   and a list nobody is dragging keeps exactly the layout it always had. */
+.task-grip {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  color: var(--border-strong);
+  cursor: grab;
+  transition: color 120ms ease;
+}
+
+.task-grip:hover,
+.task-grip:focus-visible {
+  color: var(--text-muted);
+}
+.task-grip:active {
+  cursor: grabbing;
+}
+
+.task-row.dragging {
+  opacity: 0.45;
+}
+
+/* Where the row would land, drawn in the gap it would fall into. */
+.task-row.drop-before::before,
+.task-row.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.task-row.drop-before::before {
+  top: -2px;
+}
+.task-row.drop-after::after {
+  bottom: -2px;
+}
+
+/* An empty column still has to be a target you can aim at. */
+.kanban-cards-list.reordering .kanban-empty-slot {
+  outline: 1px dashed var(--accent);
+  outline-offset: -4px;
+  border-radius: var(--radius-sm);
+  color: var(--accent);
 }
 
 .task-row:hover {
@@ -1412,6 +1468,58 @@
   border-bottom: 1px solid var(--border);
   font-size: 12.5px;
   transition: background 120ms ease;
+  /* Anchors the drop marker drawn in the gap above or below this row. */
+  position: relative;
+}
+
+/* Sits with the row's other hover controls, so a card nobody is rearranging
+   looks exactly as it did before the steps could be rearranged. */
+.plan-subtask-grip {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 20px;
+  flex: none;
+  color: var(--border-strong);
+  opacity: 0;
+  cursor: grab;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease;
+}
+
+.plan-subtask-item:hover .plan-subtask-grip,
+.plan-subtask-grip:focus-visible {
+  opacity: 1;
+}
+.plan-subtask-grip:hover {
+  color: var(--text-muted);
+}
+.plan-subtask-grip:active {
+  cursor: grabbing;
+}
+
+.plan-subtask-item.dragging {
+  opacity: 0.45;
+}
+
+.plan-subtask-item.drop-before::before,
+.plan-subtask-item.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  z-index: 1;
+}
+
+.plan-subtask-item.drop-before::before {
+  top: -1px;
+}
+.plan-subtask-item.drop-after::after {
+  bottom: -1px;
 }
 
 .plan-subtask-item:last-child {
