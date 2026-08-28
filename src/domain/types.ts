@@ -185,6 +185,14 @@ export interface Settings {
   dayEndHour: number;
   /** Time given to an all-day task when a snooze needs a clock time. */
   allDayReminderTime: LocalTime;
+  /**
+   * Which round of seeded categories this document has already been offered.
+   *
+   * Seeds are a suggestion, offered once. Without this the app could not tell
+   * "you have never been offered a Home category" from "you were, and you
+   * deleted it" — and would helpfully put the deleted one back on every launch.
+   */
+  categorySeedVersion?: number;
 
   /* Budget capture ------------------------------------------------- */
 

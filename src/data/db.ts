@@ -92,7 +92,7 @@ export function emptyDatabase(): Database {
     tombstones: [],
     transactions: [],
     budgetCategories: defaultBudgetCategories(),
-    settings: { ...DEFAULT_SETTINGS },
+    settings: { ...DEFAULT_SETTINGS, categorySeedVersion: CATEGORY_SEED_VERSION },
   };
 }
 
@@ -129,25 +129,88 @@ export function defaultBudgetCategories(
  * turns out to need, and every one of them is an ordinary category afterwards —
  * rename it, recolour it, delete it.
  */
-const SEED_CATEGORIES = {
-  tr: ["İş", "Kişisel", "Sağlık", "Ev", "Alışveriş", "Öğrenme"],
-  en: ["Work", "Personal", "Health", "Home", "Errands", "Learning"],
-} as const;
+/**
+ * The seeded categories, in the rounds they were introduced.
+ *
+ * Round 0 is what the app has always shipped with. Later rounds are offered to
+ * documents that predate them — once each, by `backfillCategories`. Splitting
+ * them this way is what lets a new suggestion reach an existing user without
+ * the app ever second-guessing a category they chose to delete or rename.
+ *
+ * To add more later: append a round. Never edit an old one — an existing
+ * document has already been past it and will not look again.
+ */
+const SEED_ROUNDS = [
+  {
+    tr: ["İş", "Kişisel", "Sağlık"],
+    en: ["Work", "Personal", "Health"],
+  },
+  {
+    tr: ["Ev", "Alışveriş", "Öğrenme", "Ulaşım", "Finans", "Sosyal"],
+    en: ["Home", "Errands", "Learning", "Travel", "Finance", "Social"],
+  },
+] as const;
+
+/** The round a fresh document starts at: all of them. */
+export const CATEGORY_SEED_VERSION = SEED_ROUNDS.length - 1;
+
+function seedNames(language: "tr" | "en", fromRound = 0): string[] {
+  return SEED_ROUNDS.slice(fromRound).flatMap((round) => [...round[language]]);
+}
 
 /** Paired with the seeds by position, from the shared palette. */
 const SEED_CATEGORY_COLORS = [
-  "#3b82f6",
-  "#22c55e",
-  "#ec4899",
-  "#f97316",
-  "#eab308",
-  "#8b5cf6",
+  "#3b82f6", // İş
+  "#22c55e", // Kişisel
+  "#ec4899", // Sağlık
+  "#f97316", // Ev
+  "#eab308", // Alışveriş
+  "#8b5cf6", // Öğrenme
+  "#14b8a6", // Ulaşım
+  "#64748b", // Finans
+  "#ef4444", // Sosyal
 ];
+
+/** The colour a seeded name always gets, wherever it is created. */
+function seedColour(language: "tr" | "en", name: string): string {
+  const index = seedNames(language).indexOf(name);
+  const slot = index >= 0 ? index : 0;
+  return SEED_CATEGORY_COLORS[slot % SEED_CATEGORY_COLORS.length] as string;
+}
+
+/**
+ * Give an existing document the seed rounds it was created too early to see.
+ *
+ * Matched by name, not by id: a seeded category gets a fresh id in every
+ * document, so an id says nothing about whether this user has met "Ev" before.
+ * A name that is already there — however it got there — is left alone, and the
+ * version stamp makes sure each round is offered exactly once, so deleting one
+ * of these is final rather than an argument the app has with the user weekly.
+ */
+function backfillCategories(
+  categories: Category[],
+  seenVersion: number,
+  language: "tr" | "en",
+): Category[] {
+  if (seenVersion >= CATEGORY_SEED_VERSION) return categories;
+
+  const taken = new Set(categories.map((c) => c.name.trim().toLowerCase()));
+  const additions = seedNames(language, seenVersion + 1)
+    .filter((name) => !taken.has(name.trim().toLowerCase()))
+    .map((name, index) => ({
+      id: createId("c"),
+      name,
+      color: seedColour(language, name),
+      order: categories.length + index,
+    }));
+
+  return additions.length > 0 ? [...categories, ...additions] : categories;
+}
 
 function defaultCategories(
   language: "tr" | "en" = DEFAULT_SETTINGS.language ?? "en",
 ): Category[] {
-  return (SEED_CATEGORIES[language] ?? SEED_CATEGORIES.en).map((name, index) => ({
+  return seedNames(language).map((name, index) => ({
     id: createId("c"),
     name,
     // Modulo so adding a seed can never hand a category `undefined` for a colour.
@@ -206,10 +269,19 @@ export function migrate(raw: unknown): Database {
   const tasks = Array.isArray(doc.tasks)
     ? doc.tasks.map(normaliseTask)
     : base.tasks;
-  const rawCategories =
+  const settings = { ...DEFAULT_SETTINGS, ...(doc.settings ?? {}) };
+  const language = settings.language ?? "en";
+
+  const storedCategories =
     Array.isArray(doc.categories) && doc.categories.length > 0
       ? doc.categories
       : base.categories;
+  // A document written before a seed round existed is offered it now, once.
+  const rawCategories = backfillCategories(
+    storedCategories,
+    doc.settings?.categorySeedVersion ?? 0,
+    language,
+  );
 
   const { categories: cleanCategories, tasks: cleanTasks } =
     deduplicateCategories(rawCategories, tasks);
@@ -239,7 +311,7 @@ export function migrate(raw: unknown): Database {
     budgetCategories: Array.isArray(doc.budgetCategories)
       ? doc.budgetCategories.map(normaliseBudgetCategory)
       : defaultBudgetCategories(doc.settings?.language ?? "en"),
-    settings: { ...DEFAULT_SETTINGS, ...(doc.settings ?? {}) },
+    settings: { ...settings, categorySeedVersion: CATEGORY_SEED_VERSION },
   };
 }
 
