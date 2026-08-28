@@ -86,6 +86,10 @@ export const DICTIONARY = {
     formReminders: "Hatırlatıcılar",
     formSubtasks: "Alt görevler",
     formHistory: "Geçmiş",
+    remindersCount: "{n} hatırlatıcı",
+    historyCount: "{n} kayıt",
+    historyEmpty: "Henüz bir hareket yok.",
+    historyShowAll: "{n} kaydın tamamını göster",
     // Erteleme farkındalığı. Görev üç kez ertelenene kadar hiçbiri görünmez.
     resistanceNoticed: "Bu görev {count} kez ertelendi.",
     resistanceStuck: "{count} ertelemedir bu göreve başlanmadı.",
@@ -834,6 +838,10 @@ export const DICTIONARY = {
     formReminders: "Reminders",
     formSubtasks: "Subtasks",
     formHistory: "History",
+    remindersCount: "{n} reminders",
+    historyCount: "{n} entries",
+    historyEmpty: "No activity yet.",
+    historyShowAll: "Show all {n} entries",
     // Postponement awareness. Nothing here appears until the third snooze.
     resistanceNoticed: "This task has been postponed {count} times.",
     resistanceStuck: "{count} postponements in, still not started.",

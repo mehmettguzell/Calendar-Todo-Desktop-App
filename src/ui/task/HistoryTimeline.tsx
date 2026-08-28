@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fromInstant, localeTag } from "@/domain/datetime";
 import { describeHistory } from "@/domain/history";
+import { useI18n } from "@/lib/i18n";
 import type { HistoryEntry } from "@/domain/types";
 
 /**
@@ -9,11 +10,12 @@ import type { HistoryEntry } from "@/domain/types";
  */
 export function HistoryTimeline({ entries }: { entries: HistoryEntry[] }) {
   const [expanded, setExpanded] = useState(false);
+  const { t } = useI18n();
 
   if (entries.length === 0) {
     return (
       <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
-        No activity yet.
+        {t("historyEmpty")}
       </p>
     );
   }
@@ -35,7 +37,7 @@ export function HistoryTimeline({ entries }: { entries: HistoryEntry[] }) {
                 timeStyle: "short",
               })}
               {entry.occurrenceDate
-                ? ` · occurrence ${entry.occurrenceDate}`
+                ? ` · ${entry.occurrenceDate}`
                 : ""}
             </time>
           </div>
@@ -49,7 +51,7 @@ export function HistoryTimeline({ entries }: { entries: HistoryEntry[] }) {
           style={{ alignSelf: "flex-start", marginTop: 8 }}
           onClick={() => setExpanded(true)}
         >
-          Show all {entries.length} entries...
+          {t("historyShowAll", { n: entries.length })}
         </button>
       )}
 
@@ -60,7 +62,7 @@ export function HistoryTimeline({ entries }: { entries: HistoryEntry[] }) {
           style={{ alignSelf: "flex-start", marginTop: 8 }}
           onClick={() => setExpanded(false)}
         >
-          Show less
+          {t("showLess")}
         </button>
       )}
     </div>

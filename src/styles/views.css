@@ -308,6 +308,72 @@
   background: var(--surface);
 }
 
+/* -------------------------------------------------- the task panel's folds */
+
+/* The always-open block: the two or three edits nearly every visit makes. */
+.panel-essentials {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.panel-section {
+  padding: 0;
+}
+
+.panel-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 10px var(--space-3);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: left;
+}
+
+.panel-section-head:hover {
+  background: var(--surface-hover);
+}
+
+.panel-section-title {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* What the section holds, while it is shut. Truncates rather than wraps: this
+   line must never be tall enough to compete with the section it summarises. */
+.panel-section-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.panel-section-caret {
+  flex: none;
+  color: var(--border-strong);
+  transition: transform 140ms ease;
+}
+
+.panel-section.is-open .panel-section-caret {
+  transform: rotate(90deg);
+}
+
+.panel-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 2px var(--space-3) var(--space-3);
+}
+
 .card-head {
   display: flex;
   align-items: center;

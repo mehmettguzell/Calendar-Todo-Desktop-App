@@ -351,6 +351,10 @@ function queueTombstones(prev: Tombstone[], next: Tombstone[]): void {
         // travels as an ordinary update.
         pendingTransactionIds.add(stone.id);
         break;
+      case "focus":
+        pendingFocusIds.delete(stone.id);
+        pendingDeletedFocusIds.add(stone.id);
+        break;
       default:
         break;
     }
@@ -893,6 +897,7 @@ const pendingDeletedOccurrenceIds = new Set<string>();
 const pendingDeletedReminderIds = new Set<string>();
 const pendingDeletedBudgetCategoryIds = new Set<string>();
 const pendingFocusIds = new Set<string>();
+const pendingDeletedFocusIds = new Set<string>();
 const pendingHistoryIds = new Set<string>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight: Promise<void> | null = null;
@@ -910,6 +915,7 @@ const ALL_QUEUES = [
   pendingDeletedReminderIds,
   pendingDeletedBudgetCategoryIds,
   pendingFocusIds,
+  pendingDeletedFocusIds,
   pendingHistoryIds,
 ];
 
@@ -1126,6 +1132,19 @@ async function flushPendingWrites(): Promise<void> {
     );
     await writeFocusSessions(sessionsToWrite, userId);
 
+    if (deletedFocusIds.length > 0) {
+      const { error } = await withTimeout(
+        supabase
+          .from("focus_sessions")
+          .delete()
+          .in("id", deletedFocusIds)
+          .eq("user_id", userId),
+        "focus session delete",
+      );
+      if (error) throw error;
+      for (const id of deletedFocusIds) syncedFocusIds.delete(id);
+    }
+
     const pendingHistorySet = new Set(historyIds);
     await writeHistory(
       db.history.filter(
@@ -1156,6 +1175,7 @@ async function flushPendingWrites(): Promise<void> {
       pendingDeletedBudgetCategoryIds.add(id);
     }
     for (const id of focusIds) pendingFocusIds.add(id);
+    for (const id of deletedFocusIds) pendingDeletedFocusIds.add(id);
     for (const id of historyIds) pendingHistoryIds.add(id);
 
     const kind = classifySyncError(err);
@@ -2178,13 +2198,55 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
     );
 
     /* --- FOCUS SESSIONS ----------------------------------------------- */
-    // Immutable once written, so "which ids does the cloud not have" is the
-    // whole diff — no field comparison needed.
-    const cloudFocusIds = new Set((focusRes.data ?? []).map((f) => f.id));
-    await writeFocusSessions(
-      localDb.focusSessions.filter((f) => !cloudFocusIds.has(f.id)),
-      userId,
+    const cloudFocusRaw = focusRes.data ?? [];
+    const duplicateCloudFocusIdsToDelete: string[] = [];
+
+    const localFocusMap = new Map(localDb.focusSessions.map((f) => [f.id, f]));
+    const cloudFocusIds = new Set(cloudFocusRaw.map((f) => f.id));
+
+    // Upload local sessions that cloud does not have (and that are not tombstoned)
+    const focusToUpload = localDb.focusSessions.filter(
+      (f) => !cloudFocusIds.has(f.id) && !tombstoned.focus.has(f.id),
     );
+    if (focusToUpload.length > 0) {
+      await writeFocusSessions(focusToUpload, userId);
+    }
+
+    const mergedFocus = [...localDb.focusSessions];
+    for (const f of cloudFocusRaw) {
+      if (tombstoned.focus.has(f.id)) {
+        duplicateCloudFocusIdsToDelete.push(f.id);
+        continue;
+      }
+      if (localFocusMap.has(f.id)) continue;
+
+      const newSession: FocusSession = {
+        id: f.id,
+        taskId: f.task_id,
+        occurrenceDate: null,
+        startedAt: f.started_at,
+        endedAt: null,
+        durationSec: f.duration_sec,
+      };
+      mergedFocus.push(newSession);
+      localFocusMap.set(f.id, newSession);
+    }
+
+    if (duplicateCloudFocusIdsToDelete.length > 0) {
+      for (const batch of chunked(
+        duplicateCloudFocusIdsToDelete,
+        UPSERT_CHUNK_SIZE,
+      )) {
+        await withTimeout(
+          supabase
+            .from("focus_sessions")
+            .delete()
+            .in("id", batch)
+            .eq("user_id", userId),
+          "focus sessions tombstone push",
+        );
+      }
+    }
 
     /* --- ACTIVITY TRAIL ----------------------------------------------- */
     // Append-only: the diff is "which ids does each side not have", in both
@@ -2218,22 +2280,6 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       mergedHistory = Array.from(byId.values()).sort((a, b) =>
         a.at.localeCompare(b.at),
       );
-    }
-
-    let mergedFocus = localDb.focusSessions;
-    if (focusRes.data && focusRes.data.length > 0) {
-      const focusMap = new Map(localDb.focusSessions.map((f) => [f.id, f]));
-      for (const f of focusRes.data) {
-        focusMap.set(f.id, {
-          id: f.id,
-          taskId: f.task_id,
-          occurrenceDate: null,
-          startedAt: f.started_at,
-          endedAt: null,
-          durationSec: f.duration_sec,
-        });
-      }
-      mergedFocus = Array.from(focusMap.values());
     }
 
     /* --- COMMIT ------------------------------------------------------- */
@@ -2353,6 +2399,7 @@ function tombstoneIndex(tombstones: Tombstone[]) {
     reminder: new Set<string>(),
     occurrence: new Set<string>(),
     transaction: new Set<string>(),
+    focus: new Set<string>(),
   };
   for (const stone of tombstones) index[stone.kind]?.add(stone.id);
   return index;

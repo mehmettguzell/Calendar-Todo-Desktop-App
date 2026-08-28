@@ -87,45 +87,118 @@ export function collectDueReminders(
   const to = shiftLocalDate(now, 1);
 
   for (const reminder of reminders) {
-    if (reminder.status === "DISMISSED") continue;
-    const task = tasks.get(reminder.taskId);
-    if (!task || task.deletedAt) continue;
-
-    if (reminder.snoozedUntil && fromInstant(reminder.snoozedUntil).getTime() > now.getTime()) {
-      continue;
-    }
-
-    const isSeries = task.recurrence !== null;
-    const candidateDates = candidateOccurrenceDates(task, reminder, from, to);
-    for (const date of candidateDates) {
-      // Already delivered, and not re-armed by a snooze.
-      //
-      // A one-off reminder is finished the moment it has FIRED — including a
-      // multi-day task, which now yields one candidate date per day it covers
-      // and would otherwise nag once for each of them. Only a recurring series
-      // needs the per-date check, because there its reminder stays PENDING for
-      // the next occurrence.
-      const alreadyFired =
-        reminder.snoozedUntil === null &&
-        (isSeries
-          ? date !== null &&
-            reminder.lastFiredFor !== null &&
-            date <= reminder.lastFiredFor
-          : reminder.status === "FIRED");
-      if (alreadyFired) continue;
-      const firesAt = reminderInstantFor(reminder, task, date, settings);
-      if (!firesAt || firesAt.getTime() > now.getTime()) continue;
-
-      const occurrence =
-        date !== null ? (occurrences.get(occurrenceId(task.id, date)) ?? null) : null;
-      const instance = toInstance(task, date, occurrence, now);
-      if (instance.status === "COMPLETED" || instance.status === "SNOOZED") continue;
-
-      due.push({ reminder, instance, firesAt });
-      break; // one delivery per reminder per tick
-    }
+    const delivery = firstDelivery(
+      reminder,
+      tasks,
+      occurrences,
+      settings,
+      now,
+      from,
+      to,
+      (firesAt) => firesAt.getTime() <= now.getTime(),
+    );
+    if (delivery) due.push(delivery);
   }
   return due;
+}
+
+/**
+ * When the next reminder is due, or `null` if none is in sight.
+ *
+ * The scheduler sleeps until exactly this instant instead of waking every few
+ * seconds to ask. That is the same question an operating system wants answered
+ * when a phone registers a local notification ahead of time, which is why it is
+ * computed here rather than inside the timer: one rule set, two consumers.
+ *
+ * It reads the very same `firstDelivery` walk that `collectDueReminders` does,
+ * only accepting instants still in the future. A reminder the app would refuse
+ * to deliver must never be a reminder the app wakes up for.
+ */
+export function nextReminderInstant(
+  reminders: Reminder[],
+  tasks: Map<string, Task>,
+  occurrences: Map<string, Occurrence>,
+  settings: Settings,
+  now: Date,
+  lookaheadDays = 8,
+): Date | null {
+  const from = shiftLocalDate(now, -1);
+  const to = shiftLocalDate(now, lookaheadDays);
+  let soonest: Date | null = null;
+
+  for (const reminder of reminders) {
+    const delivery = firstDelivery(
+      reminder,
+      tasks,
+      occurrences,
+      settings,
+      now,
+      from,
+      to,
+      (firesAt) => firesAt.getTime() > now.getTime(),
+    );
+    if (!delivery) continue;
+    if (soonest === null || delivery.firesAt.getTime() < soonest.getTime()) {
+      soonest = delivery.firesAt;
+    }
+  }
+  return soonest;
+}
+
+/**
+ * The first delivery this reminder still owes whose instant `accept` allows.
+ *
+ * Every reason a reminder stays silent lives here — dismissed, deleted, snoozed,
+ * already fired, or an occurrence the user has since closed — so that "is it due
+ * now?" and "when is it next due?" can never answer from different rules.
+ */
+function firstDelivery(
+  reminder: Reminder,
+  tasks: Map<string, Task>,
+  occurrences: Map<string, Occurrence>,
+  settings: Settings,
+  now: Date,
+  from: LocalDate,
+  to: LocalDate,
+  accept: (firesAt: Date) => boolean,
+): DueReminder | null {
+  if (reminder.status === "DISMISSED") return null;
+  const task = tasks.get(reminder.taskId);
+  if (!task || task.deletedAt) return null;
+
+  if (reminder.snoozedUntil && fromInstant(reminder.snoozedUntil).getTime() > now.getTime()) {
+    return null;
+  }
+
+  const isSeries = task.recurrence !== null;
+  for (const date of candidateOccurrenceDates(task, reminder, from, to)) {
+    // Already delivered, and not re-armed by a snooze.
+    //
+    // A one-off reminder is finished the moment it has FIRED — including a
+    // multi-day task, which now yields one candidate date per day it covers
+    // and would otherwise nag once for each of them. Only a recurring series
+    // needs the per-date check, because there its reminder stays PENDING for
+    // the next occurrence.
+    const alreadyFired =
+      reminder.snoozedUntil === null &&
+      (isSeries
+        ? date !== null &&
+          reminder.lastFiredFor !== null &&
+          date <= reminder.lastFiredFor
+        : reminder.status === "FIRED");
+    if (alreadyFired) continue;
+
+    const firesAt = reminderInstantFor(reminder, task, date, settings);
+    if (!firesAt || !accept(firesAt)) continue;
+
+    const occurrence =
+      date !== null ? (occurrences.get(occurrenceId(task.id, date)) ?? null) : null;
+    const instance = toInstance(task, date, occurrence, now);
+    if (instance.status === "COMPLETED" || instance.status === "SNOOZED") continue;
+
+    return { reminder, instance, firesAt };
+  }
+  return null;
 }
 
 function candidateOccurrenceDates(

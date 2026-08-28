@@ -53,6 +53,7 @@ import {
   syncDeleteTaskToCloud,
   syncTaskToCloud,
 } from "./syncEngine";
+import { fireConfetti } from "@/lib/confetti";
 import { useUndoStore } from "./undoStore";
 import type {
   Category,
@@ -207,6 +208,7 @@ interface StoreState {
   startFocus(instance: TaskInstance): void;
   stopFocus(): void;
   cancelFocus(): void;
+  deleteFocusSession(sessionId: string): void;
   clearFocusSessions(): void;
 
   addCategory(name: string, color: string): Category;
@@ -771,6 +773,9 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     setStatus(ref, status) {
+      if (status === "COMPLETED") {
+        fireConfetti({ particleCount: 65 });
+      }
       commit((db) => applyStatus(db, ref, status));
       syncSubtree(get().db, ref.taskId);
     },
@@ -784,6 +789,10 @@ export const useStore = create<StoreState>((set, get) => {
       // to carry with it, and the undo has to know how to put them back.
       const cascaded =
         next === "COMPLETED" ? openDescendants(get().db, ref.taskId) : [];
+
+      if (next === "COMPLETED") {
+        fireConfetti({ particleCount: 65 });
+      }
 
       commit((db) => applyStatus(db, ref, next));
       syncSubtree(get().db, ref.taskId);
@@ -1110,11 +1119,29 @@ export const useStore = create<StoreState>((set, get) => {
       }));
     },
 
+    deleteFocusSession(id) {
+      const at = nowInstant();
+      commit((db) => ({
+        ...db,
+        focusSessions: db.focusSessions.filter((s) => s.id !== id),
+        tombstones: pruneTombstones([
+          ...db.tombstones,
+          tombstone("focus", id, at),
+        ]),
+      }));
+    },
+
     clearFocusSessions() {
+      const at = nowInstant();
+      const current = get().db.focusSessions;
       set({ runningFocus: null });
       commit((db) => ({
         ...db,
         focusSessions: [],
+        tombstones: pruneTombstones([
+          ...db.tombstones,
+          ...current.map((s) => tombstone("focus", s.id, at)),
+        ]),
       }));
     },
 
@@ -1176,7 +1203,8 @@ export const useStore = create<StoreState>((set, get) => {
      */
     makePlan(taskId) {
       const task = get().db.tasks.find((t) => t.id === taskId);
-      if (!task || (task.tags.includes("plan") && task.parentId === null)) return;
+      if (!task || (task.tags.includes("plan") && task.parentId === null))
+        return;
       if (task.parentId !== null) get().setParent(taskId, null);
       get().updateTask(taskId, {
         tags: [...task.tags.filter((tag) => tag !== "plan"), "plan"],
@@ -1194,7 +1222,10 @@ export const useStore = create<StoreState>((set, get) => {
       if (parentId !== null) {
         const parent = before.tasks.find((t) => t.id === parentId);
         // Refusing a descendant is what keeps the tree a tree.
-        if (!parent || collectSubtree(before.tasks, taskId).includes(parentId)) {
+        if (
+          !parent ||
+          collectSubtree(before.tasks, taskId).includes(parentId)
+        ) {
           return;
         }
       }
@@ -1224,7 +1255,8 @@ export const useStore = create<StoreState>((set, get) => {
             note:
               parentTitle === null
                 ? `Detached from "${
-                    before.tasks.find((t) => t.id === task.parentId)?.title ?? ""
+                    before.tasks.find((t) => t.id === task.parentId)?.title ??
+                    ""
                   }"`
                 : `Filed under "${parentTitle}"`,
           }),

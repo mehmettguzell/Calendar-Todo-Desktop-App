@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Square, Timer } from "lucide-react";
+import { Square, Timer, Trash2 } from "lucide-react";
 import {
   formatDuration,
   formatTracked,
@@ -37,6 +37,7 @@ export function FocusView({
   const stopFocus = useStore((s) => s.stopFocus);
   const cancelFocus = useStore((s) => s.cancelFocus);
   const clearFocusSessions = useStore((s) => s.clearFocusSessions);
+  const deleteFocusSession = useStore((s) => s.deleteFocusSession);
   const tasks = useStore((s) => s.db.tasks);
   const sessions = useFocusSessions();
   const now = useNow();
@@ -63,9 +64,12 @@ export function FocusView({
             <div style={{ fontWeight: 600 }}>{runningTask.title}</div>
             <div className="muted" style={{ fontSize: 12 }}>
               Started{" "}
-              {fromInstant(runningFocus.startedAt).toLocaleTimeString(localeTag(), {
-                timeStyle: "short",
-              })}
+              {fromInstant(runningFocus.startedAt).toLocaleTimeString(
+                localeTag(),
+                {
+                  timeStyle: "short",
+                },
+              )}
             </div>
           </div>
           <span className="timer mono">{formatDuration(elapsed)}</span>
@@ -159,6 +163,15 @@ export function FocusView({
                     ? formatTracked(session.durationSec)
                     : "running"}
                 </span>
+                <button
+                  type="button"
+                  className="btn ghost icon sm"
+                  title="Sil"
+                  onClick={() => deleteFocusSession(session.id)}
+                  style={{ opacity: 0.6 }}
+                >
+                  <Trash2 size={12} />
+                </button>
               </div>
             );
           })}

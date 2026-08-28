@@ -42,13 +42,20 @@ export type ViewId =
   | "focus"
   | "budget";
 
-const NAV: { id: ViewId; labelKey: TranslationKey; icon: typeof Sun }[] = [
+const MAIN_NAV: { id: ViewId; labelKey: TranslationKey; icon: typeof Sun }[] = [
   { id: "today", labelKey: "navToday", icon: Sun },
-  { id: "calendar", labelKey: "navCalendar", icon: CalendarDays },
   { id: "tasks", labelKey: "navTasks", icon: ListChecks },
   { id: "plans", labelKey: "navPlans", icon: Target },
-  { id: "notes", labelKey: "navNotes", icon: StickyNote },
+  { id: "calendar", labelKey: "navCalendar", icon: CalendarDays },
+];
+
+const WORKSPACE_NAV: {
+  id: ViewId;
+  labelKey: TranslationKey;
+  icon: typeof Sun;
+}[] = [
   { id: "focus", labelKey: "navFocus", icon: Timer },
+  { id: "notes", labelKey: "navNotes", icon: StickyNote },
   { id: "budget", labelKey: "navBudget", icon: Wallet },
 ];
 
@@ -152,7 +159,7 @@ export function Sidebar({
       </div>
 
       <div className="nav">
-        {NAV.map((item) => {
+        {MAIN_NAV.map((item) => {
           const Icon = item.icon;
           const badge =
             item.id === "today"
@@ -191,6 +198,24 @@ export function Sidebar({
         }}
         onAnchorChange={onAnchor}
       />
+
+      <div className="nav">
+        {WORKSPACE_NAV.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className="nav-item"
+              aria-current={view === item.id}
+              onClick={() => onView(item.id)}
+            >
+              <Icon size={16} />
+              {t(item.labelKey)}
+            </button>
+          );
+        })}
+      </div>
 
       <div className="col" style={{ gap: 4 }}>
         <div className="side-heading">

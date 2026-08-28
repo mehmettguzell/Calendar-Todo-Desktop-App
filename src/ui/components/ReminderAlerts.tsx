@@ -99,14 +99,14 @@ function AlertCard({
             onDismiss(alert.id);
           }}
         >
-          <Check size={13} /> Complete
+          <Check size={13} /> {t("menuComplete")}
         </button>
         <button
           type="button"
           className="btn sm"
           onClick={() => setSnoozeOpen((v) => !v)}
         >
-          <Clock size={13} /> Snooze
+          <Clock size={13} /> {t("snooze")}
         </button>
         <button
           type="button"
@@ -117,7 +117,7 @@ function AlertCard({
             onDismiss(alert.id);
           }}
         >
-          <ExternalLink size={13} /> Open
+          <ExternalLink size={13} /> {t("menuOpen")}
         </button>
 
         {snoozeOpen ? (

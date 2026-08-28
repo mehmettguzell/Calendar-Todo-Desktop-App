@@ -1,13 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { HEARTBEAT_EVENT, onDesktopEvent } from "./desktop";
 import { reminderNotification } from "@/domain/notification";
-import { collectDueReminders } from "@/domain/reminders";
+import { collectDueReminders, nextReminderInstant } from "@/domain/reminders";
 import type { LocalDate, Reminder, TaskInstance } from "@/domain/types";
 import { useStore } from "@/state/store";
 import { notify } from "./notifications";
 
-/** How often the clock is re-read. Cheap: it only walks pending reminders. */
-const TICK_MS = 20_000;
+/**
+ * The longest the reminder timer will sleep in one go.
+ *
+ * Not a polling interval: with nothing due, nothing runs for this whole stretch.
+ * It is a ceiling because a timer armed for next Tuesday cannot survive a
+ * suspend, a clock change or a `setTimeout` overflow, so the schedule is
+ * rebuilt from the data at least this often.
+ */
+const MAX_SLEEP_MS = 10 * 60_000;
+
+/** Never arm a zero-delay timer; that is a spin loop with extra steps. */
+const MIN_SLEEP_MS = 250;
+
+const MINUTE_MS = 60_000;
 
 export interface ActiveAlert {
   id: string;
@@ -17,12 +29,21 @@ export interface ActiveAlert {
 }
 
 /**
- * Drives two time-dependent behaviours from one interval:
- *   1. advancing `now`, which is what turns a task OVERDUE, and
- *   2. delivering reminders that have come due.
+ * Delivers reminders, and keeps `now` honest.
  *
- * Returns the alerts still awaiting a decision, which the UI renders as cards
- * carrying the spec's [Complete] [Snooze] [Open] actions.
+ * These are two jobs with two different clocks, on purpose.
+ *
+ * `now` advances on the minute, because that is the resolution at which a
+ * displayed time can go stale — a task turning OVERDUE, "in 5 minutes" becoming
+ * "in 4". It is one `setState` and nothing else.
+ *
+ * Reminders do not poll at all. The scheduler asks the domain when the next one
+ * is due and sleeps until precisely that instant, so a reminder set for 14:00
+ * costs nothing between now and 14:00 instead of a scan every twenty seconds.
+ * That is cheaper on a laptop battery, and it is the shape a phone needs: the
+ * same `nextReminderInstant` answer is what you hand an operating system when
+ * registering a local notification ahead of time, on a platform that will not
+ * let the process stay awake to check for itself.
  */
 export function useReminderScheduler(): {
   alerts: ActiveAlert[];
@@ -34,13 +55,22 @@ export function useReminderScheduler(): {
   useEffect(() => {
     let cancelled = false;
 
-    const run = () => {
+    /* -- the clock ---------------------------------------------------- */
+    let clockTimer: ReturnType<typeof setTimeout> | undefined;
+
+    // Aligned to the boundary rather than a free-running interval, so `now`
+    // changes when the wall clock's minute does, not 40 seconds afterwards.
+    const tickClock = () => {
       if (cancelled) return;
       const state = useStore.getState();
-      if (!state.ready) return;
+      if (state.ready) state.tick();
+      clockTimer = setTimeout(tickClock, MINUTE_MS - (Date.now() % MINUTE_MS));
+    };
 
-      state.tick();
+    /* -- reminders ---------------------------------------------------- */
+    let reminderTimer: ReturnType<typeof setTimeout> | undefined;
 
+    const deliverDue = () => {
       const { db } = useStore.getState();
       const now = new Date();
       const tasks = new Map(db.tasks.map((t) => [t.id, t]));
@@ -73,22 +103,72 @@ export function useReminderScheduler(): {
       }
     };
 
-    run();
-    const handle = setInterval(run, TICK_MS);
+    /** How long until the next reminder wants attention. */
+    const sleepMs = (): number => {
+      const { db } = useStore.getState();
+      const now = new Date();
+      const next = nextReminderInstant(
+        db.reminders,
+        new Map(db.tasks.map((t) => [t.id, t])),
+        new Map(db.occurrences.map((o) => [o.id, o])),
+        db.settings,
+        now,
+      );
+      const until = next ? next.getTime() - now.getTime() : MAX_SLEEP_MS;
+      return Math.min(Math.max(until, MIN_SLEEP_MS), MAX_SLEEP_MS);
+    };
 
-    // The interval is enough while the window is on screen. Once it is hidden
-    // in the tray the webview throttles timers, so the host process supplies a
-    // beat that is not subject to that — which is what keeps a reminder set
-    // this morning arriving this evening.
+    const runReminders = () => {
+      if (cancelled) return;
+      if (reminderTimer !== undefined) clearTimeout(reminderTimer);
+      if (!useStore.getState().ready) {
+        reminderTimer = setTimeout(runReminders, MIN_SLEEP_MS * 4);
+        return;
+      }
+      deliverDue();
+      if (cancelled) return;
+      reminderTimer = setTimeout(runReminders, sleepMs());
+    };
+
+    tickClock();
+    runReminders();
+
+    /*
+     * Anything the user does can move the next instant — adding a reminder for
+     * two minutes from now, dragging a task to another day, snoozing. Re-arming
+     * on every write costs one walk of the reminder list and is the difference
+     * between "set a reminder and it arrives" and "set a reminder and wait for
+     * the next rebuild".
+     */
+    let watched = useStore.getState().db;
+    const unsubscribe = useStore.subscribe((state) => {
+      const { db } = state;
+      if (
+        db.reminders === watched.reminders &&
+        db.tasks === watched.tasks &&
+        db.occurrences === watched.occurrences &&
+        db.settings === watched.settings
+      ) {
+        return;
+      }
+      watched = db;
+      runReminders();
+    });
+
+    // A hidden window has its timers throttled by the webview, so the host
+    // process supplies a beat that is not — which is what keeps a reminder set
+    // this morning arriving this evening with the app down in the tray.
     let unlisten: (() => void) | undefined;
-    void onDesktopEvent(HEARTBEAT_EVENT, run).then((off) => {
+    void onDesktopEvent(HEARTBEAT_EVENT, runReminders).then((off) => {
       if (cancelled) off();
       else unlisten = off;
     });
 
     return () => {
       cancelled = true;
-      clearInterval(handle);
+      if (clockTimer !== undefined) clearTimeout(clockTimer);
+      if (reminderTimer !== undefined) clearTimeout(reminderTimer);
+      unsubscribe();
       unlisten?.();
     };
   }, []);

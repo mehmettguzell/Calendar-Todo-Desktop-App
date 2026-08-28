@@ -303,7 +303,13 @@ export interface TaskSpan {
  * The tombstone is what makes "gone" a fact rather than an absence.
  */
 export interface Tombstone {
-  kind: "task" | "category" | "reminder" | "occurrence" | "transaction";
+  kind:
+    | "task"
+    | "category"
+    | "reminder"
+    | "occurrence"
+    | "transaction"
+    | "focus";
   id: string;
   at: Instant;
 }

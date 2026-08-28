@@ -1,21 +1,29 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   AlarmClock,
+  ChevronRight,
   Copy,
-  Play,
   Plus,
-  Square,
   Trash2,
   Unlink,
   X,
   ArrowLeft,
 } from "lucide-react";
-import { formatTracked, localeTag } from "@/domain/datetime";
+import { formatTracked, localeTag, weekdayNames } from "@/domain/datetime";
+import { describeRecurrence } from "@/domain/recurrence";
 import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
 import { PRIORITIES, type Priority, type TaskInstance } from "@/domain/types";
 import {
   useCategories,
+  useSubtasks,
   useTaskHistory,
   useTrackedSeconds,
   useTaskById,
@@ -70,6 +78,27 @@ export function TaskPanel({
   const { t } = useI18n();
   const history = useTaskHistory(task.id);
   const tracked = useTrackedSeconds(task.id);
+  const subtasks = useSubtasks(task.id);
+  const reminders = useStore((s) => s.db.reminders);
+
+  /*
+   * What each folded section holds, said in one phrase.
+   *
+   * This is what makes folding honest rather than hiding: a shut section still
+   * tells you there are two reminders on this task, so nothing is lost by
+   * leaving it shut.
+   */
+  const taskReminders = useMemo(
+    () => reminders.filter((r) => r.taskId === task.id && r.status !== "DISMISSED"),
+    [reminders, task.id],
+  );
+  const repeatSummary = useMemo(() => {
+    if (task.recurrence) {
+      return describeRecurrence(task.recurrence, t, weekdayNames("short"));
+    }
+    return task.endDate ? t("formEndDate") : null;
+  }, [task.recurrence, task.endDate, t]);
+  const doneSubtasks = subtasks.filter((s) => s.status === "COMPLETED").length;
 
   /**
    * What the task's own history says about how it is going.
@@ -148,6 +177,19 @@ export function TaskPanel({
           </span>
         ) : null}
         <span className="grow" />
+        {/* Copying a task is a real command but not one of the three things a
+            user came here to do, so it sits with the window controls. */}
+        <button
+          type="button"
+          className={cn("btn ghost icon", clip?.taskId === task.id && "primary")}
+          aria-label={t("menuCopy")}
+          title={t("menuCopy")}
+          onClick={() =>
+            copyToClipboard(task.id, task.title, instance.date ?? task.dueDate)
+          }
+        >
+          <Copy size={14} />
+        </button>
         <button
           type="button"
           className="btn ghost icon"
@@ -235,21 +277,6 @@ export function TaskPanel({
           >
             <AlarmClock size={14} /> {t("snooze")}
           </button>
-          <button
-            type="button"
-            className={cn("btn icon", clip?.taskId === task.id && "primary")}
-            aria-label={t("menuCopy")}
-            title={`${t("menuCopy")} — ${t("calendarDayHint")}`}
-            onClick={() =>
-              copyToClipboard(
-                task.id,
-                task.title,
-                instance.date ?? task.dueDate,
-              )
-            }
-          >
-            <Copy size={14} />
-          </button>
           {instance.status === "SNOOZED" ? (
             <button
               type="button"
@@ -289,161 +316,184 @@ export function TaskPanel({
           />
         </Field>
 
-        <div className="card">
-          <div className="card-head">{t("cardSchedule")}</div>
-          <div className="col" style={{ gap: 10 }}>
-            <div className="field-row">
-              <Field label={t("formStartDate")}>
-                <input
-                  className="input"
-                  type="date"
-                  value={task.dueDate ?? ""}
-                  // Through `reschedule`, not `updateTask`: typing a date here
-                  // is the same act as dragging the task onto that day, so it
-                  // carries the same end-date shift, history entry and undo.
-                  onChange={(e) => reschedule(task.id, e.target.value || null)}
-                />
-              </Field>
-              <Field label={t("formEndDate")}>
-                <input
-                  className="input"
-                  type="date"
-                  value={task.endDate ?? ""}
-                  min={task.dueDate ?? undefined}
-                  onChange={(e) =>
-                    updateTask(task.id, { endDate: e.target.value || null })
-                  }
-                />
-              </Field>
-            </div>
-
-            <Switch
-              checked={task.allDay}
-              label={t("allDay")}
-              onChange={(allDay) =>
-                updateTask(task.id, {
-                  allDay,
-                  startTime: allDay ? null : (task.startTime ?? "09:00"),
-                  endTime: allDay ? null : task.endTime,
-                })
-              }
-            />
-
-            {!task.allDay ? (
-              <div className="field-row">
-                <Field label={t("formStart")}>
-                  <input
-                    className="input"
-                    type="time"
-                    value={task.startTime ?? ""}
-                    onChange={(e) =>
-                      updateTask(task.id, { startTime: e.target.value || null })
-                    }
-                  />
-                </Field>
-                <Field label={t("formEnd")}>
-                  <input
-                    className="input"
-                    type="time"
-                    value={task.endTime ?? ""}
-                    onChange={(e) =>
-                      updateTask(task.id, { endTime: e.target.value || null })
-                    }
-                  />
-                </Field>
-              </div>
-            ) : null}
-
-            {/* Above the repeat rule on purpose: "also on Thursday" is the
-                small, frequent wish, and it is expressed as a rule bounded to
-                this week — so the repeat editor below shows the same fact from
-                the other side, and stretching its end date is how an extra day
-                grows into a real weekly repeat. */}
-            <Field label={t("extraDaysTitle")}>
-              <ExtraDaysPicker task={task} />
-            </Field>
-
-            <RecurrenceEditor
-              value={task.recurrence}
-              onChange={(recurrence) => updateTask(task.id, { recurrence })}
-            />
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-head">{t("cardOrganise")}</div>
-          <div className="col" style={{ gap: 10 }}>
-            <div className="field-row">
-              <Field label={t("formPriority")}>
-                <select
-                  className="select"
-                  value={task.priority}
-                  onChange={(e) =>
-                    updateTask(task.id, {
-                      priority: e.target.value as Priority,
-                    })
-                  }
-                >
-                  {PRIORITIES.map((p) => (
-                    <option key={p} value={p}>
-                      {t(`priority${p}`)}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label={t("formCategory")}>
-                <select
-                  className="select"
-                  value={task.categoryId ?? ""}
-                  onChange={(e) =>
-                    updateTask(task.id, { categoryId: e.target.value || null })
-                  }
-                >
-                  <option value="">{t("formNone")}</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-
-            <Field label={t("formTags")} hint={t("formTagsHint")}>
+        {/* Scheduling and priority are the two edits almost every visit makes,
+            so they are the two that are never behind a fold. */}
+        <div className="panel-essentials">
+          <div className="field-row">
+            <Field label={t("formStartDate")}>
               <input
                 className="input"
-                value={tagInput}
-                placeholder={t("tagsPlaceholder")}
-                onChange={(e) => setTagInput(e.target.value)}
-                onBlur={() => {
-                  const tags = tagInput
-                    .split(",")
-                    .map((t) => t.trim().replace(/^#/, ""))
-                    .filter(Boolean);
-                  if (tags.join(",") !== task.tags.join(","))
-                    updateTask(task.id, { tags });
-                }}
+                type="date"
+                value={task.dueDate ?? ""}
+                // Through `reschedule`, not `updateTask`: typing a date here
+                // is the same act as dragging the task onto that day, so it
+                // carries the same end-date shift, history entry and undo.
+                onChange={(e) => reschedule(task.id, e.target.value || null)}
               />
             </Field>
+            <Field label={t("formPriority")}>
+              <select
+                className="select"
+                value={task.priority}
+                onChange={(e) =>
+                  updateTask(task.id, { priority: e.target.value as Priority })
+                }
+              >
+                {PRIORITIES.map((p) => (
+                  <option key={p} value={p}>
+                    {t(`priority${p}`)}
+                  </option>
+                ))}
+              </select>
+            </Field>
           </div>
+
+          <Switch
+            checked={task.allDay}
+            label={t("allDay")}
+            onChange={(allDay) =>
+              updateTask(task.id, {
+                allDay,
+                startTime: allDay ? null : (task.startTime ?? "09:00"),
+                endTime: allDay ? null : task.endTime,
+              })
+            }
+          />
+
+          {!task.allDay ? (
+            <div className="field-row">
+              <Field label={t("formStart")}>
+                <input
+                  className="input"
+                  type="time"
+                  value={task.startTime ?? ""}
+                  onChange={(e) =>
+                    updateTask(task.id, { startTime: e.target.value || null })
+                  }
+                />
+              </Field>
+              <Field label={t("formEnd")}>
+                <input
+                  className="input"
+                  type="time"
+                  value={task.endTime ?? ""}
+                  onChange={(e) =>
+                    updateTask(task.id, { endTime: e.target.value || null })
+                  }
+                />
+              </Field>
+            </div>
+          ) : null}
+
+          <Field label={t("formCategory")}>
+            <select
+              className="select"
+              value={task.categoryId ?? ""}
+              onChange={(e) =>
+                updateTask(task.id, { categoryId: e.target.value || null })
+              }
+            >
+              <option value="">{t("formNone")}</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
         </div>
 
-        <div className="card">
-          <div className="card-head">{t("formSubtasks")}</div>
+        <PanelSection
+          key={`repeat:${task.id}`}
+          title={t("formRepeat")}
+          summary={repeatSummary}
+          defaultOpen={task.recurrence !== null}
+        >
+          <Field label={t("formEndDate")}>
+            <input
+              className="input"
+              type="date"
+              value={task.endDate ?? ""}
+              min={task.dueDate ?? undefined}
+              onChange={(e) =>
+                updateTask(task.id, { endDate: e.target.value || null })
+              }
+            />
+          </Field>
+
+          {/* Above the repeat rule on purpose: "also on Thursday" is the
+              small, frequent wish, and it is expressed as a rule bounded to
+              this week — so the repeat editor below shows the same fact from
+              the other side, and stretching its end date is how an extra day
+              grows into a real weekly repeat. */}
+          <Field label={t("extraDaysTitle")}>
+            <ExtraDaysPicker task={task} />
+          </Field>
+
+          <RecurrenceEditor
+            value={task.recurrence}
+            onChange={(recurrence) => updateTask(task.id, { recurrence })}
+          />
+        </PanelSection>
+
+        <PanelSection
+          key={`subtasks:${task.id}`}
+          title={t("formSubtasks")}
+          summary={
+            subtasks.length > 0
+              ? t("subtaskProgress", { done: doneSubtasks, total: subtasks.length })
+              : null
+          }
+          defaultOpen={subtasks.length > 0}
+        >
           <SubtaskList parent={task} onOpen={onOpenTask} />
-        </div>
+        </PanelSection>
 
-        <div className="card">
-          <div className="card-head">{t("formReminders")}</div>
+        <PanelSection
+          key={`reminders:${task.id}`}
+          title={t("formReminders")}
+          summary={
+            taskReminders.length > 0
+              ? t("remindersCount", { n: taskReminders.length })
+              : null
+          }
+          defaultOpen={taskReminders.length > 0}
+        >
           <ReminderEditor task={task} />
-        </div>
+        </PanelSection>
 
-        <div className="card">
-          <div className="card-head">
-            {t("formFocus")}
-            <span className="mono">{formatTracked(tracked)}</span>
-          </div>
+        <PanelSection
+          key={`tags:${task.id}`}
+          title={t("formTags")}
+          summary={task.tags.length > 0 ? task.tags.map((tag) => `#${tag}`).join(" ") : null}
+          defaultOpen={task.tags.length > 0}
+        >
+          <Field label={t("formTags")} hint={t("formTagsHint")}>
+            <input
+              className="input"
+              value={tagInput}
+              placeholder={t("tagsPlaceholder")}
+              onChange={(e) => setTagInput(e.target.value)}
+              onBlur={() => {
+                const tags = tagInput
+                  .split(",")
+                  .map((t) => t.trim().replace(/^#/, ""))
+                  .filter(Boolean);
+                if (tags.join(",") !== task.tags.join(","))
+                  updateTask(task.id, { tags });
+              }}
+            />
+          </Field>
+        </PanelSection>
 
+        {/* No second start button: the one at the top of the panel already
+            starts and stops this task's timer, and two of them left users
+            wondering whether they were the same clock. */}
+        <PanelSection
+          key={`focus:${task.id}`}
+          title={t("formFocus")}
+          summary={tracked > 0 ? formatTracked(tracked) : null}
+        >
           <Field label={t("formEstimate")}>
             <div className="row" style={{ gap: 6 }}>
               <input
@@ -478,16 +528,7 @@ export function TaskPanel({
               ) : null}
             </div>
           </Field>
-
-          <button
-            type="button"
-            className={isFocused ? "btn danger" : "btn"}
-            onClick={() => (isFocused ? stopFocus() : startFocus(instance))}
-          >
-            {isFocused ? <Square size={14} /> : <Play size={14} />}
-            {isFocused ? t("formStopTimer") : t("formStartTimer")}
-          </button>
-        </div>
+        </PanelSection>
 
         {resistance.level !== "none" ? (
           <div className={cn("card", "resistance", resistance.level)}>
@@ -528,10 +569,13 @@ export function TaskPanel({
           </div>
         ) : null}
 
-        <div className="card">
-          <div className="card-head">{t("formHistory")}</div>
+        <PanelSection
+          key={`history:${task.id}`}
+          title={t("formHistory")}
+          summary={history.length > 0 ? t("historyCount", { n: history.length }) : null}
+        >
           <HistoryTimeline entries={history} />
-        </div>
+        </PanelSection>
       </div>
 
       <div className="panel-foot">
@@ -575,5 +619,47 @@ export function TaskPanel({
         </button>
       </div>
     </aside>
+  );
+}
+
+/**
+ * One foldable block of the panel.
+ *
+ * The panel used to show every control it owns at once — end dates, repeat
+ * rules, tags, estimates — whether or not the task used any of them, and most
+ * tasks use almost none. So a section that holds nothing collapses to a single
+ * line, and one that holds something says what, in the same line, without being
+ * opened. The controls did not go anywhere; they stopped shouting.
+ */
+function PanelSection({
+  title,
+  summary,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  /** What this section holds, read at a glance while it is shut. */
+  summary?: string | null;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className={cn("card", "panel-section", open && "is-open")}>
+      <button
+        type="button"
+        className="panel-section-head"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <ChevronRight size={13} className="panel-section-caret" aria-hidden />
+        <span className="panel-section-title">{title}</span>
+        {!open && summary ? (
+          <span className="panel-section-summary">{summary}</span>
+        ) : null}
+      </button>
+      {open ? <div className="panel-section-body">{children}</div> : null}
+    </div>
   );
 }
