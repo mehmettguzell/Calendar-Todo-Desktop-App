@@ -12,7 +12,13 @@ import {
   Trash2,
 } from "lucide-react";
 import { toLocalDate } from "@/domain/datetime";
-import { PRIORITIES, type Priority, type Task, type TaskInstance } from "@/domain/types";
+import { arrangePinned, pinOf } from "@/domain/manualOrder";
+import {
+  PRIORITIES,
+  type Priority,
+  type Task,
+  type TaskInstance,
+} from "@/domain/types";
 import { toInstance } from "@/domain/task";
 import {
   useCategories,
@@ -20,7 +26,8 @@ import {
   useLiveTasks,
 } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
-import { useListReorder } from "@/ui/task/useListReorder";
+import { useListReorder, type RowReorder } from "@/ui/task/useListReorder";
+import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
 import { Checkbox, Field, Modal } from "@/ui/components/primitives";
 import { cn } from "@/lib/cn";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
@@ -114,6 +121,7 @@ export function PlansView({
 }) {
   const tasks = useLiveTasks();
   const createTask = useStore((s) => s.createTask);
+  const reorderTasks = useStore((s) => s.reorderTasks);
   const now = useNow();
   const { t } = useI18n();
   const categories = useCategories();
@@ -122,10 +130,12 @@ export function PlansView({
   const [newPlanModal, setNewPlanModal] = useState(false);
   const [inlineTitle, setInlineTitle] = useState("");
 
-  const plans = useMemo(
-    () => tasks.filter((t) => t.tags.includes("plan") && !t.parentId),
-    [tasks],
-  );
+  const plans = useMemo(() => {
+    const raw = tasks
+      .filter((t) => t.tags.includes("plan") && !t.parentId)
+      .sort((a, b) => a.order - b.order);
+    return arrangePinned(raw, pinOf);
+  }, [tasks]);
 
   const subtasksMap = useMemo(() => {
     const map = new Map<string, Task[]>();
@@ -156,6 +166,12 @@ export function PlansView({
     });
   }, [plans, subtasksMap, filter]);
 
+  const planReorder = useListReorder({
+    listId: "plans:grid",
+    ids: visiblePlans.map((p) => p.id),
+    onReorder: reorderTasks,
+  });
+
   const handleQuickAdd = () => {
     const trimmed = inlineTitle.trim();
     if (!trimmed) return;
@@ -171,11 +187,10 @@ export function PlansView({
   };
 
   const handleApplyStarter = (starter: PlanStarter) => {
-    const cat = categories.find(
-      (c) =>
-        (
-          STARTER_CATEGORY_NAMES[starter.categoryKey] as readonly string[]
-        ).some((name) => name.toLowerCase() === c.name.toLowerCase()),
+    const cat = categories.find((c) =>
+      (STARTER_CATEGORY_NAMES[starter.categoryKey] as readonly string[]).some(
+        (name) => name.toLowerCase() === c.name.toLowerCase(),
+      ),
     );
     const plan = createTask({
       title: `${starter.emoji} ${t(starter.titleKey)}`,
@@ -238,13 +253,16 @@ export function PlansView({
             </button>
           </div>
 
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => setNewPlanModal(true)}
-          >
-            <Plus size={14} /> {t("plansNewButton")}
-          </button>
+          <div className="row" style={{ gap: 6 }}>
+            <ResetOrderButton tasks={plans} />
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setNewPlanModal(true)}
+            >
+              <Plus size={14} /> {t("plansNewButton")}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -308,8 +326,11 @@ export function PlansView({
           <p className="faint">Bu filtreye uygun plan bulunamadı.</p>
         </div>
       ) : (
-        <div className="plans-grid">
-          {visiblePlans.map((plan) => (
+        <div
+          className={cn("plans-grid", planReorder.active && "reordering")}
+          {...planReorder.containerProps}
+        >
+          {visiblePlans.map((plan, index) => (
             <PlanCard
               key={plan.id}
               plan={plan}
@@ -317,6 +338,7 @@ export function PlansView({
               selected={plan.id === selectedKey}
               onOpen={onOpen}
               now={now}
+              reorder={planReorder.row(index)}
             />
           ))}
         </div>
@@ -370,12 +392,14 @@ function PlanCard({
   selected,
   onOpen,
   now,
+  reorder,
 }: {
   plan: Task;
   subtasks: Task[];
   selected: boolean;
   onOpen: (instance: TaskInstance) => void;
   now: Date;
+  reorder?: RowReorder;
 }) {
   const { t } = useI18n();
   const toggleComplete = useStore((s) => s.toggleComplete);
@@ -429,11 +453,17 @@ function PlanCard({
    * rows hidden behind "+N more" stale numbers that collide with the new ones.
    * Visible rows are a prefix of the full list, so their indices already line up.
    */
-  const reorder = useListReorder({
+  const subtaskReorder = useListReorder({
     listId: `plan:${plan.id}`,
     ids: subtasks.map((sub) => sub.id),
     onReorder: (orderedIds) => reorderSubtasks(plan.id, orderedIds),
   });
+
+  const {
+    onGripKeyDown: onPlanGripKeyDown,
+    className: planDragClass,
+    ...planDragHandlers
+  } = reorder ?? ({} as Partial<RowReorder>);
 
   const handleAddSubtask = () => {
     const trimmed = newSubtask.trim();
@@ -453,11 +483,26 @@ function PlanCard({
         "plan-card",
         selected && "selected",
         isPlanCompleted && "completed",
+        planDragClass,
       )}
+      {...planDragHandlers}
     >
       {/* Plan Card Head */}
       <div className="plan-card-head">
         <div className="plan-card-title-row" onClick={openPlan}>
+          {reorder && (
+            <div
+              role="button"
+              tabIndex={0}
+              className="plan-card-grip"
+              aria-label={t("taskReorderAria", { title: plan.title })}
+              title={t("taskReorderHint")}
+              onKeyDown={onPlanGripKeyDown}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <GripVertical size={14} />
+            </div>
+          )}
           <Target
             size={18}
             className={cn(
@@ -568,71 +613,77 @@ function PlanCard({
                 Henüz alt hedef eklenmemiş.
               </div>
             ) : (
-              <div {...reorder.containerProps}>
+              <div {...subtaskReorder.containerProps}>
                 {visibleSubtasks.map((sub, index) => {
-                const subDone = sub.status === "COMPLETED";
-                const subInstance = toInstance(sub, sub.dueDate, null, now);
-                const isSubToday = sub.dueDate === today;
-                const {
-                  onGripKeyDown,
-                  className: dragClass,
-                  ...dragHandlers
-                } = reorder.row(index);
-                return (
-                  <div
-                    key={sub.id}
-                    className={cn("plan-subtask-item", subDone && "done", dragClass)}
-                    {...dragHandlers}
-                  >
-                    <Checkbox
-                      done={subDone}
-                      onToggle={() => toggleComplete(subInstance)}
-                    />
-                    <span
-                      className="plan-subtask-label grow truncate"
-                      onClick={() => onOpen(subInstance)}
-                      title={t("plansSubtaskOpen")}
-                    >
-                      {sub.title}
-                    </span>
-                    {isSubToday && (
-                      <span
-                        className="plan-subtask-today-tag"
-                        title={t("plansAssignedToday")}
-                      >
-                        <Sun size={10} /> Bugün
-                      </span>
-                    )}
+                  const subDone = sub.status === "COMPLETED";
+                  const subInstance = toInstance(sub, sub.dueDate, null, now);
+                  const isSubToday = sub.dueDate === today;
+                  const {
+                    onGripKeyDown,
+                    className: dragClass,
+                    ...dragHandlers
+                  } = subtaskReorder.row(index);
+                  return (
                     <div
-                      role="button"
-                      tabIndex={0}
-                      className="plan-subtask-grip"
-                      aria-label={t("taskReorderAria", { title: sub.title })}
-                      title={t("taskReorderHint")}
-                      onKeyDown={onGripKeyDown}
-                    >
-                      <GripVertical size={12} />
-                    </div>
-                    <button
-                      type="button"
+                      key={sub.id}
                       className={cn(
-                        "btn ghost icon xs plan-subtask-today-btn",
-                        isSubToday && "active",
+                        "plan-subtask-item",
+                        subDone && "done",
+                        dragClass,
                       )}
-                      title={isSubToday ? t("removeFromToday") : t("assignToToday")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        updateTask(sub.id, {
-                          dueDate: isSubToday ? null : today,
-                          allDay: true,
-                        });
-                      }}
-                      style={isSubToday ? { color: "#f59e0b" } : undefined}
+                      {...dragHandlers}
                     >
-                      <Sun size={12} />
-                    </button>
-                  </div>
-                );
+                      <Checkbox
+                        done={subDone}
+                        onToggle={() => toggleComplete(subInstance)}
+                      />
+                      <span
+                        className="plan-subtask-label grow truncate"
+                        onClick={() => onOpen(subInstance)}
+                        title={t("plansSubtaskOpen")}
+                      >
+                        {sub.title}
+                      </span>
+                      {isSubToday && (
+                        <span
+                          className="plan-subtask-today-tag"
+                          title={t("plansAssignedToday")}
+                        >
+                          <Sun size={10} /> Bugün
+                        </span>
+                      )}
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        className="plan-subtask-grip"
+                        aria-label={t("taskReorderAria", { title: sub.title })}
+                        title={t("taskReorderHint")}
+                        onKeyDown={onGripKeyDown}
+                      >
+                        <GripVertical size={12} />
+                      </div>
+                      <button
+                        type="button"
+                        className={cn(
+                          "btn ghost icon xs plan-subtask-today-btn",
+                          isSubToday && "active",
+                        )}
+                        title={
+                          isSubToday ? t("removeFromToday") : t("assignToToday")
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateTask(sub.id, {
+                            dueDate: isSubToday ? null : today,
+                            allDay: true,
+                          });
+                        }}
+                        style={isSubToday ? { color: "#f59e0b" } : undefined}
+                      >
+                        <Sun size={12} />
+                      </button>
+                    </div>
+                  );
                 })}
               </div>
             )}
