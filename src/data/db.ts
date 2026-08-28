@@ -121,19 +121,37 @@ export function defaultBudgetCategories(
  * of half-translation. They stay ordinary user data afterwards: switching
  * language later does not rename them, because by then they may hold work.
  */
+/**
+ * The categories a brand-new account starts with.
+ *
+ * Six, not sixteen: a seeded list is a suggestion of how to file things, and a
+ * long one reads as a chore to prune. These are the buckets almost everyone
+ * turns out to need, and every one of them is an ordinary category afterwards —
+ * rename it, recolour it, delete it.
+ */
 const SEED_CATEGORIES = {
-  tr: ["İş", "Kişisel", "Sağlık"],
-  en: ["Work", "Personal", "Health"],
+  tr: ["İş", "Kişisel", "Sağlık", "Ev", "Alışveriş", "Öğrenme"],
+  en: ["Work", "Personal", "Health", "Home", "Errands", "Learning"],
 } as const;
+
+/** Paired with the seeds by position, from the shared palette. */
+const SEED_CATEGORY_COLORS = [
+  "#3b82f6",
+  "#22c55e",
+  "#ec4899",
+  "#f97316",
+  "#eab308",
+  "#8b5cf6",
+];
 
 function defaultCategories(
   language: "tr" | "en" = DEFAULT_SETTINGS.language ?? "en",
 ): Category[] {
-  const colors = ["#3b82f6", "#22c55e", "#ec4899"];
   return (SEED_CATEGORIES[language] ?? SEED_CATEGORIES.en).map((name, index) => ({
     id: createId("c"),
     name,
-    color: colors[index] as string,
+    // Modulo so adding a seed can never hand a category `undefined` for a colour.
+    color: SEED_CATEGORY_COLORS[index % SEED_CATEGORY_COLORS.length] as string,
     order: index,
   }));
 }

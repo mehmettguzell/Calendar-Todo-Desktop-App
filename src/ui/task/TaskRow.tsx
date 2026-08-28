@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
 import {
   useCategoryIndex,
+  useHasReminder,
   useSubtasks,
   useTrackedSeconds,
 } from "@/state/selectors";
@@ -57,7 +58,7 @@ export function TaskRow({
   const startFocus = useStore((s) => s.startFocus);
   const stopFocus = useStore((s) => s.stopFocus);
   const runningFocus = useStore((s) => s.runningFocus);
-  const reminders = useStore((s) => s.db.reminders);
+  const hasReminder = useHasReminder(task.id);
   const categories = useCategoryIndex();
   const subtasks = useSubtasks(task.id);
   const tracked = useTrackedSeconds(task.id);
@@ -67,9 +68,6 @@ export function TaskRow({
   const category = task.categoryId ? categories.get(task.categoryId) : null;
   const done = instance.storedStatus === "COMPLETED";
   const doneSubtasks = subtasks.filter((s) => s.status === "COMPLETED").length;
-  const hasReminder = reminders.some(
-    (r) => r.taskId === task.id && r.status !== "DISMISSED",
-  );
   const isFocused = runningFocus?.taskId === task.id;
 
   const time =

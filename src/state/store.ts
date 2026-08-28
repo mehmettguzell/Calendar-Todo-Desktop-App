@@ -208,6 +208,7 @@ interface StoreState {
   startFocus(instance: TaskInstance): void;
   stopFocus(): void;
   cancelFocus(): void;
+  /** Drop one recorded session. */
   deleteFocusSession(sessionId: string): void;
   clearFocusSessions(): void;
 
@@ -1107,40 +1108,57 @@ export const useStore = create<StoreState>((set, get) => {
       );
     },
 
+    /*
+     * Every one of these leaves a tombstone behind.
+     *
+     * A session that is merely absent locally is indistinguishable from one
+     * this device has not downloaded yet, so the next sync helpfully hands it
+     * back — which is exactly what deleting a session used to look like. The
+     * tombstone is what makes the deletion a fact the cloud has to honour.
+     */
     cancelFocus() {
       const running = get().runningFocus;
       if (!running) return;
       set({ runningFocus: null });
+      const at = nowInstant();
       commit((db) => ({
         ...db,
         focusSessions: db.focusSessions.filter(
           (s) => s.id !== running.sessionId,
         ),
-      }));
-    },
-
-    deleteFocusSession(id) {
-      const at = nowInstant();
-      commit((db) => ({
-        ...db,
-        focusSessions: db.focusSessions.filter((s) => s.id !== id),
         tombstones: pruneTombstones([
           ...db.tombstones,
-          tombstone("focus", id, at),
+          tombstone("focus", running.sessionId, at),
         ]),
       }));
     },
 
-    clearFocusSessions() {
+    deleteFocusSession(sessionId) {
       const at = nowInstant();
-      const current = get().db.focusSessions;
+      if (get().runningFocus?.sessionId === sessionId) set({ runningFocus: null });
+      commit((db) =>
+        db.focusSessions.some((s) => s.id === sessionId)
+          ? {
+              ...db,
+              focusSessions: db.focusSessions.filter((s) => s.id !== sessionId),
+              tombstones: pruneTombstones([
+                ...db.tombstones,
+                tombstone("focus", sessionId, at),
+              ]),
+            }
+          : db,
+      );
+    },
+
+    clearFocusSessions() {
       set({ runningFocus: null });
+      const at = nowInstant();
       commit((db) => ({
         ...db,
         focusSessions: [],
         tombstones: pruneTombstones([
           ...db.tombstones,
-          ...current.map((s) => tombstone("focus", s.id, at)),
+          ...db.focusSessions.map((s) => tombstone("focus", s.id, at)),
         ]),
       }));
     },

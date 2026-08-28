@@ -308,6 +308,44 @@
   background: var(--surface);
 }
 
+/* A popover that has to open upwards, because its trigger sits on the bottom
+   edge of the window. `.popover` itself takes no vertical anchor, so it is made
+   relative here and the wrapper does the lifting. */
+.popover-up {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 4px;
+}
+
+.popover-up > .popover {
+  position: relative;
+}
+
+/* One row of the plan menu hanging off the panel's footer button. */
+.popover-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 190px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.popover-item:hover,
+.popover-item:focus-visible {
+  background: var(--surface-hover);
+}
+
+.popover-item .truncate {
+  min-width: 0;
+}
+
 /* -------------------------------------------------- the task panel's folds */
 
 /* The always-open block: the two or three edits nearly every visit makes. */

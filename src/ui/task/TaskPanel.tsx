@@ -9,8 +9,10 @@ import {
 import {
   AlarmClock,
   ChevronRight,
+  CornerDownRight,
   Copy,
   Plus,
+  Target,
   Trash2,
   Unlink,
   X,
@@ -18,6 +20,7 @@ import {
 } from "lucide-react";
 import { formatTracked, localeTag, weekdayNames } from "@/domain/datetime";
 import { describeRecurrence } from "@/domain/recurrence";
+import { plansAcceptingTask } from "@/domain/task";
 import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
 import { PRIORITIES, type Priority, type TaskInstance } from "@/domain/types";
@@ -29,11 +32,10 @@ import {
   useTaskById,
 } from "@/state/selectors";
 import { useStore } from "@/state/store";
-import { Field, StatusBadge, Switch } from "@/ui/components/primitives";
+import { Field, Popover, StatusBadge, Switch } from "@/ui/components/primitives";
 import { useClipboardStore } from "@/state/clipboardStore";
 import { ExtraDaysPicker } from "./ExtraDaysPicker";
 import { taskResistance } from "@/domain/resistance";
-import { HistoryTimeline } from "./HistoryTimeline";
 import { RecurrenceEditor } from "./RecurrenceEditor";
 import { ReminderEditor } from "./ReminderEditor";
 import { SnoozeMenu } from "./SnoozeMenu";
@@ -43,7 +45,7 @@ import { SubtaskList } from "./SubtaskList";
  * The task's single editing surface.
  *
  * Everything the spec attaches to a task lives here, on one record: schedule,
- * category, tags, subtasks, recurrence, reminders, focus time and history.
+ * category, tags, subtasks, recurrence, reminders and focus time.
  * Edits write straight to the store, so the calendar behind the panel updates
  * as you type.
  */
@@ -99,6 +101,12 @@ export function TaskPanel({
     return task.endDate ? t("formEndDate") : null;
   }, [task.recurrence, task.endDate, t]);
   const doneSubtasks = subtasks.filter((s) => s.status === "COMPLETED").length;
+  const allTasks = useStore((s) => s.db.tasks);
+  const isPlan = task.tags.includes("plan") && task.parentId === null;
+  const openPlans = useMemo(
+    () => plansAcceptingTask(allTasks, task),
+    [allTasks, task],
+  );
 
   /**
    * What the task's own history says about how it is going.
@@ -131,6 +139,7 @@ export function TaskPanel({
   const [description, setDescription] = useState(task.description);
   const [tagInput, setTagInput] = useState(task.tags.join(", "));
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [planMenuOpen, setPlanMenuOpen] = useState(false);
 
   // Re-seed local text state when a different task is opened.
   useEffect(() => {
@@ -568,14 +577,6 @@ export function TaskPanel({
             </button>
           </div>
         ) : null}
-
-        <PanelSection
-          key={`history:${task.id}`}
-          title={t("formHistory")}
-          summary={history.length > 0 ? t("historyCount", { n: history.length }) : null}
-        >
-          <HistoryTimeline entries={history} />
-        </PanelSection>
       </div>
 
       <div className="panel-foot">
@@ -584,29 +585,79 @@ export function TaskPanel({
             date: new Date(task.createdAt).toLocaleDateString(localeTag()),
           })}
         </span>
-        {task.tags.includes("plan") ? (
+        {/* Everything a task's relationship to the plans can be, behind one
+            button. It used to be a right-click menu on the row, which is a
+            gesture nobody finds, and a separate button that could only ever
+            make a plan — never file the task into one. */}
+        <div style={{ position: "relative" }}>
           <button
             type="button"
             className="btn ghost sm"
-            onClick={() => {
-              updateTask(task.id, {
-                tags: task.tags.filter((t) => t !== "plan"),
-              });
-            }}
+            aria-expanded={planMenuOpen}
+            onClick={() => setPlanMenuOpen((v) => !v)}
           >
-            {t("removeFromPlans")}
+            <Target size={14} /> {t("moveToPlans")}
           </button>
-        ) : (
-          <button
-            type="button"
-            className="btn ghost sm"
-            // One implementation of "become a plan", shared with the row menu,
-            // so the two cannot drift into producing different plans.
-            onClick={() => makePlan(task.id)}
-          >
-            {t("moveToPlans")}
-          </button>
-        )}
+          {planMenuOpen ? (
+            <div className="popover-up">
+              <Popover onClose={() => setPlanMenuOpen(false)} align="right">
+                {isPlan ? (
+                  <button
+                    type="button"
+                    className="popover-item"
+                    onClick={() => {
+                      updateTask(task.id, {
+                        tags: task.tags.filter((tag) => tag !== "plan"),
+                      });
+                      setPlanMenuOpen(false);
+                    }}
+                  >
+                    <Unlink size={14} /> {t("removeFromPlans")}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="popover-item"
+                    onClick={() => {
+                      makePlan(task.id);
+                      setPlanMenuOpen(false);
+                    }}
+                  >
+                    <Target size={14} /> {t("menuMakePlan")}
+                  </button>
+                )}
+
+                {openPlans.map((plan) => (
+                  <button
+                    key={plan.id}
+                    type="button"
+                    className="popover-item"
+                    onClick={() => {
+                      setParent(task.id, plan.id);
+                      setPlanMenuOpen(false);
+                    }}
+                  >
+                    <CornerDownRight size={14} />
+                    <span className="truncate">{plan.title}</span>
+                  </button>
+                ))}
+
+                {parentTask ? (
+                  <button
+                    type="button"
+                    className="popover-item"
+                    onClick={() => {
+                      setParent(task.id, null);
+                      setPlanMenuOpen(false);
+                    }}
+                  >
+                    <Unlink size={14} /> {t("detachFromParent", { title: parentTask.title })}
+                  </button>
+                ) : null}
+              </Popover>
+            </div>
+          ) : null}
+        </div>
         <button
           type="button"
           className="btn danger"

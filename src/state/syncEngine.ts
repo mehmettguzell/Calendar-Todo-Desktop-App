@@ -351,10 +351,6 @@ function queueTombstones(prev: Tombstone[], next: Tombstone[]): void {
         // travels as an ordinary update.
         pendingTransactionIds.add(stone.id);
         break;
-      case "focus":
-        pendingFocusIds.delete(stone.id);
-        pendingDeletedFocusIds.add(stone.id);
-        break;
       default:
         break;
     }
@@ -431,6 +427,8 @@ function stopSync() {
   }
   isSyncing = false;
   syncedNamespace = null;
+  pullCursor = null;
+  lastFullPassAt = 0;
   useSyncStore.getState().setRealtime("down");
 }
 
@@ -845,6 +843,64 @@ const syncedFocusIds = new Set<string>();
  */
 const syncedHistoryIds = new Set<string>();
 
+/**
+ * How far the last successful pull got, per table.
+ *
+ * A full pass downloads the whole account, which is the only way to answer
+ * "does the cloud have a row this device is missing, or the other way round?".
+ * Once that question has been answered for this session, the next passes only
+ * need what changed since — which on a slow connection is the difference
+ * between a few rows and the entire account, every time the window regains
+ * focus.
+ *
+ * Deliberately not persisted. A cursor that outlives the process is a cursor
+ * that can be wrong about a sync that never finished, and the cost of being
+ * wrong is a silently missing row. Restarting the app costs one full pass and
+ * buys certainty.
+ */
+interface PullCursor {
+  userId: string;
+  /** Max `updated_at` seen. Re-fetched inclusively; re-applying a row is a no-op. */
+  tasks: string | null;
+  categories: string | null;
+  /** Focus rows never change after insert, so `created_at` is the watermark. */
+  focus: string | null;
+}
+
+let pullCursor: PullCursor | null = null;
+let lastFullPassAt = 0;
+
+/**
+ * How far the watermark is rewound before it is used.
+ *
+ * `updated_at` is written by whichever device made the edit, from its own
+ * clock. A machine running two minutes slow would stamp its edits below a
+ * watermark taken from a machine running on time, and `gte` would step
+ * straight over them. Rewinding costs a few rows re-read per pass and buys
+ * back that entire class of missed edit.
+ */
+const CLOCK_SKEW_ALLOWANCE_MS = 2 * 60_000;
+
+/**
+ * Incremental reads are a saving, not a source of truth. Whatever they miss —
+ * a hard-deleted focus row, an edit from a device with a badly wrong clock —
+ * is repaired the next time the whole account is read, so that has a deadline.
+ */
+const FULL_PASS_INTERVAL_MS = 15 * 60_000;
+
+/**
+ * Rewind a watermark by the skew allowance, at the moment it becomes a query.
+ *
+ * Never stored rewound: a stored-and-rewound cursor is rewound again on the
+ * next pass, and walks steadily backwards until it is fetching everything.
+ */
+export function rewound(stamp: string | null): string | null {
+  if (!stamp) return null;
+  const ms = new Date(stamp).getTime();
+  if (Number.isNaN(ms)) return null;
+  return new Date(ms - CLOCK_SKEW_ALLOWANCE_MS).toISOString();
+}
+
 function forgetSyncedState() {
   syncedTaskFingerprints.clear();
   syncedCategoryFingerprints.clear();
@@ -897,7 +953,6 @@ const pendingDeletedOccurrenceIds = new Set<string>();
 const pendingDeletedReminderIds = new Set<string>();
 const pendingDeletedBudgetCategoryIds = new Set<string>();
 const pendingFocusIds = new Set<string>();
-const pendingDeletedFocusIds = new Set<string>();
 const pendingHistoryIds = new Set<string>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight: Promise<void> | null = null;
@@ -915,7 +970,6 @@ const ALL_QUEUES = [
   pendingDeletedReminderIds,
   pendingDeletedBudgetCategoryIds,
   pendingFocusIds,
-  pendingDeletedFocusIds,
   pendingHistoryIds,
 ];
 
@@ -1132,19 +1186,6 @@ async function flushPendingWrites(): Promise<void> {
     );
     await writeFocusSessions(sessionsToWrite, userId);
 
-    if (deletedFocusIds.length > 0) {
-      const { error } = await withTimeout(
-        supabase
-          .from("focus_sessions")
-          .delete()
-          .in("id", deletedFocusIds)
-          .eq("user_id", userId),
-        "focus session delete",
-      );
-      if (error) throw error;
-      for (const id of deletedFocusIds) syncedFocusIds.delete(id);
-    }
-
     const pendingHistorySet = new Set(historyIds);
     await writeHistory(
       db.history.filter(
@@ -1175,7 +1216,6 @@ async function flushPendingWrites(): Promise<void> {
       pendingDeletedBudgetCategoryIds.add(id);
     }
     for (const id of focusIds) pendingFocusIds.add(id);
-    for (const id of deletedFocusIds) pendingDeletedFocusIds.add(id);
     for (const id of historyIds) pendingHistoryIds.add(id);
 
     const kind = classifySyncError(err);
@@ -1940,9 +1980,6 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
 
   useSyncStore.getState().setPhase("syncing");
 
-  // Anything already queued belongs in this pass, not racing alongside it.
-  await drainPendingWrites();
-
   isApplyingRemoteUpdate = true;
   let uploadedTasks = 0;
   let downloadedTasks = 0;
@@ -1950,9 +1987,26 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
   let downloadedCategories = 0;
 
   try {
+    // Anything already queued belongs in this pass, not racing alongside it.
+    // Inside the try on purpose: this used to run before it, so a failure here
+    // escaped the catch below and left the phase reading "syncing" for the rest
+    // of the session — a spinner that never resolves and never explains itself.
+    await drainPendingWrites();
+
     await ensureProfileRow(userId);
 
-    // 1. Fetch all cloud data
+    /*
+     * A full pass reads the whole account; an incremental one reads only what
+     * changed since the last success. The difference matters beyond bandwidth:
+     * only a full set can answer "the cloud is missing this row", so the
+     * branches that upload on that basis are skipped below when `incremental`.
+     */
+    const fullPassDue = Date.now() - lastFullPassAt >= FULL_PASS_INTERVAL_MS;
+    const incremental =
+      pullCursor !== null && pullCursor.userId === userId && !fullPassDue;
+    const since = incremental ? pullCursor : null;
+
+    // 1. Fetch cloud data — everything, or everything new
     const [
       tasksRes,
       catsRes,
@@ -1964,15 +2018,27 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       historyRes,
     ] = await Promise.all([
       withTimeout(
-        supabase.from("tasks").select("*").eq("user_id", userId),
+        sinceFilter(
+          supabase.from("tasks").select("*").eq("user_id", userId),
+          "updated_at",
+          rewound(since?.tasks ?? null),
+        ),
         "task fetch",
       ),
       withTimeout(
-        supabase.from("categories").select("*").eq("user_id", userId),
+        sinceFilter(
+          supabase.from("categories").select("*").eq("user_id", userId),
+          "updated_at",
+          rewound(since?.categories ?? null),
+        ),
         "category fetch",
       ),
       withTimeout(
-        supabase.from("focus_sessions").select("*").eq("user_id", userId),
+        sinceFilter(
+          supabase.from("focus_sessions").select("*").eq("user_id", userId),
+          "created_at",
+          rewound(since?.focus ?? null),
+        ),
         "focus fetch",
       ),
       fetchOptional("occurrences", userId),
@@ -2005,11 +2071,13 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
     const catsToUpload: Category[] = [];
     for (const localCat of localDb.categories) {
       const cloudCat = cloudCatMap.get(localCat.id);
-      if (
-        !cloudCat ||
+      // Absent from a partial fetch means "unchanged lately", not "missing".
+      const missing = !cloudCat && !incremental;
+      const differs =
+        cloudCat !== undefined &&
         cloudCategoryFingerprint(cloudCat) !==
-          localCategoryFingerprint(localCat)
-      ) {
+          localCategoryFingerprint(localCat);
+      if (missing || differs) {
         catsToUpload.push(localCat);
         uploadedCategories++;
       }
@@ -2089,8 +2157,12 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
     for (const localTask of localDb.tasks) {
       const cloudTask = cloudTaskMap.get(localTask.id);
       if (!cloudTask) {
-        tasksToUpload.push(localTask);
-        uploadedTasks++;
+        // Same reasoning as categories: only a full pass can tell a row the
+        // cloud never received from one it simply has not changed today.
+        if (!incremental) {
+          tasksToUpload.push(localTask);
+          uploadedTasks++;
+        }
         continue;
       }
 
@@ -2204,10 +2276,15 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
     const localFocusMap = new Map(localDb.focusSessions.map((f) => [f.id, f]));
     const cloudFocusIds = new Set(cloudFocusRaw.map((f) => f.id));
 
-    // Upload local sessions that cloud does not have (and that are not tombstoned)
-    const focusToUpload = localDb.focusSessions.filter(
-      (f) => !cloudFocusIds.has(f.id) && !tombstoned.focus.has(f.id),
-    );
+    // Focus rows are hard-deleted rather than flagged, so a deletion made on
+    // another device is invisible to an incremental read — there is no row to
+    // carry the news. Both directions of focus reconciliation therefore wait
+    // for a full pass.
+    const focusToUpload = incremental
+      ? []
+      : localDb.focusSessions.filter(
+          (f) => !cloudFocusIds.has(f.id) && !tombstoned.focus.has(f.id),
+        );
     if (focusToUpload.length > 0) {
       await writeFocusSessions(focusToUpload, userId);
     }
@@ -2256,8 +2333,25 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       const cloudHistoryIds = new Set(
         historyRes.data.map((h) => h.id as string),
       );
+      /*
+       * Only the newest hundred entries are ever fetched, so "not in the cloud
+       * set" is only meaningful for entries inside that window. Testing the
+       * whole local trail against it re-uploaded every older entry on every
+       * single pass — a bill that grew with the trail and never went down.
+       */
+      const oldestCloudAt = historyRes.data.reduce<string | null>(
+        (oldest, row) => {
+          const at = row.at as string;
+          return oldest === null || at < oldest ? at : oldest;
+        },
+        null,
+      );
       await writeHistory(
-        localDb.history.filter((h) => !cloudHistoryIds.has(h.id)),
+        localDb.history.filter(
+          (h) =>
+            !cloudHistoryIds.has(h.id) &&
+            (oldestCloudAt === null || h.at >= oldestCloudAt),
+        ),
         userId,
       );
 
@@ -2330,6 +2424,23 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
     for (const session of mergedFocus) syncedFocusIds.add(session.id);
     for (const entry of mergedHistory) syncedHistoryIds.add(entry.id);
 
+    /*
+     * Both sides now agree, so the next pass can ask for changes only.
+     *
+     * The watermark is the newest timestamp the *server* returned, never this
+     * device's clock: two machines disagreeing about the time by a few seconds
+     * is ordinary, and a cursor built from local time would step over rows
+     * written in that gap. A fetch that returned nothing keeps the previous
+     * watermark rather than resetting it.
+     */
+    pullCursor = {
+      userId,
+      tasks: newestStamp(cloudTasksRaw, "updated_at", since?.tasks ?? null),
+      categories: newestStamp(cloudCatsRaw, "updated_at", since?.categories ?? null),
+      focus: newestStamp(cloudFocusRaw, "created_at", since?.focus ?? null),
+    };
+    if (!incremental) lastFullPassAt = Date.now();
+
     useSyncStore.getState().markSynced();
     useSyncStore.getState().setPending(pendingCount());
     resetRetryBudget();
@@ -2362,7 +2473,44 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
     };
   } finally {
     isApplyingRemoteUpdate = false;
+    // A pass may only end in a phase the user can act on. If something escaped
+    // both the try and the catch, "syncing" is still on screen and would stay
+    // there forever, so it is settled here rather than left spinning.
+    if (useSyncStore.getState().phase === "syncing") {
+      useSyncStore.getState().setPhase(isOnline() ? "error" : "offline", "unknown");
+    }
   }
+}
+
+/** The latest value of `column` across these rows, or the watermark we had. */
+export function newestStamp(
+  rows: Record<string, unknown>[],
+  column: string,
+  fallback: string | null,
+): string | null {
+  let newest = fallback;
+  for (const row of rows) {
+    const value = row[column];
+    if (typeof value !== "string") continue;
+    if (newest === null || value > newest) newest = value;
+  }
+  return newest;
+}
+
+/**
+ * Narrow a select to rows touched since the last successful pull.
+ *
+ * `gte`, not `gt`: the watermark is a row's own timestamp, so the boundary rows
+ * come back once more. Re-applying a row the device already has is a no-op the
+ * fingerprint check throws away, and that is a far cheaper mistake than `gt`
+ * silently skipping a row written in the same millisecond.
+ */
+function sinceFilter<T extends { gte(column: string, value: string): T }>(
+  query: T,
+  column: string,
+  since: string | null,
+): T {
+  return since ? query.gte(column, since) : query;
 }
 
 /** A select that tolerates the table not existing in this project yet. */

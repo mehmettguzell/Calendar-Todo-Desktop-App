@@ -526,7 +526,7 @@ function PlanCard({
         )}
         {plan.priority !== "NONE" && (
           <span className={cn("plan-priority-tag", plan.priority)}>
-            {plan.priority}
+            {t(`priority${plan.priority}`)}
           </span>
         )}
         {isPlanCompleted && (
