@@ -580,121 +580,125 @@ export function TaskPanel({
       </div>
 
       <div className="panel-foot">
-        <span className="grow faint" style={{ fontSize: 11.5 }}>
-          {t("createdOn", {
-            date: new Date(task.createdAt).toLocaleDateString(localeTag()),
-          })}
-        </span>
-        {/* Everything a task's relationship to the plans can be, behind one
-            button. It used to be a right-click menu on the row, which is a
-            gesture nobody finds, and a separate button that could only ever
-            make a plan — never file the task into one. */}
-        <div style={{ position: "relative" }}>
-          <button
-            type="button"
-            className="btn ghost sm"
-            aria-expanded={planMenuOpen}
-            onClick={() => setPlanMenuOpen((v) => !v)}
-          >
-            <Target size={14} /> {t("moveToPlans")}
-          </button>
-          {planMenuOpen ? (
-            <div className="popover-up">
-              <Popover onClose={() => setPlanMenuOpen(false)} align="right">
-                {isPlan ? (
-                  <button
-                    type="button"
-                    className="popover-item"
-                    onClick={() => {
-                      updateTask(task.id, {
-                        tags: task.tags.filter((tag) => tag !== "plan"),
-                      });
-                      setPlanMenuOpen(false);
-                    }}
-                  >
-                    <Unlink size={14} /> {t("removeFromPlans")}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="popover-item"
-                    onClick={() => {
-                      makePlan(task.id);
-                      setPlanMenuOpen(false);
-                    }}
-                  >
-                    <Target size={14} /> {t("menuMakePlan")}
-                  </button>
-                )}
-
-                {openPlans.map((plan) => (
-                  <button
-                    key={plan.id}
-                    type="button"
-                    className="popover-item"
-                    onClick={() => {
-                      setParent(task.id, plan.id);
-                      setPlanMenuOpen(false);
-                    }}
-                  >
-                    <CornerDownRight size={14} />
-                    <span className="truncate">{plan.title}</span>
-                  </button>
-                ))}
-
-                {parentTask ? (
-                  <button
-                    type="button"
-                    className="popover-item"
-                    onClick={() => {
-                      setParent(task.id, null);
-                      setPlanMenuOpen(false);
-                    }}
-                  >
-                    <Unlink size={14} /> {t("detachFromParent", { title: parentTask.title })}
-                  </button>
-                ) : null}
-              </Popover>
-            </div>
-          ) : null}
-        </div>
-        {parentTask && (task.dueDate || instance.date) ? (
-          <div className="row" style={{ gap: 8 }}>
+        <div className="panel-foot-actions">
+          {/* Everything a task's relationship to the plans can be, behind one
+              button. It used to be a right-click menu on the row, which is a
+              gesture nobody finds, and a separate button that could only ever
+              make a plan — never file the task into one. */}
+          <div style={{ position: "relative" }}>
             <button
               type="button"
-              className="btn ghost"
-              onClick={() => {
-                updateTask(task.id, { dueDate: null });
-                onClose();
-              }}
+              className="btn ghost sm"
+              aria-expanded={planMenuOpen}
+              onClick={() => setPlanMenuOpen((v) => !v)}
             >
-              {t("removeFromToday")}
+              <Target size={14} />
+              <span className="truncate" style={{ maxWidth: 140 }}>
+                {parentTask ? parentTask.title : t("moveToPlans")}
+              </span>
             </button>
+            {planMenuOpen ? (
+              <div className="popover-up">
+                <Popover onClose={() => setPlanMenuOpen(false)} align="left">
+                  {isPlan ? (
+                    <button
+                      type="button"
+                      className="popover-item"
+                      onClick={() => {
+                        updateTask(task.id, {
+                          tags: task.tags.filter((tag) => tag !== "plan"),
+                        });
+                        setPlanMenuOpen(false);
+                      }}
+                    >
+                      <Unlink size={14} /> {t("removeFromPlans")}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="popover-item"
+                      onClick={() => {
+                        makePlan(task.id);
+                        setPlanMenuOpen(false);
+                      }}
+                    >
+                      <Target size={14} /> {t("menuMakePlan")}
+                    </button>
+                  )}
+
+                  {openPlans.map((plan) => (
+                    <button
+                      key={plan.id}
+                      type="button"
+                      className="popover-item"
+                      onClick={() => {
+                        setParent(task.id, plan.id);
+                        setPlanMenuOpen(false);
+                      }}
+                    >
+                      <CornerDownRight size={14} />
+                      <span className="truncate">{plan.title}</span>
+                    </button>
+                  ))}
+
+                  {parentTask ? (
+                    <button
+                      type="button"
+                      className="popover-item"
+                      onClick={() => {
+                        setParent(task.id, null);
+                        setPlanMenuOpen(false);
+                      }}
+                    >
+                      <Unlink size={14} /> {t("detachFromParent", { title: parentTask.title })}
+                    </button>
+                  ) : null}
+                </Popover>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="row" style={{ gap: 6 }}>
+            {parentTask && (task.dueDate || instance.date) ? (
+              <button
+                type="button"
+                className="btn ghost sm"
+                title={t("removeFromToday")}
+                onClick={() => {
+                  updateTask(task.id, { dueDate: null });
+                  onClose();
+                }}
+              >
+                {t("removeFromTodayShort")}
+              </button>
+            ) : null}
             <button
               type="button"
-              className="btn danger"
+              className="btn danger sm"
               onClick={() => {
-                if (confirm(t("deleteSubtaskConfirm"))) {
+                if (parentTask) {
+                  if (confirm(t("deleteSubtaskConfirm"))) {
+                    deleteTask(task.id);
+                    onClose();
+                  }
+                } else {
                   deleteTask(task.id);
                   onClose();
                 }
               }}
             >
-              <Trash2 size={14} /> {t("trash")}
+              <Trash2 size={13} /> {t("trash")}
             </button>
           </div>
-        ) : (
-          <button
-            type="button"
-            className="btn danger"
-            onClick={() => {
-              deleteTask(task.id);
-              onClose();
-            }}
-          >
-            <Trash2 size={14} /> {t("trash")}
-          </button>
-        )}
+        </div>
+
+        <div className="panel-foot-meta">
+          <span className="faint" style={{ fontSize: 11 }}>
+            {t("createdOn", {
+              date: new Date(task.createdAt).toLocaleDateString(localeTag()),
+            })}
+          </span>
+        </div>
       </div>
     </aside>
   );

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import { createRepository } from "@/data/createRepository";
 import {
+  deduplicateBudgetCategories,
   deduplicateCategories,
   emptyDatabase,
   pruneTombstones,
@@ -425,8 +426,11 @@ export const useStore = create<StoreState>((set, get) => {
       return null;
     });
     const rawDb = loaded ?? emptyDatabase();
+    const lang = rawDb.settings?.language ?? "tr";
     const { categories: cleanCategories, tasks: cleanTasks } =
-      deduplicateCategories(rawDb.categories, rawDb.tasks);
+      deduplicateCategories(rawDb.categories, rawDb.tasks, lang);
+    const { budgetCategories: cleanBudgetCategories, transactions: cleanTransactions } =
+      deduplicateBudgetCategories(rawDb.budgetCategories ?? [], rawDb.transactions ?? [], lang);
     const nowMs = Date.now();
     const at = new Date(nowMs).toISOString();
     const cutoff = new Date(nowMs - TRASH_RETENTION_MS).toISOString();
@@ -442,6 +446,8 @@ export const useStore = create<StoreState>((set, get) => {
       ...rawDb,
       categories: cleanCategories,
       tasks: validTasks,
+      budgetCategories: cleanBudgetCategories,
+      transactions: cleanTransactions,
       tombstones: pruneTombstones(
         [
           ...(rawDb.tombstones ?? []),
@@ -456,7 +462,8 @@ export const useStore = create<StoreState>((set, get) => {
     if (
       !loaded ||
       expired.length > 0 ||
-      cleanCategories.length !== rawDb.categories.length
+      cleanCategories.length !== rawDb.categories.length ||
+      cleanBudgetCategories.length !== (rawDb.budgetCategories?.length ?? 0)
     ) {
       persist(db);
     }

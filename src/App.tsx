@@ -121,9 +121,13 @@ export function App() {
     // never has to decide what to do with a store that is still empty — and an
     // account switch it triggers has something concrete to switch away from.
     void (async () => {
-      await hydrate();
-      initSyncEngine();
-      await useAuthStore.getState().initAuth();
+      try {
+        await hydrate();
+        initSyncEngine();
+        await useAuthStore.getState().initAuth();
+      } catch (err) {
+        console.error("[tempo] init failed:", err);
+      }
     })();
   }, [hydrate]);
 

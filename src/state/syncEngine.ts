@@ -1,6 +1,10 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import { deduplicateCategories, pruneTombstones } from "@/data/db";
+import {
+  deduplicateBudgetCategories,
+  deduplicateCategories,
+  pruneTombstones,
+} from "@/data/db";
 import { useAuthStore } from "@/state/authStore";
 import { persist, useStore } from "@/state/store";
 import { isOnline, useSyncStore } from "@/state/syncStore";
@@ -2377,19 +2381,27 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
     }
 
     /* --- COMMIT ------------------------------------------------------- */
-    const nextCategories = deduplicateCategories(
+    const lang = useStore.getState().db.settings?.language ?? "tr";
+    const { categories: nextCategories, tasks: syncedTasks } = deduplicateCategories(
       mergedCats,
       nextTasks,
-    ).categories;
+      lang,
+    );
+    const { budgetCategories: nextBudgetCategories, transactions: syncedTransactions } =
+      deduplicateBudgetCategories(
+        mergedBudgetCategories,
+        mergedTransactions,
+        lang,
+      );
     useStore.setState((s) => ({
       db: {
         ...s.db,
-        tasks: nextTasks,
+        tasks: syncedTasks,
         categories: nextCategories,
         occurrences: mergedOccurrences,
         reminders: mergedReminders,
-        transactions: mergedTransactions,
-        budgetCategories: mergedBudgetCategories,
+        transactions: syncedTransactions,
+        budgetCategories: nextBudgetCategories,
         focusSessions: mergedFocus,
         history: mergedHistory,
         tombstones: pruneTombstones(s.db.tombstones),

@@ -2648,10 +2648,9 @@
 
 .spend-category-head {
   display: grid;
-  grid-template-columns: 14px 18px minmax(60px, 1fr) 28px minmax(
-      60px,
-      1.4fr
-    ) auto 34px auto;
+  grid-template-columns:
+    14px 18px minmax(60px, 1fr) 28px minmax(60px, 1.4fr)
+    auto 34px auto;
   align-items: center;
   gap: 8px;
   width: 100%;

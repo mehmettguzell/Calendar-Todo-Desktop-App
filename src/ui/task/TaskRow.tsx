@@ -50,7 +50,10 @@ export function TaskRow({
    */
   reorder?: RowReorder;
   /** Right-click. Left out, the row has no menu — as in Trash and search. */
-  onContextMenu?: (event: MouseEvent<HTMLDivElement>, task: TaskInstance) => void;
+  onContextMenu?: (
+    event: MouseEvent<HTMLDivElement>,
+    task: TaskInstance,
+  ) => void;
 }) {
   const { task } = instance;
   const { t } = useI18n();
@@ -69,7 +72,7 @@ export function TaskRow({
   const [snoozeOpen, setSnoozeOpen] = useState(false);
 
   const parentTask = task.parentId
-    ? tasks.find((t) => t.id === task.parentId) ?? null
+    ? (tasks.find((t) => t.id === task.parentId) ?? null)
     : null;
 
   const category = task.categoryId ? categories.get(task.categoryId) : null;
@@ -89,7 +92,12 @@ export function TaskRow({
 
   return (
     <div
-      className={cn("task-row", done && "done", selected && "selected", dragClass)}
+      className={cn(
+        "task-row",
+        done && "done",
+        selected && "selected",
+        dragClass,
+      )}
       {...dragHandlers}
       onContextMenu={
         onContextMenu ? (event) => onContextMenu(event, instance) : undefined
@@ -114,7 +122,11 @@ export function TaskRow({
             <Repeat size={13} className="faint" aria-label={t("repeatsAria")} />
           ) : null}
           {hasReminder ? (
-            <AlarmClock size={13} className="faint" aria-label={t("hasReminderAria")} />
+            <AlarmClock
+              size={13}
+              className="faint"
+              aria-label={t("hasReminderAria")}
+            />
           ) : null}
         </div>
 

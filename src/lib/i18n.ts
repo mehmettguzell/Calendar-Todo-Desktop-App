@@ -602,6 +602,7 @@ export const DICTIONARY = {
     // Tasks & Plans
     assignToToday: "Bugüne Ata",
     removeFromToday: "Bugünden / Görevlerden Kaldır (Planda kalır)",
+    removeFromTodayShort: "Bugünden Kaldır",
     quickAddPlaceholder: "Yeni bir görev ekleyin… (Örn: Raporu hazırla ve ekibe gönder)",
     allTasks: "Tümü",
     highPriority: "Yüksek Öncelikli",
@@ -1355,6 +1356,7 @@ export const DICTIONARY = {
     // Tasks & Plans
     assignToToday: "Assign to Today",
     removeFromToday: "Remove from Today (Keeps in plan)",
+    removeFromTodayShort: "Remove from Today",
     quickAddPlaceholder: "Add a new task… (e.g. Prepare report and send to team)",
     allTasks: "All",
     highPriority: "High Priority",

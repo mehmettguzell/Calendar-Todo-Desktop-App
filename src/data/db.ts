@@ -18,6 +18,50 @@ import type {
 
 export const DB_VERSION = 2;
 
+export const ENGLISH_TO_TURKISH_CATEGORY_MAP: Record<string, string> = {
+  work: "İş",
+  personal: "Kişisel",
+  health: "Sağlık",
+  home: "Ev",
+  errands: "Alışveriş",
+  shopping: "Alışveriş",
+  learning: "Öğrenme",
+  study: "Öğrenme",
+  travel: "Ulaşım",
+  finance: "Finans",
+  social: "Sosyal",
+  fitness: "Sağlık",
+};
+
+export const ENGLISH_TO_TURKISH_BUDGET_MAP: Record<string, string> = {
+  salary: "Maaş",
+  "side income": "Ek gelir",
+  rent: "Kira",
+  groceries: "Market",
+  transport: "Ulaşım",
+  bills: "Faturalar",
+  "eating out": "Yeme & içme",
+  dining: "Yeme & içme",
+  health: "Sağlık",
+  fun: "Eğlence",
+  entertainment: "Eğlence",
+  savings: "Birikim",
+  investments: "Yatırım",
+  fuel: "Akaryakıt",
+  gas: "Akaryakıt",
+  clothing: "Giyim",
+  subscriptions: "Abonelikler",
+  "personal care": "Kişisel bakım",
+  education: "Eğitim",
+  electronics: "Teknoloji",
+  home: "Ev",
+  housing: "Kira",
+  utilities: "Faturalar",
+  "cash withdrawal": "Nakit çekim",
+  "bank fees": "Banka ücretleri",
+  other: "Diğer",
+};
+
 /** The whole application state as it is written to disk: one document. */
 export interface Database {
   version: number;
@@ -53,7 +97,11 @@ export function pruneTombstones(
   return tombstones.filter((t) => t.at >= cutoff);
 }
 
-export function tombstone(kind: Tombstone["kind"], id: string, at: Instant): Tombstone {
+export function tombstone(
+  kind: Tombstone["kind"],
+  id: string,
+  at: Instant,
+): Tombstone {
   return { kind, id, at };
 }
 
@@ -92,7 +140,10 @@ export function emptyDatabase(): Database {
     tombstones: [],
     transactions: [],
     budgetCategories: defaultBudgetCategories(),
-    settings: { ...DEFAULT_SETTINGS, categorySeedVersion: CATEGORY_SEED_VERSION },
+    settings: {
+      ...DEFAULT_SETTINGS,
+      categorySeedVersion: CATEGORY_SEED_VERSION,
+    },
   };
 }
 
@@ -208,7 +259,7 @@ function backfillCategories(
 }
 
 function defaultCategories(
-  language: "tr" | "en" = DEFAULT_SETTINGS.language ?? "en",
+  language: "tr" | "en" = DEFAULT_SETTINGS.language ?? "tr",
 ): Category[] {
   return seedNames(language).map((name, index) => ({
     id: createId("c"),
@@ -222,16 +273,24 @@ function defaultCategories(
 export function deduplicateCategories(
   categories: Category[],
   tasks: Task[] = [],
+  language: "tr" | "en" = "tr",
 ): { categories: Category[]; tasks: Task[] } {
   const seen = new Map<string, Category>();
   const idRemap = new Map<string, string>();
 
   for (const cat of categories) {
-    const key = cat.name.trim().toLowerCase();
+    let name = cat.name.trim();
+    if (language === "tr") {
+      const lower = name.toLowerCase();
+      if (ENGLISH_TO_TURKISH_CATEGORY_MAP[lower]) {
+        name = ENGLISH_TO_TURKISH_CATEGORY_MAP[lower];
+      }
+    }
+    const key = name.toLowerCase();
     if (!key) continue;
     const existing = seen.get(key);
     if (!existing) {
-      seen.set(key, { ...cat, name: cat.name.trim() });
+      seen.set(key, { ...cat, name });
     } else {
       idRemap.set(cat.id, existing.id);
     }
@@ -251,8 +310,55 @@ export function deduplicateCategories(
 
   return {
     categories:
-      uniqueCategories.length > 0 ? uniqueCategories : defaultCategories(),
+      uniqueCategories.length > 0
+        ? uniqueCategories
+        : defaultCategories(language),
     tasks: remappedTasks,
+  };
+}
+
+export function deduplicateBudgetCategories(
+  categories: BudgetCategory[],
+  transactions: Transaction[] = [],
+  language: "tr" | "en" = "tr",
+): { budgetCategories: BudgetCategory[]; transactions: Transaction[] } {
+  const seen = new Map<string, BudgetCategory>();
+  const idRemap = new Map<string, string>();
+
+  for (const cat of categories) {
+    let name = (cat.name ?? "").trim();
+    if (language === "tr") {
+      const lower = name.toLowerCase();
+      if (ENGLISH_TO_TURKISH_BUDGET_MAP[lower]) {
+        name = ENGLISH_TO_TURKISH_BUDGET_MAP[lower];
+      }
+    }
+    const key = `${name.toLowerCase()}::${cat.flow}`;
+    if (!name) continue;
+    const existing = seen.get(key);
+    if (!existing) {
+      seen.set(key, { ...cat, name });
+    } else {
+      idRemap.set(cat.id, existing.id);
+    }
+  }
+
+  const unique = Array.from(seen.values()).map((c, idx) => ({
+    ...c,
+    order: idx,
+  }));
+
+  const remappedTxs = transactions.map((t) => {
+    if (t.categoryId && idRemap.has(t.categoryId)) {
+      return { ...t, categoryId: idRemap.get(t.categoryId)! };
+    }
+    return t;
+  });
+
+  return {
+    budgetCategories:
+      unique.length > 0 ? unique : defaultBudgetCategories(language),
+    transactions: remappedTxs,
   };
 }
 
@@ -270,7 +376,7 @@ export function migrate(raw: unknown): Database {
     ? doc.tasks.map(normaliseTask)
     : base.tasks;
   const settings = { ...DEFAULT_SETTINGS, ...(doc.settings ?? {}) };
-  const language = settings.language ?? "en";
+  const language = settings.language ?? "tr";
 
   const storedCategories =
     Array.isArray(doc.categories) && doc.categories.length > 0
@@ -284,7 +390,24 @@ export function migrate(raw: unknown): Database {
   );
 
   const { categories: cleanCategories, tasks: cleanTasks } =
-    deduplicateCategories(rawCategories, tasks);
+    deduplicateCategories(rawCategories, tasks, language);
+
+  const rawTransactions = Array.isArray(doc.transactions)
+    ? doc.transactions.map(normaliseTransaction)
+    : base.transactions;
+
+  const rawBudgetCategories = Array.isArray(doc.budgetCategories)
+    ? doc.budgetCategories.map(normaliseBudgetCategory)
+    : defaultBudgetCategories(language);
+
+  const {
+    budgetCategories: cleanBudgetCategories,
+    transactions: cleanTransactions,
+  } = deduplicateBudgetCategories(
+    rawBudgetCategories,
+    rawTransactions,
+    language,
+  );
 
   return {
     version: DB_VERSION,
@@ -303,14 +426,8 @@ export function migrate(raw: unknown): Database {
     tombstones: Array.isArray(doc.tombstones)
       ? pruneTombstones(doc.tombstones)
       : base.tombstones,
-    transactions: Array.isArray(doc.transactions)
-      ? doc.transactions.map(normaliseTransaction)
-      : base.transactions,
-    // An older document has no budget yet, so it gets the seeded set. An empty
-    // array is a deliberate state (the user deleted them all) and is kept.
-    budgetCategories: Array.isArray(doc.budgetCategories)
-      ? doc.budgetCategories.map(normaliseBudgetCategory)
-      : defaultBudgetCategories(doc.settings?.language ?? "en"),
+    transactions: cleanTransactions,
+    budgetCategories: cleanBudgetCategories,
     settings: { ...settings, categorySeedVersion: CATEGORY_SEED_VERSION },
   };
 }
@@ -390,8 +507,7 @@ function normaliseTask(task: Task): Task {
     status: task.status ?? "TODO",
     allDay: task.allDay ?? true,
     order: typeof task.order === "number" ? task.order : 0,
-    manualOrder:
-      typeof task.manualOrder === "number" ? task.manualOrder : null,
+    manualOrder: typeof task.manualOrder === "number" ? task.manualOrder : null,
     parentId: task.parentId ?? null,
     categoryId: task.categoryId ?? null,
     recurrence: task.recurrence ?? null,

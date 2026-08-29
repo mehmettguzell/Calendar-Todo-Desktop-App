@@ -595,7 +595,7 @@ export function categoryNameFor(key: CategoryKey, language: "tr" | "en"): string
 }
 
 export function seedBudgetCategories(
-  language: "tr" | "en" = "en",
+  language: "tr" | "en" = "tr",
 ): Omit<BudgetCategory, "id" | "updatedAt">[] {
   return SEEDED_KEYS.map((key, order) => {
     const entry = CATEGORY_CATALOGUE[key];
@@ -609,7 +609,6 @@ export function seedBudgetCategories(
     };
   });
 }
-
 
 export const BUDGET_CATEGORY_COLORS = [
   "#ef4444",
