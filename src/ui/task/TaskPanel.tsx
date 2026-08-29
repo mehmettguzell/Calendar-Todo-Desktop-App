@@ -658,16 +658,43 @@ export function TaskPanel({
             </div>
           ) : null}
         </div>
-        <button
-          type="button"
-          className="btn danger"
-          onClick={() => {
-            deleteTask(task.id);
-            onClose();
-          }}
-        >
-          <Trash2 size={14} /> {t("trash")}
-        </button>
+        {parentTask && (task.dueDate || instance.date) ? (
+          <div className="row" style={{ gap: 8 }}>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => {
+                updateTask(task.id, { dueDate: null });
+                onClose();
+              }}
+            >
+              {t("removeFromToday")}
+            </button>
+            <button
+              type="button"
+              className="btn danger"
+              onClick={() => {
+                if (confirm(t("deleteSubtaskConfirm"))) {
+                  deleteTask(task.id);
+                  onClose();
+                }
+              }}
+            >
+              <Trash2 size={14} /> {t("trash")}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="btn danger"
+            onClick={() => {
+              deleteTask(task.id);
+              onClose();
+            }}
+          >
+            <Trash2 size={14} /> {t("trash")}
+          </button>
+        )}
       </div>
     </aside>
   );

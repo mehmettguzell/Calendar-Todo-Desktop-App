@@ -142,6 +142,8 @@ export const DICTIONARY = {
     plansDelete: "Planı sil",
     plansSubtaskOpen: "Alt hedefin özelliklerini aç",
     plansAssignedToday: "Bugüne atanmış",
+    removeFromSchedule: "Listeden / Tarihten Kaldır (Planda kalır)",
+    deleteSubtaskConfirm: "Bu alt görevi plandan tamamen silmek istediğinize emin misiniz? Sadece bugünden kaldırmak için 'Bugünden Kaldır' seçeneğini kullanabilirsiniz.",
     plansAddSubtask: "+ Alt hedef ekle…",
     plansNewTitle: "Yeni Plan & Hedef Oluştur",
     plansStart: "Planı Başlat",
@@ -599,7 +601,7 @@ export const DICTIONARY = {
 
     // Tasks & Plans
     assignToToday: "Bugüne Ata",
-    removeFromToday: "Bugünden Kaldır",
+    removeFromToday: "Bugünden / Görevlerden Kaldır (Planda kalır)",
     quickAddPlaceholder: "Yeni bir görev ekleyin… (Örn: Raporu hazırla ve ekibe gönder)",
     allTasks: "Tümü",
     highPriority: "Yüksek Öncelikli",
@@ -894,6 +896,8 @@ export const DICTIONARY = {
     plansDelete: "Delete plan",
     plansSubtaskOpen: "Open this step",
     plansAssignedToday: "Assigned to today",
+    removeFromSchedule: "Remove from schedule (Keeps in plan)",
+    deleteSubtaskConfirm: "Are you sure you want to completely delete this subtask from the plan? To only remove it from today, use 'Remove from Today'.",
     plansAddSubtask: "+ Add a step…",
     plansNewTitle: "New plan or goal",
     plansStart: "Start the plan",
@@ -1350,7 +1354,7 @@ export const DICTIONARY = {
 
     // Tasks & Plans
     assignToToday: "Assign to Today",
-    removeFromToday: "Remove from Today",
+    removeFromToday: "Remove from Today (Keeps in plan)",
     quickAddPlaceholder: "Add a new task… (e.g. Prepare report and send to team)",
     allTasks: "All",
     highPriority: "High Priority",

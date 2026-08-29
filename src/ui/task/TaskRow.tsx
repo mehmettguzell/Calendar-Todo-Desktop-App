@@ -6,6 +6,7 @@ import {
   Play,
   Repeat,
   Square,
+  Target,
   Timer,
   Trash2,
 } from "lucide-react";
@@ -54,16 +55,22 @@ export function TaskRow({
   const { task } = instance;
   const { t } = useI18n();
   const toggleComplete = useStore((s) => s.toggleComplete);
+  const updateTask = useStore((s) => s.updateTask);
   const deleteTask = useStore((s) => s.deleteTask);
   const startFocus = useStore((s) => s.startFocus);
   const stopFocus = useStore((s) => s.stopFocus);
   const runningFocus = useStore((s) => s.runningFocus);
+  const tasks = useStore((s) => s.db.tasks);
   const hasReminder = useHasReminder(task.id);
   const categories = useCategoryIndex();
   const subtasks = useSubtasks(task.id);
   const tracked = useTrackedSeconds(task.id);
   const now = useNow();
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+
+  const parentTask = task.parentId
+    ? tasks.find((t) => t.id === task.parentId) ?? null
+    : null;
 
   const category = task.categoryId ? categories.get(task.categoryId) : null;
   const done = instance.storedStatus === "COMPLETED";
@@ -126,6 +133,23 @@ export function TaskRow({
             <span className="row" style={{ gap: 5 }}>
               <i className="dot" style={{ background: category.color }} />
               {category.name}
+            </span>
+          ) : null}
+          {parentTask ? (
+            <span
+              className="row"
+              style={{
+                gap: 4,
+                color: "var(--accent)",
+                fontSize: 11.5,
+                fontWeight: 500,
+              }}
+              title={parentTask.title}
+            >
+              <Target size={11} />
+              <span className="truncate" style={{ maxWidth: 140 }}>
+                {parentTask.title}
+              </span>
             </span>
           ) : null}
           {subtasks.length > 0 ? (
@@ -195,10 +219,14 @@ export function TaskRow({
         <button
           type="button"
           className="btn ghost icon"
-          title={t("menuDelete")}
+          title={task.parentId ? t("removeFromToday") : t("menuDelete")}
           onClick={(e) => {
             e.stopPropagation();
-            deleteTask(task.id);
+            if (task.parentId) {
+              updateTask(task.id, { dueDate: null });
+            } else {
+              deleteTask(task.id);
+            }
           }}
         >
           <Trash2 size={14} />
