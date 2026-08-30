@@ -43,6 +43,7 @@ import { TodayView } from "@/ui/views/TodayView";
 import { AuthModal } from "@/ui/components/AuthModal";
 import { CommandPalette } from "@/ui/components/CommandPalette";
 import { UndoToast } from "@/ui/components/UndoToast";
+import { UpdateGate } from "@/ui/components/UpdateGate";
 import { useUndoStore } from "@/state/undoStore";
 import { pasteTaskOn } from "@/state/clipboardActions";
 import { useClipboardStore } from "@/state/clipboardStore";
@@ -400,6 +401,10 @@ export function App() {
       ) : null}
 
       <UndoToast />
+
+      {/* Last of the overlays: when an update is mandatory this covers
+          everything above, and it has to cover the modals too. */}
+      <UpdateGate />
 
       <ReminderAlerts
         alerts={alerts}

@@ -281,3 +281,17 @@
    danger-coloured ring carries the warning instead. */
 .chip.allday.overdue .chip-title { color: #fff; }
 .chip.allday.overdue { box-shadow: inset 0 0 0 1.5px var(--danger); }
+
+/* A deadline marker: the task drawn on the day it must be finished by, rather
+   than on a day it occupies. Outlined instead of filled, so a month of work
+   due on the 20th reads as one due date and never as a solid block — which is
+   the whole reason a deadline is not stored as a multi-day span. */
+.chip.chip-deadline {
+  background: none;
+  border: 1px dashed currentColor;
+  padding: 1px 4px;
+}
+.chip.chip-deadline:hover { background: var(--surface-hover); }
+.chip.chip-deadline .chip-flag { flex: none; opacity: 0.9; }
+.chip.chip-deadline .chip-title { color: var(--text); }
+.chip.chip-deadline.overdue { border-color: var(--danger); color: var(--danger); }

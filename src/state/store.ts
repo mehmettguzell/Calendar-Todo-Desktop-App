@@ -78,6 +78,7 @@ export interface TaskDraft {
   priority?: Priority;
   dueDate?: LocalDate | null;
   endDate?: LocalDate | null;
+  deadline?: LocalDate | null;
   allDay?: boolean;
   startTime?: string | null;
   endTime?: string | null;
@@ -97,6 +98,7 @@ export type TaskPatch = Partial<
     | "priority"
     | "dueDate"
     | "endDate"
+    | "deadline"
     | "allDay"
     | "startTime"
     | "endTime"
@@ -570,6 +572,7 @@ export const useStore = create<StoreState>((set, get) => {
         priority: draft.priority ?? "NONE",
         dueDate: draft.dueDate ?? null,
         endDate: draft.endDate ?? null,
+        deadline: draft.deadline ?? null,
         allDay: draft.allDay ?? true,
         startTime: draft.startTime ?? null,
         endTime: draft.endTime ?? null,
@@ -685,6 +688,10 @@ export const useStore = create<StoreState>((set, get) => {
           "recurrence",
           "estimateMinutes",
           "tags",
+          // Not folded into `scheduleChanged` above: moving a task is not the
+          // same act as changing what it has to be finished by, and §5 asks
+          // for the history to keep both rather than one summary of the two.
+          "deadline",
         ] as const;
         for (const field of tracked) {
           if (!(field in patch)) continue;

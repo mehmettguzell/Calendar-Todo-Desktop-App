@@ -208,7 +208,7 @@ export function NotePanel({
           className="btn ghost icon danger"
           title={t("notesDelete")}
           onClick={() => {
-            if (confirm("Delete this note?")) {
+            if (confirm(t("notesDeleteConfirm"))) {
               deleteTask(task.id);
               onClose();
             }

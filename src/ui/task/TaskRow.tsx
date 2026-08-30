@@ -2,6 +2,7 @@ import { useState, type MouseEvent } from "react";
 import {
   AlarmClock,
   Clock,
+  Flag,
   GripVertical,
   Play,
   Repeat,
@@ -24,6 +25,7 @@ import { useNow, useStore } from "@/state/store";
 import { Checkbox, StatusBadge } from "@/ui/components/primitives";
 import type { RowReorder } from "./useListReorder";
 import { SnoozeMenu } from "./SnoozeMenu";
+import { useRequestDelete } from "./useRequestDelete";
 
 /**
  * One task, as it appears in every list-shaped view.
@@ -59,7 +61,7 @@ export function TaskRow({
   const { t } = useI18n();
   const toggleComplete = useStore((s) => s.toggleComplete);
   const updateTask = useStore((s) => s.updateTask);
-  const deleteTask = useStore((s) => s.deleteTask);
+  const requestDelete = useRequestDelete();
   const startFocus = useStore((s) => s.startFocus);
   const stopFocus = useStore((s) => s.stopFocus);
   const runningFocus = useStore((s) => s.runningFocus);
@@ -131,6 +133,18 @@ export function TaskRow({
         </div>
 
         <div className="task-meta">
+          {/* Only when there is one, and always in front of the schedule: the
+              day a task must be done by is what a list is scanned for. */}
+          {task.deadline && !task.recurrence ? (
+            <span
+              className={cn("row", "task-deadline", instance.status === "OVERDUE" && "is-overdue")}
+              style={{ gap: 4 }}
+              title={t("deadlineOn", { date: task.deadline })}
+            >
+              <Flag size={12} />
+              {task.deadline}
+            </span>
+          ) : null}
           {showDate ? (
             <span className="row" style={{ gap: 4 }}>
               <Clock size={12} />
@@ -237,7 +251,7 @@ export function TaskRow({
             if (task.parentId) {
               updateTask(task.id, { dueDate: null });
             } else {
-              deleteTask(task.id);
+              requestDelete(task.id);
             }
           }}
         >

@@ -1,4 +1,16 @@
-import { addDays, addMonths, addYears, getDay, isAfter, isBefore } from "date-fns";
+import {
+  addDays,
+  addMonths,
+  addYears,
+  getDate,
+  getDay,
+  getDaysInMonth,
+  isAfter,
+  isBefore,
+  lastDayOfMonth,
+  setDate,
+  startOfMonth,
+} from "date-fns";
 import { fromLocalDate, toLocalDate } from "./datetime";
 import type { LocalDate, Recurrence, Task } from "./types";
 
@@ -23,6 +35,15 @@ export type DomainTextKey =
   | "repeatEveryYear"
   | "repeatEveryNYears"
   | "repeatOnDays"
+  | "repeatOnMonthDay"
+  | "repeatOnMonthDayShort"
+  | "repeatOnLastDay"
+  | "repeatOnNthWeekday"
+  | "monthPos1"
+  | "monthPos2"
+  | "monthPos3"
+  | "monthPos4"
+  | "monthPosLast"
   | "repeatUntil"
   | "repeatTimes"
   | "reminderAtStart"
@@ -42,17 +63,89 @@ export type Translate = (
 ) => string;
 
 /**
+ * "3rd" is a word in English and a numeral in Turkish, so the position is
+ * looked up whole rather than built by gluing a suffix onto a digit.
+ */
+const POSITION_KEYS: Record<number, DomainTextKey> = {
+  1: "monthPos1",
+  2: "monthPos2",
+  3: "monthPos3",
+  4: "monthPos4",
+  [-1]: "monthPosLast",
+};
+
+/**
+ * The three shapes a monthly rule can take.
+ *
+ * A closed set rather than raw `byMonthDay`/`bySetPos`, because those two
+ * fields can be combined into states that mean nothing ("the last day, but
+ * also the 3rd Tuesday"). The editor picks a mode; `monthlyRuleFor` is the one
+ * place that knows how a mode is spelled out in the stored rule.
+ */
+export type MonthlyMode = "DAY_OF_MONTH" | "LAST_DAY" | "NTH_WEEKDAY";
+
+/** Which of the three a stored rule is expressing. */
+export function monthlyModeOf(rule: Recurrence): MonthlyMode {
+  if (rule.bySetPos != null && rule.byWeekday?.length) return "NTH_WEEKDAY";
+  if (rule.byMonthDay === -1) return "LAST_DAY";
+  return "DAY_OF_MONTH";
+}
+
+/**
+ * `1`-`4` for the first through fourth of that weekday in the month, `-1` when
+ * the date sits in a fifth week — there is no fifth Tuesday in most months, so
+ * "the last Tuesday" is the only reading that survives every month.
+ */
+export function weekdayPositionInMonth(date: LocalDate): number {
+  const position = Math.ceil(getDate(fromLocalDate(date)) / 7);
+  return position > 4 ? -1 : position;
+}
+
+/**
+ * The fields a mode needs, read off the anchor.
+ *
+ * Returns every monthly field on every call — including the ones it clears —
+ * so switching modes can never leave the leftovers of the previous one behind.
+ */
+export function monthlyRuleFor(
+  mode: MonthlyMode,
+  anchor: LocalDate,
+): Pick<Recurrence, "byMonthDay" | "bySetPos" | "byWeekday"> {
+  switch (mode) {
+    case "LAST_DAY":
+      return { byMonthDay: -1, bySetPos: null, byWeekday: [] };
+    case "NTH_WEEKDAY":
+      return {
+        byMonthDay: null,
+        bySetPos: weekdayPositionInMonth(anchor),
+        byWeekday: [getDay(fromLocalDate(anchor))],
+      };
+    case "DAY_OF_MONTH":
+      // `null` rather than the anchor's day: an undated rule still has to mean
+      // something, and "follow the anchor" is the only answer that keeps
+      // working when the task is later moved to another date.
+      return { byMonthDay: null, bySetPos: null, byWeekday: [] };
+  }
+}
+
+/**
  * "Her hafta - Pzt, Per" / "Every week on Mon, Thu".
  *
  * Assembled from whole phrases rather than glued-together words: word order is
  * not the same in every language, and "every 3 days" reverses into "her 3 gunde
  * bir" — the number lands somewhere else entirely, which only the dictionary
  * can know.
+ *
+ * `anchor` is the task's due date. A monthly rule carries no day of its own —
+ * it repeats on whatever day of the month the anchor happens to fall — so
+ * without it the sentence can only say "every month" and leave the user to
+ * guess. Optional because a task may not have a date yet.
  */
 export function describeRecurrence(
   rule: Recurrence | null,
   t: Translate,
   weekdayNames: string[],
+  anchor?: LocalDate | null,
 ): string {
   if (!rule) return t("formNoRepeat");
   const n = Math.max(1, rule.interval);
@@ -76,9 +169,29 @@ export function describeRecurrence(
       }
       break;
     }
-    case "MONTHLY":
+    case "MONTHLY": {
       base = single ? t("repeatEveryMonth") : t("repeatEveryNMonths", { n });
+      const mode = monthlyModeOf(rule);
+      if (mode === "LAST_DAY") {
+        base = t("repeatOnLastDay", { base });
+      } else if (mode === "NTH_WEEKDAY") {
+        const weekday = rule.byWeekday?.[0];
+        const day = weekday === undefined ? "" : (weekdayNames[weekday] ?? "");
+        const posKey = rule.bySetPos == null ? undefined : POSITION_KEYS[rule.bySetPos];
+        if (day && posKey) base = t("repeatOnNthWeekday", { base, pos: t(posKey), day });
+      } else {
+        const day = rule.byMonthDay ?? (anchor ? getDate(fromLocalDate(anchor)) : null);
+        if (day !== null) {
+          // 29, 30 and 31 do not exist in every month. The series pulls those
+          // back to the last day rather than skipping the month, so the
+          // sentence says as much instead of letting February be a surprise.
+          base = day > 28
+            ? t("repeatOnMonthDayShort", { base, day })
+            : t("repeatOnMonthDay", { base, day });
+        }
+      }
       break;
+    }
     case "YEARLY":
       base = single ? t("repeatEveryYear") : t("repeatEveryNYears", { n });
       break;
@@ -188,6 +301,22 @@ function* iterate(anchor: Date, rule: Recurrence): Generator<Date> {
     return;
   }
 
+  if (rule.freq === "MONTHLY" && (rule.byMonthDay != null || rule.bySetPos != null)) {
+    // Walked month by month rather than by adding months to the anchor: "the
+    // last Tuesday" is a different day in every month, so there is no fixed
+    // offset from the anchor to add.
+    const firstMonth = startOfMonth(anchor);
+    for (let step = 0; step < MAX_STEPS; step += 1) {
+      const date = resolveInMonth(addMonths(firstMonth, step * interval), rule);
+      // The chosen day can land before the anchor in the anchor's own month
+      // ("the 1st Monday" on a task dated the 20th). Skipping rather than
+      // yielding keeps a series from starting in its own past.
+      if (isBefore(date, anchor)) continue;
+      yield date;
+    }
+    return;
+  }
+
   for (let step = 0; step < MAX_STEPS; step += 1) {
     const offset = step * interval;
     switch (rule.freq) {
@@ -198,6 +327,10 @@ function* iterate(anchor: Date, rule: Recurrence): Generator<Date> {
         yield addDays(anchor, offset * 7);
         break;
       case "MONTHLY":
+        // A rule with no monthly fields of its own repeats on the anchor's day
+        // of the month. `addMonths` pulls the 31st back to the 28th in
+        // February and returns to the 31st in March, because every step is
+        // measured from the anchor rather than from the previous occurrence.
         yield addMonths(anchor, offset);
         break;
       case "YEARLY":
@@ -205,6 +338,37 @@ function* iterate(anchor: Date, rule: Recurrence): Generator<Date> {
         break;
     }
   }
+}
+
+/** The one day `month` contributes to a rule that names its own day. */
+function resolveInMonth(month: Date, rule: Recurrence): Date {
+  const weekday = rule.byWeekday?.[0];
+  if (rule.bySetPos != null && weekday !== undefined) {
+    return nthWeekdayOfMonth(month, weekday, rule.bySetPos);
+  }
+  if (rule.byMonthDay === -1) return lastDayOfMonth(month);
+  return clampToMonth(month, rule.byMonthDay ?? getDate(month));
+}
+
+/**
+ * The `position`-th `weekday` of `month`; `-1` means the last one.
+ *
+ * Positions 1-4 always exist — the shortest month is 28 days, exactly four of
+ * each weekday — which is why `bySetPos` is never allowed to be 5.
+ */
+function nthWeekdayOfMonth(month: Date, weekday: number, position: number): Date {
+  if (position < 0) {
+    const last = lastDayOfMonth(month);
+    return addDays(last, -((getDay(last) - weekday + 7) % 7));
+  }
+  const first = startOfMonth(month);
+  const offset = (weekday - getDay(first) + 7) % 7;
+  return addDays(first, offset + (position - 1) * 7);
+}
+
+/** `day` of `month`, pulled back to the last day when the month is shorter. */
+function clampToMonth(month: Date, day: number): Date {
+  return setDate(startOfMonth(month), Math.min(day, getDaysInMonth(month)));
 }
 
 /** Every `YYYY-MM-DD` from `from` to `to`, inclusive. Empty when `from > to`. */

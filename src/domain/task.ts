@@ -1,5 +1,5 @@
 import { atTime, daysBetween, fromInstant, toLocalDate } from "./datetime";
-import { instanceKey, occurrenceId } from "./ids";
+import { deadlineKey, instanceKey, occurrenceId } from "./ids";
 import { expandOccurrences } from "./recurrence";
 import type {
   Instant,
@@ -45,6 +45,9 @@ export function effectiveStatus(
  * of a still-running August 25-28 task as OVERDUE while it is perfectly on time.
  */
 export function deadlineOf(task: Task, date: LocalDate | null): Date | null {
+  // An explicit deadline outranks the schedule and does not need one: a plan
+  // with no date at all still stops being on time on the day it was due by.
+  if (task.deadline && !task.recurrence) return atTime(task.deadline, "23:59");
   if (!date) return null;
   const lastDay = spanEnd(task) ?? date;
   const on = task.recurrence ? date : lastDay > date ? lastDay : date;
@@ -94,6 +97,7 @@ export function toInstance(
     // *mutation* target stays the single task row — see `refOf` in the store.
     key: instanceKey(task.id, date, isRecurring || span.length > 1),
     span,
+    isDeadline: false,
     task,
     date,
     isRecurring,
@@ -118,9 +122,29 @@ export function instancesInRange(
   occurrences: Map<string, Occurrence>,
   now: Date,
 ): TaskInstance[] {
-  return expandOccurrences(task, from, to).map((date) =>
+  const out = expandOccurrences(task, from, to).map((date) =>
     toInstance(task, date, occurrences.get(occurrenceId(task.id, date)) ?? null, now),
   );
+
+  const deadline = deadlineDateOf(task);
+  if (!deadline || deadline < from || deadline > to) return out;
+
+  // The deadline can land on a day the task already occupies — a one-day task
+  // due by its own date is the common case. Marking that instance rather than
+  // adding a second is what keeps one task from appearing twice on one day.
+  const existing = out.find((instance) => instance.date === deadline);
+  if (existing) {
+    existing.isDeadline = true;
+    return out;
+  }
+
+  out.push({ ...toInstance(task, deadline, null, now), key: deadlineKey(task.id), isDeadline: true });
+  return out;
+}
+
+/** The day this task must be finished by, or `null` when it has no deadline. */
+export function deadlineDateOf(task: Pick<Task, "deadline" | "recurrence">): LocalDate | null {
+  return task.recurrence ? null : (task.deadline ?? null);
 }
 
 /**

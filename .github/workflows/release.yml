@@ -50,10 +50,24 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the update bundles and `latest.json`. Without these two the
+          # build still produces installers, but every installed app rejects
+          # the update as unsigned — so a missing secret is a silent failure
+          # that only shows up on a user's machine.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Tempo Desktop App v__VERSION__'
+          # The updater reads this body to decide whether the update is
+          # mandatory: a `min-supported-version: X.Y.Z` line means every app
+          # older than X.Y.Z must update before it can go on being used. Edit
+          # it on the release itself when a version really does break the data
+          # format; leaving it out is the normal, optional case.
           releaseBody: 'See the assets below to download the installer for your operating system.'
+          # Left as a draft on purpose, so a build can be looked at before it
+          # reaches anyone. Note that installed apps only see a release once it
+          # is actually published — a release left in draft updates nobody.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

@@ -17,6 +17,7 @@ import { pasteTaskOn } from "@/state/clipboardActions";
 import { useClipboardStore } from "@/state/clipboardStore";
 import { useStore } from "@/state/store";
 import type { ContextMenuItem, ContextMenuState } from "@/ui/components/ContextMenu";
+import { useRequestDelete } from "@/ui/task/useRequestDelete";
 
 const ICON = 14;
 
@@ -43,7 +44,7 @@ export function useCalendarInteractions({
   const duplicateTask = useStore((s) => s.duplicateTask);
   const reschedule = useStore((s) => s.reschedule);
   const toggleComplete = useStore((s) => s.toggleComplete);
-  const deleteTask = useStore((s) => s.deleteTask);
+  const requestDelete = useRequestDelete();
 
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -128,7 +129,7 @@ export function useCalendarInteractions({
           label: t("menuDelete"),
           icon: <Trash2 size={ICON} />,
           danger: true,
-          onSelect: () => deleteTask(task.id),
+          onSelect: () => requestDelete(task.id),
         },
       ];
       setMenu({ x: event.clientX, y: event.clientY, items });
@@ -140,7 +141,7 @@ export function useCalendarInteractions({
       cutToClipboard,
       duplicateTask,
       toggleComplete,
-      deleteTask,
+      requestDelete,
     ],
   );
 

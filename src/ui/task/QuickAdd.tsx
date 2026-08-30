@@ -44,6 +44,7 @@ export function QuickAdd({
     defaultDate ?? toLocalDate(now),
   );
   const [endDate, setEndDate] = useState<string>("");
+  const [deadline, setDeadline] = useState<string>("");
   const [allDay, setAllDay] = useState(!defaultTime);
   const [startTime, setStartTime] = useState(defaultTime ?? "09:00");
   const [endTime, setEndTime] = useState("");
@@ -78,6 +79,7 @@ export function QuickAdd({
   useEffect(() => {
     if (parsed.dueDate && !touched.current.date) setDueDate(parsed.dueDate);
     if (parsed.endDate && !touched.current.date) setEndDate(parsed.endDate);
+    if (parsed.deadline && !touched.current.date) setDeadline(parsed.deadline);
     if (parsed.startTime && !touched.current.time) {
       setAllDay(false);
       setStartTime(parsed.startTime);
@@ -89,6 +91,7 @@ export function QuickAdd({
   }, [
     parsed.dueDate,
     parsed.endDate,
+    parsed.deadline,
     parsed.startTime,
     parsed.endTime,
     parsed.priority,
@@ -119,6 +122,7 @@ export function QuickAdd({
       description: description.trim(),
       dueDate: dueDate || null,
       endDate: endDate || null,
+      deadline: deadline || null,
       allDay,
       startTime: allDay ? null : startTime || null,
       endTime: allDay || !endTime ? null : endTime,
@@ -212,13 +216,12 @@ export function QuickAdd({
             }}
           />
         </Field>
-        <Field label={t("formEndDate")}>
+        <Field label={t("formDeadline")}>
           <input
             className="input"
             type="date"
-            value={endDate}
-            min={dueDate || undefined}
-            onChange={(e) => setEndDate(e.target.value)}
+            value={deadline}
+            onChange={(e) => setDeadline(e.target.value)}
           />
         </Field>
         <Field label={t("formPriority")}>
@@ -287,7 +290,19 @@ export function QuickAdd({
         </Field>
       </div>
 
-      <RecurrenceEditor value={recurrence} onChange={setRecurrence} />
+      {/* A multi-day run sits with the repeat rule, as it does in the panel:
+          both answer "over how many days", which the deadline above does not. */}
+      <Field label={t("formEndDate")} hint={t("formEndDateHint")}>
+        <input
+          className="input"
+          type="date"
+          value={endDate}
+          min={dueDate || undefined}
+          onChange={(e) => setEndDate(e.target.value)}
+        />
+      </Field>
+
+      <RecurrenceEditor value={recurrence} onChange={setRecurrence} anchor={dueDate || null} />
 
       <Switch
         checked={withReminder}

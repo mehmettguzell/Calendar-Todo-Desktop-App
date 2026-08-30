@@ -679,6 +679,7 @@ export function localTaskFingerprint(task: Task): string {
     (task.tags ?? []).map(String),
     nz(task.dueDate),
     columnDropped("tasks", "end_date") ? null : nz(task.endDate),
+    columnDropped("tasks", "deadline") ? null : nz(task.deadline),
     Boolean(task.allDay),
     nz(task.startTime),
     nz(task.endTime),
@@ -703,6 +704,7 @@ export function cloudTaskFingerprint(row: Record<string, unknown>): string {
     ((row.tags as string[] | null) ?? []).map(String),
     nz(row.due_date),
     columnDropped("tasks", "end_date") ? null : nz(row.end_date),
+    columnDropped("tasks", "deadline") ? null : nz(row.deadline),
     Boolean(row.all_day),
     nz(row.start_time),
     nz(row.end_time),
@@ -1276,6 +1278,10 @@ export function serializeTaskForCloud(
 
   if (task.endDate) {
     payload.end_date = task.endDate;
+  }
+
+  if (task.deadline) {
+    payload.deadline = task.deadline;
   }
 
   return withoutMissingColumns("tasks", payload);
@@ -2581,6 +2587,7 @@ function taskFromCloud(
     tags: (row.tags as string[]) ?? [],
     dueDate: (row.due_date as string) ?? null,
     endDate: (row.end_date as string) ?? null,
+    deadline: (row.deadline as string) ?? null,
     allDay: Boolean(row.all_day),
     startTime: (row.start_time as string) ?? null,
     endTime: (row.end_time as string) ?? null,

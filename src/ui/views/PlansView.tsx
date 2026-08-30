@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
+  Flag,
   ChevronRight,
   GripVertical,
   Lightbulb,
@@ -31,6 +32,7 @@ import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
 import { Checkbox, Field, Modal } from "@/ui/components/primitives";
 import { cn } from "@/lib/cn";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { useRequestDelete } from "@/ui/task/useRequestDelete";
 
 type PlanFilter = "ALL" | "ACTIVE" | "COMPLETED";
 
@@ -405,7 +407,7 @@ function PlanCard({
   const toggleComplete = useStore((s) => s.toggleComplete);
   const createTask = useStore((s) => s.createTask);
   const updateTask = useStore((s) => s.updateTask);
-  const deleteTask = useStore((s) => s.deleteTask);
+  const requestDelete = useRequestDelete();
   const reorderSubtasks = useStore((s) => s.reorderSubtasks);
   const categories = useCategoryIndex();
 
@@ -413,8 +415,30 @@ function PlanCard({
   const [showAllSubtasks, setShowAllSubtasks] = useState(false);
   const [newSubtask, setNewSubtask] = useState("");
 
+  const deadlineRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Open the native date picker for this plan.
+   *
+   * `showPicker` throws when the browser has no such method, or refuses
+   * outside a user gesture; focusing the input is the honest fallback, since a
+   * focused date input can still be typed into.
+   */
+  const openDeadlinePicker = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const input = deadlineRef.current;
+    if (!input) return;
+    try {
+      input.showPicker();
+    } catch {
+      input.focus();
+    }
+  };
+
   const today = toLocalDate(now);
   const isPlanToday = plan.dueDate === today;
+  // A plan is late by its deadline alone: it has no schedule to be late against.
+  const planOverdue = plan.deadline !== null && plan.deadline !== undefined && plan.deadline < today;
   const openPlan = () => onOpen(toInstance(plan, null, null, now));
 
   const togglePlanToday = (e: React.MouseEvent) => {
@@ -516,9 +540,48 @@ function PlanCard({
               {doneSubtasks}/{totalSubtasks}
             </span>
           )}
+          {plan.deadline ? (
+            <span
+              className={cn("plan-card-deadline", planOverdue && "is-overdue")}
+              title={t("deadlineOn", { date: plan.deadline })}
+            >
+              <Flag size={12} aria-hidden /> {plan.deadline}
+            </span>
+          ) : null}
         </div>
 
         <div className="plan-card-actions">
+          {/* The picker has to be asked for by name. A date input tucked behind
+              an icon does not open when its label is clicked — the browser only
+              focuses it — so `showPicker` is what actually makes the button do
+              something. The input stays in the DOM and unhidden to pointers so
+              that a browser without `showPicker` still has something to fall
+              back to. */}
+          <span
+            className="plan-deadline-control"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className={cn("btn ghost icon sm", plan.deadline && "active")}
+              title={plan.deadline ? t("deadlineOn", { date: plan.deadline }) : t("formDeadline")}
+              aria-label={t("formDeadline")}
+              onClick={openDeadlinePicker}
+            >
+              <Flag size={14} style={plan.deadline ? { color: "var(--accent)" } : undefined} />
+            </button>
+            <input
+              ref={deadlineRef}
+              type="date"
+              className="plan-deadline-input"
+              tabIndex={-1}
+              value={plan.deadline ?? ""}
+              aria-label={t("formDeadline")}
+              onChange={(e) =>
+                updateTask(plan.id, { deadline: e.target.value || null })
+              }
+            />
+          </span>
           <button
             type="button"
             className={cn("btn ghost icon sm", isPlanToday && "active")}
@@ -542,7 +605,7 @@ function PlanCard({
             title={t("plansDelete")}
             onClick={(e) => {
               e.stopPropagation();
-              deleteTask(plan.id);
+              requestDelete(plan.id);
             }}
           >
             <Trash2 size={14} />

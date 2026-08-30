@@ -511,6 +511,7 @@ function normaliseTask(task: Task): Task {
     parentId: task.parentId ?? null,
     categoryId: task.categoryId ?? null,
     recurrence: task.recurrence ?? null,
+    deadline: task.deadline ?? null,
     estimateMinutes:
       typeof task.estimateMinutes === "number" ? task.estimateMinutes : null,
     snoozedUntil: task.snoozedUntil ?? null,

@@ -28,9 +28,21 @@
       "csp": "default-src 'self' http: https: ws: wss: data: asset:; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http: https: http://asset.localhost; connect-src 'self' http: https: ws: wss: https://*.supabase.co"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ0MjI3MEUxMTA5OTU0RgpSV1JQbFFrUkRpZENCUHFIR2pxVVVHSFBPYXExaEJPcitVaW1CaTgzblhKOWc5N2xUK01BREhudgo=",
+      "endpoints": [
+        "https://github.com/mehmettguzell/Calendar-Todo-Desktop-App/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

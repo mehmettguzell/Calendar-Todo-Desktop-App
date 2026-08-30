@@ -32,8 +32,27 @@ export interface Recurrence {
   freq: RecurrenceFreq;
   /** Repeat every `interval` units of `freq`. Always >= 1. */
   interval: number;
-  /** WEEKLY only. 0 = Sunday … 6 = Saturday. Empty/undefined = anchor weekday. */
+  /**
+   * WEEKLY: the days the series lands on. 0 = Sunday … 6 = Saturday.
+   * MONTHLY: paired with `bySetPos`, the single weekday of "the 3rd Tuesday".
+   * Empty/undefined = whatever weekday the anchor falls on.
+   */
   byWeekday?: number[];
+  /**
+   * MONTHLY only. The day of the month the series lands on, or `-1` for the
+   * last day of each month. Undefined = the anchor's own day, which is what
+   * every rule written before this field existed means.
+   */
+  byMonthDay?: number | null;
+  /**
+   * MONTHLY only, and only alongside a single `byWeekday`. 1-4 selects the
+   * first through fourth of that weekday in the month, `-1` the last one.
+   * Undefined = the rule counts days of the month, not weekdays.
+   *
+   * Capped at 4 rather than 5 on purpose: every month has a fourth Tuesday,
+   * so no month of the series is ever silently skipped.
+   */
+  bySetPos?: number | null;
   /** Inclusive last date the series may produce. */
   until?: LocalDate | null;
   /** Maximum number of occurrences produced, counting the anchor. */
@@ -53,8 +72,26 @@ export interface Task {
   priority: Priority;
   /** `null` means unscheduled: visible in Todo, absent from the calendar. */
   dueDate: LocalDate | null;
-  /** Optional multi-day or deadline end date (`YYYY-MM-DD`). */
+  /**
+   * Last day of a multi-day run (`YYYY-MM-DD`).
+   *
+   * A span: the task occupies every day from `dueDate` to here, and is drawn
+   * on all of them. "Berlin conference, 25-28 August".
+   */
   endDate?: LocalDate | null;
+  /**
+   * The day the task has to be finished by.
+   *
+   * Deliberately not `endDate`. A span says which days a task *occupies*; a
+   * deadline says when it stops being on time. Conflating them is what makes
+   * "due 20 September" paint twenty-two solid days across the calendar, so a
+   * deadline is drawn once — on its own day — and leaves the days before it
+   * alone.
+   *
+   * Ignored while `recurrence` is set: a series bounds itself with
+   * `recurrence.until`, and every occurrence carries its own deadline.
+   */
+  deadline?: LocalDate | null;
   allDay: boolean;
   startTime: LocalTime | null;
   endTime: LocalTime | null;
@@ -290,6 +327,14 @@ export interface TaskInstance {
    * continuation bar.
    */
   span: TaskSpan;
+  /**
+   * This instance is the task's deadline marker, not a day it occupies.
+   *
+   * The same task can produce both — a start on the 30th and a deadline on the
+   * 20th of the next month — so views branch on this to draw the marker
+   * differently, never to decide which task it belongs to.
+   */
+  isDeadline: boolean;
 }
 
 /** Position of one rendered date within a task's `dueDate`..`endDate` range. */

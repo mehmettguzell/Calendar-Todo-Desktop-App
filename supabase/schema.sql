@@ -184,6 +184,9 @@ CREATE INDEX IF NOT EXISTS transactions_user_date_idx
 --    Re-runnable: `IF NOT EXISTS` makes this safe on an existing project.
 ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS end_date TEXT;
 ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS estimate_minutes INTEGER;
+-- The day a task has to be finished by. Distinct from end_date, which is the
+-- last day of a multi-day run: a deadline is a point, a span is a stretch.
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS deadline TEXT;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS recurrence JSONB;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS recurrence_source_id TEXT;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS last_generated_for TEXT;

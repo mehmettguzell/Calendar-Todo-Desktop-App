@@ -280,9 +280,29 @@
 
 .panel-foot {
   display: flex;
+  flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border);
+}
+
+/* What the task can be filed into. Wraps rather than squeezing, because a
+   parent's title is as long as the user made it. */
+.panel-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* The quiet line: when the task was made, and the one way to get rid of it.
+   Deleting lives down here rather than up among the actions so that the
+   pointer never passes over it on the way to something else. */
+.panel-foot-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 /* A box rather than a line: the whole name is visible however long it runs,
@@ -2978,3 +2998,47 @@
   border-top: 1px solid var(--border);
   margin: 4px 0;
 }
+
+/* The deadline a plan has to be finished by, beside its name. A plan carries
+   no schedule, so this is the only date it ever shows — and the only reason it
+   appears on the calendar at all. */
+.plan-card-deadline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 1px 6px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.plan-card-deadline.is-overdue { border-color: var(--danger); color: var(--danger); }
+
+/* The date input the flag button drives. It is laid over the button rather
+   than parked in a corner, so the picker the browser opens is anchored where
+   the user clicked; it stays transparent and below the button, which keeps the
+   click on the button and the popup in the right place. */
+.plan-deadline-control { position: relative; display: inline-flex; }
+.plan-deadline-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The day a task must be finished by, in a list row. Dashed like its calendar
+   marker so the two read as the same fact in two places. */
+.task-deadline {
+  padding: 0 5px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.task-deadline.is-overdue { border-color: var(--danger); color: var(--danger); }

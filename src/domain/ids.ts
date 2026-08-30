@@ -20,3 +20,15 @@ export function occurrenceId(taskId: string, date: LocalDate): string {
 export function instanceKey(taskId: string, date: LocalDate | null, recurring: boolean): string {
   return recurring && date ? occurrenceId(taskId, date) : taskId;
 }
+
+/**
+ * React key for a task's deadline marker.
+ *
+ * A marker and the task's own scheduled day can both fall inside one rendered
+ * range, so the marker needs a key of its own. It is never a mutation target:
+ * completing a deadline marker completes the task, which `refOf` resolves from
+ * `instance.task.id`, not from this.
+ */
+export function deadlineKey(taskId: string): string {
+  return `${taskId}::deadline`;
+}

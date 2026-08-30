@@ -6,6 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { useSubtasks } from "@/state/selectors";
 import { useStore } from "@/state/store";
 import { Checkbox } from "@/ui/components/primitives";
+import { useRequestDelete } from "./useRequestDelete";
 
 /**
  * Subtasks are ordinary tasks with a `parentId`.
@@ -24,7 +25,7 @@ export function SubtaskList({
   const subtasks = useSubtasks(parent.id);
   const createTask = useStore((s) => s.createTask);
   const setStatus = useStore((s) => s.setStatus);
-  const deleteTask = useStore((s) => s.deleteTask);
+  const requestDelete = useRequestDelete();
   const reorderSubtasks = useStore((s) => s.reorderSubtasks);
   const { t } = useI18n();
   const [title, setTitle] = useState("");
@@ -195,7 +196,7 @@ export function SubtaskList({
             type="button"
             className="btn ghost icon"
             title={t("menuDelete")}
-            onClick={() => deleteTask(subtask.id)}
+            onClick={() => requestDelete(subtask.id)}
           >
             <Trash2 size={14} />
           </button>

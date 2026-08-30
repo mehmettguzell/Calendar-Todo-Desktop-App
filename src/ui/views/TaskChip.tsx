@@ -1,4 +1,5 @@
 import type { DragEvent, MouseEvent } from "react";
+import { Flag } from "lucide-react";
 import type { Category, TaskInstance } from "@/domain/types";
 import { cn } from "@/lib/cn";
 
@@ -35,7 +36,10 @@ export function TaskChip({
   const allDay = task.allDay || !task.startTime;
   const color = category?.color ?? "var(--accent)";
   const done = instance.storedStatus === "COMPLETED";
-  const spanning = span.length > 1;
+  // A deadline marker is the task on the day it is due by, not a day it
+  // occupies, so it is never drawn as a filled bar or a span.
+  const isDeadline = instance.isDeadline;
+  const spanning = span.length > 1 && !isDeadline;
   const continues = spanning && !span.isStart;
 
   return (
@@ -43,7 +47,8 @@ export function TaskChip({
       type="button"
       className={cn(
         "chip truncate",
-        allDay && "allday",
+        allDay && !isDeadline && "allday",
+        isDeadline && "chip-deadline",
         done && "done",
         instance.status === "OVERDUE" && "overdue",
         spanning && "spanning",
@@ -51,7 +56,13 @@ export function TaskChip({
         spanning && !span.isEnd && "span-continues",
         dragging && "chip-dragging",
       )}
-      style={allDay ? { background: color } : undefined}
+      style={
+        isDeadline
+          ? { borderColor: color, color }
+          : allDay
+            ? { background: color }
+            : undefined
+      }
       title={
         spanning
           ? `${task.title} · ${task.dueDate} → ${task.endDate} (${span.index + 1}/${span.length})`
@@ -63,10 +74,11 @@ export function TaskChip({
       onContextMenu={onContextMenu ? (e) => onContextMenu(e, instance) : undefined}
       onClick={() => onOpen(instance)}
     >
-      {allDay || continues ? null : (
+      {isDeadline ? <Flag size={11} className="chip-flag" aria-hidden /> : null}
+      {allDay || continues || isDeadline ? null : (
         <i className="chip-dot" style={{ background: color }} />
       )}
-      {allDay || continues ? null : (
+      {allDay || continues || isDeadline ? null : (
         <span className="chip-time">{task.startTime}</span>
       )}
       <span className="chip-title truncate">{task.title}</span>

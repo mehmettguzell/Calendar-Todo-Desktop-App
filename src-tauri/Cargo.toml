@@ -36,6 +36,16 @@ mailparse = "0.15"
 # document the rest of the app is written to.
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
 
+# Shipping a fix is only half of shipping it: without these, the app a user
+# installed once stays that version forever. `process` is what restarts the app
+# after the new bundle has been written over it.
+#
+# Desktop-only: there is no self-update on the mobile targets this crate also
+# builds for — the store owns updates there.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+
 [profile.release]
 codegen-units = 1
 lto = true

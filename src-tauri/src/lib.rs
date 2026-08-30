@@ -307,6 +307,16 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            // Registered here rather than in the chain above because both are
+            // desktop-only, and `setup` is the one place that can be made
+            // conditional without splitting the whole builder in two.
+            #[cfg(desktop)]
+            {
+                app.handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+                app.handle().plugin(tauri_plugin_process::init())?;
+            }
+
             build_tray(app.handle())?;
             start_heartbeat(app.handle().clone());
 

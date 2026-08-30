@@ -419,3 +419,37 @@
   letter-spacing: 0.32em;
   text-align: center;
 }
+
+/* The optional update offer.
+   Bottom-left, because the other two corners are taken: reminders stack on the
+   right and the undo toast sits centred. An offer nobody has to act on must
+   not land where something that expires is about to appear. */
+.update-toast {
+  position: fixed;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: calc(100vw - 32px);
+  padding: 10px 10px 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  animation: rise 160ms ease-out;
+}
+
+.update-toast-icon {
+  flex: none;
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-toast { animation: none; }
+}
+
+/* Above every other overlay, including the reminder cards and the undo toast.
+   A blocking update that something else can be clicked through is not one. */
+.backdrop.update-gate { z-index: 200; }

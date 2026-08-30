@@ -40,6 +40,7 @@ import { RecurrenceEditor } from "./RecurrenceEditor";
 import { ReminderEditor } from "./ReminderEditor";
 import { SnoozeMenu } from "./SnoozeMenu";
 import { SubtaskList } from "./SubtaskList";
+import { useRequestDelete } from "./useRequestDelete";
 
 /**
  * The task's single editing surface.
@@ -63,7 +64,7 @@ export function TaskPanel({
 }) {
   const { task } = instance;
   const updateTask = useStore((s) => s.updateTask);
-  const deleteTask = useStore((s) => s.deleteTask);
+  const requestDelete = useRequestDelete();
   const toggleComplete = useStore((s) => s.toggleComplete);
   const setStatus = useStore((s) => s.setStatus);
   const clearSnooze = useStore((s) => s.clearSnooze);
@@ -96,10 +97,10 @@ export function TaskPanel({
   );
   const repeatSummary = useMemo(() => {
     if (task.recurrence) {
-      return describeRecurrence(task.recurrence, t, weekdayNames("short"));
+      return describeRecurrence(task.recurrence, t, weekdayNames("short"), task.dueDate);
     }
     return task.endDate ? t("formEndDate") : null;
-  }, [task.recurrence, task.endDate, t]);
+  }, [task.recurrence, task.endDate, task.dueDate, t]);
   const doneSubtasks = subtasks.filter((s) => s.status === "COMPLETED").length;
   const allTasks = useStore((s) => s.db.tasks);
   const isPlan = task.tags.includes("plan") && task.parentId === null;
@@ -340,22 +341,40 @@ export function TaskPanel({
                 onChange={(e) => reschedule(task.id, e.target.value || null)}
               />
             </Field>
-            <Field label={t("formPriority")}>
-              <select
-                className="select"
-                value={task.priority}
+            {/* The deadline sits beside the start date rather than in a fold:
+                "when do I have to be done" is the other half of "when do I
+                start", and burying it is what made it unfindable before. */}
+            <Field
+              label={t("formDeadline")}
+              hint={task.recurrence ? t("formDeadlineRepeat") : undefined}
+            >
+              <input
+                className="input"
+                type="date"
+                value={task.deadline ?? ""}
+                disabled={task.recurrence !== null}
                 onChange={(e) =>
-                  updateTask(task.id, { priority: e.target.value as Priority })
+                  updateTask(task.id, { deadline: e.target.value || null })
                 }
-              >
-                {PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {t(`priority${p}`)}
-                  </option>
-                ))}
-              </select>
+              />
             </Field>
           </div>
+
+          <Field label={t("formPriority")}>
+            <select
+              className="select"
+              value={task.priority}
+              onChange={(e) =>
+                updateTask(task.id, { priority: e.target.value as Priority })
+              }
+            >
+              {PRIORITIES.map((p) => (
+                <option key={p} value={p}>
+                  {t(`priority${p}`)}
+                </option>
+              ))}
+            </select>
+          </Field>
 
           <Switch
             checked={task.allDay}
@@ -418,7 +437,7 @@ export function TaskPanel({
           summary={repeatSummary}
           defaultOpen={task.recurrence !== null}
         >
-          <Field label={t("formEndDate")}>
+          <Field label={t("formEndDate")} hint={t("formEndDateHint")}>
             <input
               className="input"
               type="date"
@@ -442,6 +461,7 @@ export function TaskPanel({
           <RecurrenceEditor
             value={task.recurrence}
             onChange={(recurrence) => updateTask(task.id, { recurrence })}
+            anchor={task.dueDate}
           />
         </PanelSection>
 
@@ -658,38 +678,19 @@ export function TaskPanel({
             ) : null}
           </div>
 
-          <div className="row" style={{ gap: 6 }}>
-            {parentTask && (task.dueDate || instance.date) ? (
-              <button
-                type="button"
-                className="btn ghost sm"
-                title={t("removeFromToday")}
-                onClick={() => {
-                  updateTask(task.id, { dueDate: null });
-                  onClose();
-                }}
-              >
-                {t("removeFromTodayShort")}
-              </button>
-            ) : null}
+          {parentTask && (task.dueDate || instance.date) ? (
             <button
               type="button"
-              className="btn danger sm"
+              className="btn ghost sm"
+              title={t("removeFromToday")}
               onClick={() => {
-                if (parentTask) {
-                  if (confirm(t("deleteSubtaskConfirm"))) {
-                    deleteTask(task.id);
-                    onClose();
-                  }
-                } else {
-                  deleteTask(task.id);
-                  onClose();
-                }
+                updateTask(task.id, { dueDate: null });
+                onClose();
               }}
             >
-              <Trash2 size={13} /> {t("trash")}
+              {t("removeFromTodayShort")}
             </button>
-          </div>
+          ) : null}
         </div>
 
         <div className="panel-foot-meta">
@@ -698,6 +699,18 @@ export function TaskPanel({
               date: new Date(task.createdAt).toLocaleDateString(localeTag()),
             })}
           </span>
+          {/* Named for what it does — moving to the trash — rather than for
+              where the task ends up, so it does not read as a link to the
+              trash view. */}
+          <button
+            type="button"
+            className="btn danger-quiet sm"
+            onClick={() => {
+              if (requestDelete(task.id)) onClose();
+            }}
+          >
+            <Trash2 size={13} /> {t("menuDelete")}
+          </button>
         </div>
       </div>
     </aside>

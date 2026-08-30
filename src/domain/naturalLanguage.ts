@@ -26,6 +26,8 @@ export interface ParsedQuickAdd {
   title: string;
   dueDate: LocalDate | null;
   endDate: LocalDate | null;
+  /** From "...e kadar" / "by ...": the day it has to be finished by. */
+  deadline: LocalDate | null;
   startTime: LocalTime | null;
   endTime: LocalTime | null;
   allDay: boolean;
@@ -45,6 +47,7 @@ export function emptyParse(title = ""): ParsedQuickAdd {
     title,
     dueDate: null,
     endDate: null,
+    deadline: null,
     startTime: null,
     endTime: null,
     allDay: true,
@@ -322,7 +325,86 @@ export function parseQuickAdd(
     ],
   ];
 
-  if (!result.dueDate) {
+/**
+   * A date expression inside `fragment`, resolved with the rules above.
+   *
+   * `prefer` decides which one when the fragment holds several. Turkish puts
+   * the date immediately before "kadar", so everything earlier in the sentence
+   * ("yarin basla 20 Eylul'e kadar bitir") belongs to the start date and the
+   * last match is the deadline; English puts it straight after "by", where the
+   * first match is the right one.
+   */
+  const resolveDateIn = (
+    fragment: string,
+    prefer: "first" | "last" = "first",
+  ): { date: LocalDate; matched: string; ends: number } | null => {
+    let best: { date: LocalDate; matched: string; ends: number } | null = null;
+    for (const [pattern, , resolve] of dateRules) {
+      const global = new RegExp(pattern.source, `${pattern.flags.replace("g", "")}g`);
+      for (const m of fragment.matchAll(global)) {
+        const date = resolve(m);
+        if (!date) continue;
+        const ends = (m.index ?? 0) + m[0].length;
+        const better = best === null || (prefer === "last" ? ends > best.ends : ends < best.ends);
+        if (better) best = { date, matched: m[0].trim(), ends };
+      }
+    }
+    return best;
+  };
+
+  /* --- deadline: "20 Eylul'e kadar" / "by 20 September" ------------------
+   *
+   * Run before the plain date rules, or "20 Eylul" is taken as a start date
+   * and the deadline never happens. Turkish puts the date first and inflects
+   * it, English puts it after the keyword: two shapes, one fact.
+   */
+  {
+    const kadar = /(?:^|\s)kadar(?=\s|$)/iu.exec(text);
+    const by = /(?:^|\s)(?:by|until)\s+/iu.exec(text);
+    if (kadar) {
+      /*
+       * How the date is inflected depends on the word: a proper noun takes an
+       * apostrophe ("Eylul'e"), an ordinary one does not ("yarina", "cumaya").
+       * Rather than model Turkish suffixes, the candidates are tried in order
+       * and the first that resolves to a real date wins.
+       */
+      const head = text.slice(0, kadar.index).replace(/\s+$/, "");
+      const candidates = [
+        head,
+        head.replace(/['’][\p{L}]{1,3}$/u, ""),
+        head.slice(0, -1),
+        head.slice(0, -2),
+        head.slice(0, -3),
+      ];
+      /*
+       * Every candidate is tried, not just the first that hits: the untouched
+       * head of "yarin basla 20 Eylul'e" resolves "yarin", which is the start
+       * date, while the suffix-stripped one reaches "20 Eylul". The match
+       * closest to "kadar" is the one the word is about.
+       */
+      let found: { date: LocalDate; matched: string; ends: number } | null = null;
+      for (const candidate of candidates) {
+        const hit = resolveDateIn(candidate, "last");
+        if (hit && (found === null || hit.ends > found.ends)) found = hit;
+      }
+      if (found) {
+        const start = text.indexOf(found.matched);
+        result.deadline = found.date;
+        text = text.slice(0, start) + " " + text.slice(kadar.index + kadar[0].length);
+        result.hints.push("deadline");
+      }
+    } else if (by) {
+      const tail = text.slice(by.index + by[0].length);
+      const found = resolveDateIn(tail);
+      if (found) {
+        result.deadline = found.date;
+        text = text.slice(0, by.index) + " " + tail.replace(found.matched, " ");
+        result.hints.push("deadline");
+      }
+    }
+  }
+
+    if (!result.dueDate) {
     outer: for (const [pattern, hint, resolve] of dateRules) {
       const global = new RegExp(pattern.source, `${pattern.flags.replace("g", "")}g`);
       for (const match of [...text.matchAll(global)]) {
@@ -338,7 +420,7 @@ export function parseQuickAdd(
 
   /* --- multi-day range: "25 Ağustos - 28 Ağustos" already ate the first -- */
   if (result.dueDate) {
-    eat(/(?:^|\s)(?:-|–|—|to|until|kadar)\s*(\d{4}-\d{2}-\d{2})(?=\s|$)/iu, "end date", (m) => {
+    eat(/(?:^|\s)(?:-|–|—|to)\s*(\d{4}-\d{2}-\d{2})(?=\s|$)/iu, "end date", (m) => {
       const end = m[1] ?? "";
       if (end <= (result.dueDate ?? "")) return false;
       result.endDate = end;
@@ -411,6 +493,7 @@ export function describeParse(parsed: ParsedQuickAdd): string[] {
       parsed.endDate ? `${parsed.dueDate} → ${parsed.endDate}` : parsed.dueDate,
     );
   }
+  if (parsed.deadline) chips.push("→ " + parsed.deadline);
   if (parsed.startTime) {
     chips.push(parsed.endTime ? `${parsed.startTime}–${parsed.endTime}` : parsed.startTime);
   }
