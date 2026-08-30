@@ -576,7 +576,14 @@ export const useStore = create<StoreState>((set, get) => {
         allDay: draft.allDay ?? true,
         startTime: draft.startTime ?? null,
         endTime: draft.endTime ?? null,
-        categoryId: draft.categoryId ?? null,
+        // A subtask belongs to whatever its parent belongs to, unless the
+        // caller says otherwise. Filing a step under "Tez" and then having to
+        // pick the category again is asking for the same fact twice.
+        categoryId:
+          draft.categoryId ??
+          (draft.parentId
+            ? (get().db.tasks.find((t) => t.id === draft.parentId)?.categoryId ?? null)
+            : null),
         tags: draft.tags ?? [],
         parentId: draft.parentId ?? null,
         recurrence: draft.recurrence ?? null,
@@ -710,14 +717,58 @@ export const useStore = create<StoreState>((set, get) => {
         }
         if (note) entries.push(historyEntry({ taskId, kind: "UPDATED", note }));
 
-        const next = { ...task, ...patch, updatedAt: nowInstant() };
+        const at = nowInstant();
+        const next = { ...task, ...patch, updatedAt: at };
+
+        /*
+         * A subtask sits in its parent's category, so re-filing a plan re-files
+         * its steps. Only tasks that actually disagree are touched, which keeps
+         * this a no-op for every other edit and stops it from churning
+         * `updatedAt` — and therefore the sync — on a whole subtree.
+         */
+        const cascade =
+          "categoryId" in patch && patch.categoryId !== task.categoryId
+            ? new Set(
+                collectSubtree(db.tasks, taskId).filter(
+                  (id) =>
+                    id !== taskId &&
+                    db.tasks.find((t) => t.id === id)?.categoryId !== next.categoryId,
+                ),
+              )
+            : new Set<string>();
+
+        for (const id of cascade) {
+          entries.push(
+            historyEntry({
+              taskId: id,
+              kind: "UPDATED",
+              field: "categoryId",
+              from: serialise(db.tasks.find((t) => t.id === id)?.categoryId ?? null),
+              to: serialise(next.categoryId ?? null),
+            }),
+          );
+        }
+
         return appendHistory(
-          { ...db, tasks: db.tasks.map((t) => (t.id === taskId ? next : t)) },
+          {
+            ...db,
+            tasks: db.tasks.map((t) =>
+              t.id === taskId
+                ? next
+                : cascade.has(t.id)
+                  ? { ...t, categoryId: next.categoryId ?? null, updatedAt: at }
+                  : t,
+            ),
+          },
           ...entries,
         );
       });
-      const updated = get().db.tasks.find((t) => t.id === taskId);
-      if (updated) void syncTaskToCloud(updated);
+      if ("categoryId" in patch) {
+        syncSubtree(get().db, taskId);
+      } else {
+        const updated = get().db.tasks.find((t) => t.id === taskId);
+        if (updated) void syncTaskToCloud(updated);
+      }
     },
 
     deleteTask(taskId) {
@@ -1266,20 +1317,54 @@ export const useStore = create<StoreState>((set, get) => {
         const siblings = db.tasks.filter(
           (t) => (t.parentId ?? null) === parentId && t.id !== taskId,
         );
+        const at = nowInstant();
+        /*
+         * Moving a task into a plan moves it into the plan's category — that is
+         * what "this belongs to the thesis now" means, and it is the whole
+         * reason the task was dragged there.
+         *
+         * A plan with no category of its own claims nothing: clearing the
+         * task's category would destroy information to express nothing.
+         */
+        const adopted =
+          parentId === null
+            ? null
+            : (db.tasks.find((t) => t.id === parentId)?.categoryId ?? null);
+        const categoryId = adopted ?? task.categoryId;
+
         const next: Task = {
           ...task,
           parentId,
+          categoryId,
           order: siblings.length,
           // The pin it carried belonged to the list it just left.
           manualOrder: null,
-          updatedAt: nowInstant(),
+          updatedAt: at,
         };
+
+        // Whatever hung below the task comes with it.
+        const followers = new Set(
+          collectSubtree(db.tasks, taskId).filter(
+            (id) =>
+              id !== taskId &&
+              db.tasks.find((t) => t.id === id)?.categoryId !== categoryId,
+          ),
+        );
         const parentTitle =
           parentId === null
             ? null
             : (db.tasks.find((t) => t.id === parentId)?.title ?? "");
         return appendHistory(
-          { ...db, tasks: db.tasks.map((t) => (t.id === taskId ? next : t)) },
+          {
+            ...db,
+            tasks: db.tasks.map((t) =>
+              t.id === taskId
+                ? next
+                : followers.has(t.id)
+                  ? { ...t, categoryId, updatedAt: at }
+                  : t,
+            ),
+          },
           historyEntry({
             taskId,
             kind: "UPDATED",
@@ -1295,8 +1380,8 @@ export const useStore = create<StoreState>((set, get) => {
         );
       });
 
-      const updated = get().db.tasks.find((t) => t.id === taskId);
-      if (updated) void syncTaskToCloud(updated);
+      // The subtree may have changed category along with the move.
+      syncSubtree(get().db, taskId);
     },
 
     reorderSubtasks(parentId, orderedIds) {

@@ -534,20 +534,12 @@ function PlanCard({
               isPlanCompleted ? "completed" : "active",
             )}
           />
-          <h3 className="plan-card-title truncate">{plan.title}</h3>
+          <h3 className="plan-card-title wrap">{plan.title}</h3>
           {totalSubtasks > 0 && (
             <span className="plan-card-count mono">
               {doneSubtasks}/{totalSubtasks}
             </span>
           )}
-          {plan.deadline ? (
-            <span
-              className={cn("plan-card-deadline", planOverdue && "is-overdue")}
-              title={t("deadlineOn", { date: plan.deadline })}
-            >
-              <Flag size={12} aria-hidden /> {plan.deadline}
-            </span>
-          ) : null}
         </div>
 
         <div className="plan-card-actions">
@@ -623,7 +615,7 @@ function PlanCard({
       <div className="plan-card-meta-row" onClick={openPlan}>
         {isPlanToday && (
           <span className="plan-today-pill" title={t("plansAddedToToday")}>
-            <Sun size={11} /> Bugün
+            <Sun size={11} /> {t("today")}
           </span>
         )}
         {category && (
@@ -637,9 +629,19 @@ function PlanCard({
             {t(`priority${plan.priority}`)}
           </span>
         )}
+        {/* On the pill line rather than beside the name: a plan's title is the
+            one thing that must never be the part that gets truncated. */}
+        {plan.deadline && (
+          <span
+            className={cn("plan-card-deadline", planOverdue && "is-overdue")}
+            title={t("deadlineOn", { date: plan.deadline })}
+          >
+            <Flag size={11} aria-hidden /> {plan.deadline}
+          </span>
+        )}
         {isPlanCompleted && (
           <span className="plan-status-pill success">
-            <CheckCircle2 size={11} /> Tamamlandı
+            <CheckCircle2 size={11} /> {t("statusCOMPLETED")}
           </span>
         )}
       </div>

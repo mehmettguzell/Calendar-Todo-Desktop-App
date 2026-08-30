@@ -934,19 +934,27 @@ function forgetSyncedState() {
 /**
  * How long changes gather before one batched write goes up.
  *
+ * A ceiling, not a rate: with nothing changing, no timer is armed and no
+ * request is made.
+ *
  * Measured against a real document rather than guessed: 677 edits over five
  * days, and 72 of one day's 117 gaps between consecutive edits were under two
  * seconds. People work in bursts — tick, tick, retype the title, drag it a day
- * — so the window is what decides how many requests those bursts become. At
- * 600ms that document costs 537 writes; at 2.5s it costs ~420; at 30s it would
- * cost 186, but the last figure buys its saving with half a minute of lag on
- * every other device, which is the wrong trade for a calendar.
+ * — so the window is what decides how many requests those bursts become. That
+ * document costs 537 writes at 600ms, ~420 at 2.5s, and 186 at 30s.
+ *
+ * Five seconds sits past the bulk of those sub-two-second gaps, so a burst
+ * still collapses into one request, while every device in the account is at
+ * most five seconds behind — which is under the time it takes to pick up
+ * another one. The saving from a longer window shrinks as the curve flattens;
+ * half a minute of lag on a shared calendar does not.
  *
  * Nothing is at stake in the delay itself: the local write already succeeded,
- * and `syncDifferences` finds by content whatever a crash in this window would
+ * `visibilitychange` drains the queue when the window goes away, and
+ * `syncDifferences` finds by content whatever a crash in this window would
  * have skipped.
  */
-const FLUSH_DELAY_MS = 2_500;
+const FLUSH_DELAY_MS = 5_000;
 const pendingTaskIds = new Set<string>();
 const pendingCategoryIds = new Set<string>();
 const pendingOccurrenceIds = new Set<string>();
@@ -1373,8 +1381,8 @@ export interface SyncContext {
  * feature that degrades to "this device knows the merchant, the cloud does
  * not", which is a far better outcome than a red sync badge.
  */
-const OPTIONAL_COLUMNS: Record<string, string[]> = {
-  tasks: ["end_date", "estimate_minutes"],
+export const OPTIONAL_COLUMNS: Record<string, string[]> = {
+  tasks: ["end_date", "estimate_minutes", "deadline"],
   transactions: ["merchant", "external_id"],
 };
 

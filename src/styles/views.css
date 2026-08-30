@@ -1466,14 +1466,16 @@
 
 .plan-card-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
 
 .plan-card-title-row {
   display: flex;
-  align-items: center;
+  /* Top-aligned so the action buttons stay level with the first line of a
+     name that runs to two. */
+  align-items: flex-start;
   gap: 8px;
   flex: 1;
   min-width: 0;
@@ -1489,6 +1491,11 @@
 }
 
 .plan-card-title {
+  /* A plan is known by its name, so the name is never the part that gets cut:
+     it wraps and the card grows, rather than ending in an ellipsis that hides
+     which plan this is. */
+  flex: 1;
+  line-height: 1.3;
   font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.01em;
@@ -3007,7 +3014,7 @@
   align-items: center;
   gap: 4px;
   flex: none;
-  padding: 1px 6px;
+  padding: 2px 8px;
   border: 1px dashed var(--border);
   border-radius: 999px;
   color: var(--text-muted);
