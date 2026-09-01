@@ -31,7 +31,7 @@ import { historyEntry } from "@/domain/history";
 import { pinOf } from "@/domain/manualOrder";
 import { createId, occurrenceId } from "@/domain/ids";
 import { copySubtree, type CopyTarget } from "@/domain/copy";
-import { toInstance } from "@/domain/task";
+import { representativeInstance, toInstance } from "@/domain/task";
 import { resolveSnooze, type SnoozePresetId } from "@/domain/snooze";
 import type {
   BudgetCategory,
@@ -260,6 +260,28 @@ interface StoreState {
 
   /** Pull unfinished, past-due tasks onto a new date. Returns how many moved. */
   rollOverTo(taskIds: string[], date: LocalDate): number;
+
+  /* Bulk ------------------------------------------------------------ */
+  /**
+   * The same edit across several tasks.
+   *
+   * Routed through `updateTask` one by one rather than written as one sweep:
+   * an edit to fifty tasks has to leave the same history, the same category
+   * cascade onto subtasks and the same sync as fifty single edits, or a bulk
+   * action becomes a second way to change a task that behaves differently
+   * from the first.
+   */
+  bulkUpdateTasks(taskIds: string[], patch: TaskPatch): void;
+  /** Complete or reopen several tasks at once. */
+  bulkSetStatus(taskIds: string[], status: StoredStatus): void;
+  /**
+   * Trash several tasks — each with everything beneath it — as one act.
+   *
+   * One commit and one undo offer, because that is what the user did. Fifty
+   * separate deletes would leave fifty history-identical rows and an undo that
+   * only reached the last of them.
+   */
+  bulkDeleteTasks(taskIds: string[]): void;
 
   /* Budget ---------------------------------------------------------- */
   addTransaction(draft: TransactionDraft): Transaction;
@@ -1438,6 +1460,79 @@ export const useStore = create<StoreState>((set, get) => {
             : task,
         ),
       }));
+    },
+
+    /* Bulk ------------------------------------------------------------ */
+
+    bulkUpdateTasks(taskIds, patch) {
+      for (const taskId of [...new Set(taskIds)]) get().updateTask(taskId, patch);
+    },
+
+    bulkSetStatus(taskIds, status) {
+      const unique = [...new Set(taskIds)];
+      if (unique.length === 0) return;
+      if (status === "COMPLETED") fireConfetti({ particleCount: 65 });
+
+      const now = new Date(get().now);
+
+      // Folded into one commit so the list re-sorts once rather than once per
+      // task, which is the difference between a tick and a cascade of jumps.
+      commit((db) => {
+        // Rebuilt per reduction step: an earlier task in the batch may have
+        // just written the occurrence row a later one reads.
+        const refFor = (current: Database, taskId: string): InstanceRef | null => {
+          const task = current.tasks.find((t) => t.id === taskId);
+          if (!task) return null;
+          // A repeating task keeps its status per occurrence — writing the
+          // task row instead would be invisible in every view, since
+          // `toInstance` reads the occurrence and ignores `task.status`. The
+          // occurrence chosen is the one the row was showing: the first that
+          // is not already done.
+          if (!task.recurrence) return { taskId, occurrenceDate: null };
+          const occurrences = new Map(
+            current.occurrences.map((occurrence) => [occurrence.id, occurrence]),
+          );
+          return refOf(representativeInstance(task, occurrences, now));
+        };
+
+        return unique.reduce((acc, taskId) => {
+          const ref = refFor(acc, taskId);
+          return ref ? applyStatus(acc, ref, status) : acc;
+        }, db);
+      });
+      for (const taskId of unique) syncSubtree(get().db, taskId);
+    },
+
+    bulkDeleteTasks(taskIds) {
+      const unique = [...new Set(taskIds)];
+      if (unique.length === 0) return;
+
+      commit((db) => {
+        const at = nowInstant();
+        // A subtree per selected task, unioned: picking a plan *and* one of its
+        // steps must not trash — or history — that step twice.
+        const ids = new Set(
+          unique.flatMap((taskId) => collectSubtree(db.tasks, taskId)),
+        );
+        const entries = [...ids].map((id) =>
+          historyEntry({ taskId: id, kind: "DELETED", note: "Moved to trash" }),
+        );
+        return appendHistory(
+          {
+            ...db,
+            tasks: db.tasks.map((t) =>
+              ids.has(t.id) ? { ...t, deletedAt: at, updatedAt: at } : t,
+            ),
+          },
+          ...entries,
+        );
+      });
+
+      for (const taskId of unique) syncSubtree(get().db, taskId);
+
+      useUndoStore.getState().push("undoneTasksDeleted", () => {
+        for (const taskId of unique) get().restoreTask(taskId);
+      });
     },
 
     /* Budget ---------------------------------------------------------- */

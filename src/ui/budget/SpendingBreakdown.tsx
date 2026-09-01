@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, Search, TrendingDown, TrendingUp } from "lucide-react";
-import { formatMoney, type BudgetCategory, type Transaction } from "@/domain/money";
+import {
+  formatMoney,
+  limitStatus,
+  parseAmount,
+  type BudgetCategory,
+  type Transaction,
+} from "@/domain/money";
 import {
   analyseSpending,
   searchMerchants,
@@ -28,16 +34,29 @@ export function SpendingBreakdown({
   range,
   previousRange,
   currency,
+  onSetLimit,
 }: {
   transactions: Transaction[];
   categories: BudgetCategory[];
   range: DateRange;
   previousRange: DateRange | null;
   currency: string;
+  /**
+   * Set or clear a category's monthly ceiling.
+   *
+   * The editor lives on the same row as the total it constrains, because a
+   * limit is only meaningful next to the number it is being measured against —
+   * put it anywhere else and it is a setting rather than a decision.
+   */
+  onSetLimit?: (categoryId: string, minor: number | null) => void;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const categoryById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category])),
+    [categories],
+  );
 
   const report = useMemo(
     () => analyseSpending(transactions, categories, range, { compareWith: previousRange }),
@@ -114,8 +133,16 @@ export function SpendingBreakdown({
           {report.categories.map((slice) => {
             const key = slice.categoryId ?? "none";
             const expanded = open === key;
+            const category = slice.categoryId
+              ? (categoryById.get(slice.categoryId) ?? null)
+              : null;
+            const limit = limitStatus(
+              category?.monthlyLimitMinor,
+              slice.amountMinor,
+            );
             return (
               <li key={key} className={cn("spend-category", expanded && "open")}>
+                <div className="spend-category-line">
                 <button
                   type="button"
                   className="spend-category-head"
@@ -132,19 +159,48 @@ export function SpendingBreakdown({
                     <span
                       className="spend-fill"
                       style={{
-                        width: `${Math.max(2, slice.share * 100)}%`,
-                        background: slice.color,
+                        /* Against the ceiling when there is one, against the
+                           biggest category when there is not: a bar measured
+                           against a limit answers a different question, and
+                           only one of the two can be drawn at a time. */
+                        width: `${Math.min(100, Math.max(2, (limit ? limit.ratio : slice.share) * 100))}%`,
+                        background: limit ? LIMIT_COLOURS[limit.state] : slice.color,
                       }}
                     />
                   </span>
                   <span className="mono spend-value">
                     {formatMoney(slice.amountMinor, currency)}
+                    {limit ? (
+                      <span className={cn("budget-limit-note", limit.state)}>
+                        {" / "}
+                        {formatMoney(limit.limitMinor, currency)}
+                      </span>
+                    ) : null}
                   </span>
-                  <span className="spend-share faint">
-                    %{Math.round(slice.share * 100)}
+                  {/* The bar measures against the ceiling when there is one,
+                      so the number beside it has to mean the same thing —
+                      a bar three-quarters full next to "%3" is two answers to
+                      one question. */}
+                  <span
+                    className={cn("spend-share faint", limit && limit.state)}
+                    title={
+                      limit
+                        ? t("budgetSetLimit")
+                        : t("budgetWhereItWent")
+                    }
+                  >
+                    %{Math.round((limit ? limit.ratio : slice.share) * 100)}
                   </span>
                   {slice.changeRatio !== null ? <Delta ratio={slice.changeRatio} small /> : null}
                 </button>
+                {category && onSetLimit ? (
+                  <LimitInput
+                    category={category}
+                    currency={currency}
+                    onChange={(minor) => onSetLimit(category.id, minor)}
+                  />
+                ) : null}
+                </div>
 
                 {expanded ? (
                   <ul className="spend-merchants">
@@ -210,5 +266,56 @@ function Delta({ ratio, small = false }: { ratio: number; small?: boolean }) {
     <span className={cn("spend-delta", up ? "up" : "down", small && "sm")}>
       {up ? <TrendingUp size={12} /> : <TrendingDown size={12} />}%{percent}
     </span>
+  );
+}
+
+const LIMIT_COLOURS = {
+  ok: "#22c55e",
+  close: "#eab308",
+  over: "#ef4444",
+} as const;
+
+/**
+ * The monthly ceiling for one category, edited in place.
+ *
+ * Hidden until the row is hovered when unset, so a view about where the money
+ * went does not read as a form. Committed on blur rather than per keystroke: a
+ * half-typed "3" should not briefly mean a three-kuruş budget.
+ */
+function LimitInput({
+  category,
+  currency,
+  onChange,
+}: {
+  category: BudgetCategory;
+  currency: string;
+  onChange: (minor: number | null) => void;
+}) {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const current = category.monthlyLimitMinor ?? null;
+  const shown = draft ?? (current ? String(Math.round(current / 100)) : "");
+
+  return (
+    <input
+      className="budget-limit-input"
+      inputMode="numeric"
+      placeholder={t("budgetLimit")}
+      aria-label={`${t("budgetSetLimit")} — ${category.name}`}
+      title={`${t("budgetSetLimit")} (${currency})`}
+      value={shown}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft === null) return;
+        const parsed = parseAmount(draft);
+        onChange(draft.trim() === "" || parsed === null ? null : Math.abs(parsed));
+        setDraft(null);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") setDraft(null);
+      }}
+    />
   );
 }

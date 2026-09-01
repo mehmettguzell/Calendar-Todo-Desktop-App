@@ -1,6 +1,7 @@
 import { useState, type MouseEvent } from "react";
 import {
   AlarmClock,
+  CalendarMinus,
   Clock,
   Flag,
   GripVertical,
@@ -21,7 +22,9 @@ import {
   useSubtasks,
   useTrackedSeconds,
 } from "@/state/selectors";
+import { useSelectionStore } from "@/state/selectionStore";
 import { useNow, useStore } from "@/state/store";
+import { useUndoStore } from "@/state/undoStore";
 import { Checkbox, StatusBadge } from "@/ui/components/primitives";
 import type { RowReorder } from "./useListReorder";
 import { SnoozeMenu } from "./SnoozeMenu";
@@ -40,6 +43,7 @@ export function TaskRow({
   showDate = true,
   reorder,
   onContextMenu,
+  listIds,
 }: {
   instance: TaskInstance;
   selected?: boolean;
@@ -56,12 +60,24 @@ export function TaskRow({
     event: MouseEvent<HTMLDivElement>,
     task: TaskInstance,
   ) => void;
+  /**
+   * The ids of the list this row is drawn in, in the order it is drawn.
+   *
+   * Supplied only by lists where picking several tasks makes sense. Left out —
+   * in Trash, in search results — the row cannot be selected at all, which is
+   * the point: a bulk action has nowhere sensible to apply there.
+   *
+   * It is also what a Shift-click measures across: a range spanning two
+   * different lists is not a range the user can see.
+   */
+  listIds?: string[];
 }) {
   const { task } = instance;
   const { t } = useI18n();
   const toggleComplete = useStore((s) => s.toggleComplete);
   const updateTask = useStore((s) => s.updateTask);
   const requestDelete = useRequestDelete();
+  const pushUndo = useUndoStore((s) => s.push);
   const startFocus = useStore((s) => s.startFocus);
   const stopFocus = useStore((s) => s.stopFocus);
   const runningFocus = useStore((s) => s.runningFocus);
@@ -72,6 +88,29 @@ export function TaskRow({
   const tracked = useTrackedSeconds(task.id);
   const now = useNow();
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+
+  const selectionActive = useSelectionStore((s) => s.active);
+  const picked = useSelectionStore((s) => s.ids.includes(task.id));
+  const pick = useSelectionStore((s) => s.pick);
+  /*
+   * Picking stays out of sight until it is asked for.
+   *
+   * A modifier click is what asks for it — the gesture every file list on every
+   * desktop already uses — and only then does the checkbox column appear. A
+   * list nobody is selecting in looks exactly as it did before selecting
+   * existed.
+   */
+  const selectable = listIds !== undefined;
+  const picking = selectable && selectionActive;
+
+  const onRowClick = (e: MouseEvent<HTMLElement>) => {
+    if (!selectable) return false;
+    if (!picking && !e.ctrlKey && !e.metaKey && !e.shiftKey) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    pick(task.id, { listIds, range: e.shiftKey });
+    return true;
+  };
 
   const parentTask = task.parentId
     ? (tasks.find((t) => t.id === task.parentId) ?? null)
@@ -98,6 +137,8 @@ export function TaskRow({
         "task-row",
         done && "done",
         selected && "selected",
+        picking && "picking",
+        picked && "picked",
         dragClass,
       )}
       {...dragHandlers}
@@ -105,6 +146,23 @@ export function TaskRow({
         onContextMenu ? (event) => onContextMenu(event, instance) : undefined
       }
     >
+      {picking ? (
+        <label className="task-pick" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={picked}
+            aria-label={t("bulkSelectAria", { title: task.title })}
+            onChange={() => pick(task.id, { listIds })}
+            onClick={(e) => {
+              if (e.shiftKey) {
+                e.preventDefault();
+                pick(task.id, { listIds, range: true });
+              }
+            }}
+          />
+        </label>
+      ) : null}
+
       <div className={cn("prio", task.priority)} aria-hidden />
       <div style={{ paddingTop: 1 }}>
         <Checkbox done={done} onToggle={() => toggleComplete(instance)} />
@@ -113,7 +171,10 @@ export function TaskRow({
       <button
         type="button"
         className="task-main"
-        onClick={() => onOpen(instance)}
+        onClick={(e) => {
+          if (onRowClick(e)) return;
+          onOpen(instance);
+        }}
       >
         <div className="task-title">
           <span className="label wrap">{task.title}</span>
@@ -242,20 +303,33 @@ export function TaskRow({
         >
           <AlarmClock size={14} />
         </button>
+        {/*
+          A subtask is not deleted from here — it is taken off the schedule and
+          left in its plan. It does that and then offers it back, rather than
+          asking first: clearing a step off today is the most repeated act in
+          this list, and a modal in front of a reversible move is a toll paid on
+          every one of them. The undo toast carries what the question used to —
+          it names which of the two things just happened to the row that
+          vanished, and hands it back in one click if it was the wrong one.
+        */}
         <button
           type="button"
           className="btn ghost icon"
-          title={task.parentId ? t("removeFromToday") : t("menuDelete")}
+          title={task.parentId ? t("removeFromSchedule") : t("menuDelete")}
           onClick={(e) => {
             e.stopPropagation();
-            if (task.parentId) {
-              updateTask(task.id, { dueDate: null });
-            } else {
+            if (!task.parentId) {
               requestDelete(task.id);
+              return;
             }
+            const previousDate = task.dueDate;
+            updateTask(task.id, { dueDate: null });
+            pushUndo("undoneRemovedFromSchedule", () =>
+              updateTask(task.id, { dueDate: previousDate }),
+            );
           }}
         >
-          <Trash2 size={14} />
+          {task.parentId ? <CalendarMinus size={14} /> : <Trash2 size={14} />}
         </button>
         {snoozeOpen ? (
           <div style={{ position: "absolute", top: "100%", right: 0 }}>

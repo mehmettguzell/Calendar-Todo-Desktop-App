@@ -20,6 +20,7 @@ export type SnoozePresetId =
   | "30m"
   | "1h"
   | "3h"
+  | "today"
   | "tomorrow"
   | "monday"
   | "custom";
@@ -37,10 +38,37 @@ export const SNOOZE_PRESETS: SnoozePreset[] = [
   { id: "30m", labelKey: "snooze30m", movesDay: false },
   { id: "1h", labelKey: "snooze1h", movesDay: false },
   { id: "3h", labelKey: "snooze3h", movesDay: false },
+  { id: "today", labelKey: "snoozeToday", movesDay: true },
   { id: "tomorrow", labelKey: "snoozeTomorrow", movesDay: true },
   { id: "monday", labelKey: "snoozeMonday", movesDay: true },
   { id: "custom", labelKey: "snoozeCustom", movesDay: true },
 ];
+
+/**
+ * The presets that make sense for one task, in menu order.
+ *
+ * "Today" is the only conditional one. Offering it on a task that is already
+ * on today, or still ahead of us, would be a no-op dressed up as a choice —
+ * so it appears only where it has something to do: a task whose day has
+ * passed, which is the one case where every other preset pushes the work
+ * further away than it already is (spec section 8: postponing is a move, and
+ * a task left on yesterday can only be moved forward).
+ *
+ * A recurring occurrence is excluded because a snooze never moves a series;
+ * the button would quiet the reminder and leave the date where it was.
+ */
+export function availableSnoozePresets(
+  instance: TaskInstance,
+  now: Date,
+): SnoozePreset[] {
+  const isPastDue =
+    !instance.isRecurring &&
+    instance.date !== null &&
+    instance.date < toLocalDate(now);
+  return SNOOZE_PRESETS.filter(
+    (preset) => preset.id !== "today" || isPastDue,
+  );
+}
 
 export interface SnoozeOutcome {
   /** When the task/reminder becomes active again; `null` when nothing is left to wait for. */
@@ -105,7 +133,7 @@ export function resolveSnooze(
     return { until, reschedule: null };
   }
 
-  // Day-jumping presets (tomorrow, monday, custom) move the task to the target day.
+  // Day-jumping presets (today, tomorrow, monday, custom) move the task to the target day.
   const keepsTime =
     preset === "custom"
       ? !instance.task.allDay
@@ -156,6 +184,11 @@ function snoozeTarget(
       return addHours(now, 1);
     case "3h":
       return addHours(now, 3);
+    case "today":
+      // Always counted from today rather than from the task's own day: this
+      // preset exists for tasks that are behind, and "their own day + 0" would
+      // leave them exactly where they are.
+      return sameTimeOn(startOfDay(now), instance, settings);
     case "tomorrow":
       return sameTimeOn(
         addDaysTo(dayAnchor(instance, now), 1),

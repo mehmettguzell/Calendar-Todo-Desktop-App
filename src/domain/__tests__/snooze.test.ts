@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "@/data/db";
 import { atTime, toLocalDate, toLocalTime } from "../datetime";
-import { resolveSnooze } from "../snooze";
+import { availableSnoozePresets, resolveSnooze } from "../snooze";
 import { toInstance } from "../task";
 import type { Task } from "../types";
 
@@ -162,5 +162,80 @@ describe("resolveSnooze on a recurring series", () => {
     // The reminder waits until tomorrow, but the rule still starts on the 25th.
     expect(outcome.reschedule).toBeNull();
     expect(toLocalDate(new Date(outcome.until!))).toBe("2026-08-26");
+  });
+});
+
+describe("snoozing an overdue task onto today", () => {
+  it("brings yesterday's task to today at the same time", () => {
+    const now = atTime("2026-08-26", "09:00"); // the task was due on the 25th
+    const outcome = resolveSnooze(
+      instanceOf(presentation(), now),
+      "today",
+      DEFAULT_SETTINGS,
+      now,
+    );
+
+    expect(outcome.reschedule).toEqual({ date: "2026-08-26", startTime: "14:00" });
+    expect(toLocalDate(new Date(outcome.until!))).toBe("2026-08-26");
+    expect(toLocalTime(new Date(outcome.until!))).toBe("14:00");
+  });
+
+  it("still moves the task when today's slot has already gone by", () => {
+    const now = atTime("2026-08-26", "18:00"); // past the task's own 14:00
+    const outcome = resolveSnooze(
+      instanceOf(presentation(), now),
+      "today",
+      DEFAULT_SETTINGS,
+      now,
+    );
+
+    // Nothing left to wait for, but the task belongs to today now.
+    expect(outcome.reschedule?.date).toBe("2026-08-26");
+    expect(outcome.until).toBeNull();
+  });
+
+  it("uses the all-day reminder time for a task with no clock of its own", () => {
+    const now = atTime("2026-08-26", "07:00");
+    const allDay = presentation({ allDay: true, startTime: null, endTime: null });
+    const outcome = resolveSnooze(instanceOf(allDay, now), "today", DEFAULT_SETTINGS, now);
+
+    expect(outcome.reschedule).toEqual({ date: "2026-08-26", startTime: null });
+    expect(toLocalTime(new Date(outcome.until!))).toBe(DEFAULT_SETTINGS.allDayReminderTime);
+  });
+});
+
+describe("availableSnoozePresets", () => {
+  const ids = (task: Task, now: Date) =>
+    availableSnoozePresets(instanceOf(task, now), now).map((preset) => preset.id);
+
+  it("offers today only once the task's day has passed", () => {
+    const overdue = atTime("2026-08-26", "09:00");
+    expect(ids(presentation(), overdue)).toContain("today");
+  });
+
+  it("hides today while the task still sits on today or later", () => {
+    expect(ids(presentation(), atTime("2026-08-25", "09:00"))).not.toContain("today");
+    expect(ids(presentation(), atTime("2026-08-20", "09:00"))).not.toContain("today");
+  });
+
+  it("hides today for a recurring occurrence, which a snooze never moves", () => {
+    const now = atTime("2026-08-26", "09:00");
+    const daily = presentation({ recurrence: { freq: "DAILY", interval: 1 } });
+    const instance = toInstance(daily, "2026-08-25", null, now);
+
+    expect(availableSnoozePresets(instance, now).map((p) => p.id)).not.toContain("today");
+  });
+
+  it("leaves every other preset in place", () => {
+    const now = atTime("2026-08-25", "09:00");
+    expect(ids(presentation(), now)).toEqual([
+      "10m",
+      "30m",
+      "1h",
+      "3h",
+      "tomorrow",
+      "monday",
+      "custom",
+    ]);
   });
 });

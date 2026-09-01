@@ -7,6 +7,7 @@ import {
   Layers,
   List,
   ListChecks,
+  MousePointerClick,
   Plus,
   Trash2,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import {
   type Filters,
   type TodoGroup,
 } from "@/state/selectors";
+import { useSelectionStore } from "@/state/selectionStore";
 import { useNow, useStore } from "@/state/store";
 import { Empty } from "@/ui/components/primitives";
 import { TrashModal } from "@/ui/components/TrashModal";
@@ -50,6 +52,10 @@ export function TasksView({
   const today = toLocalDate(now);
   const groups = useTodoGroups(filters);
   const { t } = useI18n();
+
+  const selecting = useSelectionStore((s) => s.active);
+  const beginSelecting = useSelectionStore((s) => s.begin);
+  const clearSelection = useSelectionStore((s) => s.clear);
 
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [quickTitle, setQuickTitle] = useState("");
@@ -258,6 +264,21 @@ export function TasksView({
               <Layers size={15} /> {t("viewCategory")}
             </button>
           </div>
+
+          {/* The one visible door into selecting. Everything else about the
+              feature stays out of the way until it is opened — a Ctrl-click on
+              any row does the same thing for anyone who already knows. */}
+          <button
+            type="button"
+            className={cn("btn ghost sm", selecting && "active")}
+            style={{ gap: 6, padding: "5px 10px", fontSize: 12 }}
+            aria-pressed={selecting}
+            title={t("bulkSelectHint")}
+            onClick={() => (selecting ? clearSelection() : beginSelecting())}
+          >
+            <MousePointerClick size={13} />
+            {t("bulkSelect")}
+          </button>
 
           <button
             type="button"

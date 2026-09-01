@@ -4,15 +4,23 @@ import { useI18n } from "@/lib/i18n";
 import { useStore } from "@/state/store";
 
 /**
- * Delete a task, asking first when the delete takes other tasks with it.
+ * Delete a task, asking first only where the question earns its interruption.
  *
- * `deleteTask` trashes the whole subtree — it has to, or the children would be
- * left parented to something that is gone. That is invisible from a row or a
+ * The rule follows the level, not the child count. A top-level task is
+ * something the user made and filed, and losing one to a mis-clicked bin is
+ * worth a sentence. A subtask is a line in a checklist: they are added and
+ * dropped by the handful while the work is being done, and a modal in front of
+ * each one turns tidying a plan into a conversation. So a leaf subtask goes
+ * quietly — the undo toast and three days in the trash are the safety net
+ * there, and they are the same net a confirmed delete falls into anyway.
+ *
+ * The exception is a delete that takes other live tasks with it. `deleteTask`
+ * trashes the whole subtree — it has to, or the children would be left
+ * parented to something that is gone — and that is invisible from a row or a
  * context menu, where the only thing on screen is the one task being pointed
- * at, so a plan with twelve subtasks under it used to go in a single click
- * with nothing said. The confirmation names the number, which is the fact the
- * user is missing; it is skipped for a childless task, where the undo toast
- * and three days in the trash are already more safety net than a question.
+ * at. That question names the number, which is the fact the user is missing,
+ * and it is asked at every level: a step with steps of its own is still work
+ * disappearing that nobody on that screen could see.
  *
  * One hook rather than a check at each button: there are six places that
  * delete a task, and a rule copied six times is a rule that is right in five.
@@ -41,8 +49,8 @@ export function useRequestDelete(): (taskId: string) => boolean {
       const question =
         carried > 0
           ? t("deleteWithSubtasksConfirm", { title: task.title, count: carried })
-          : task.parentId !== null
-            ? t("deleteSubtaskConfirm")
+          : task.parentId === null
+            ? t("deleteTaskConfirm", { title: task.title })
             : null;
 
       if (question !== null && !window.confirm(question)) return false;

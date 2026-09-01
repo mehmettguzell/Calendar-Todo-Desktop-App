@@ -453,3 +453,125 @@
 /* Above every other overlay, including the reminder cards and the undo toast.
    A blocking update that something else can be clicked through is not one. */
 .backdrop.update-gate { z-index: 200; }
+
+/* ==================================================================
+   Bulk action bar
+   Sits above the undo toast and to the same rhythm: one pill, centred,
+   holding only the verbs that apply to more than one task at a time.
+   ================================================================== */
+
+.bulk-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--space-4) + 52px);
+  transform: translateX(-50%);
+  z-index: 111;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100vw - 32px);
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  animation: rise 160ms ease-out;
+  flex-wrap: wrap;
+}
+
+.bulk-count {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.bulk-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.bulk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 110ms ease,
+    color 110ms ease;
+}
+
+.bulk-btn:hover,
+.bulk-btn.open {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.bulk-btn.danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* Anchors each dropdown to its own button rather than to the bar, so the menu
+   opens where the pointer already is. Upwards: the bar lives at the bottom. */
+.bulk-menu-anchor {
+  position: relative;
+}
+
+.bulk-menu-anchor .popover {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+/* The label above the field rather than beside it: "Pick a date…" and a date
+   input do not both fit on one menu line in either language, and the version
+   that wrapped put the two on top of each other. */
+.bulk-date-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.bulk-date-pick input {
+  width: 100%;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+}
+
+.bulk-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.bulk-close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bulk-bar { animation: none; }
+}

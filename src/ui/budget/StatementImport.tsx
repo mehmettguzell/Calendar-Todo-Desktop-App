@@ -450,6 +450,14 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
                                     n: Math.abs(row.match.distanceDays),
                                   })}
                               {row.match.sameMerchant ? ` · ${t("importMatchMerchant")}` : ""}
+                              {row.match.exactAmount
+                                ? ""
+                                : ` · ${t("importMatchAmount", {
+                                    amount: formatMoney(
+                                      row.match.entry.amountMinor,
+                                      currency,
+                                    ),
+                                  })}`}
                             </span>
                           </label>
                         ) : null}
@@ -473,6 +481,14 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
           {plan.counts.similar > 0 ? (
             <p className="faint" style={{ margin: 0, fontSize: 12 }}>
               {t("importMergeHint")}
+            </p>
+          ) : null}
+
+          {/* Said separately from the hint above, because it asks for something:
+              these rows do nothing unless the user ticks them. */}
+          {plan.counts.near > 0 ? (
+            <p className="faint" style={{ margin: 0, fontSize: 12 }}>
+              {t("importNearHint", { n: plan.counts.near })}
             </p>
           ) : null}
 

@@ -317,6 +317,58 @@ describe("importing the same statement twice", () => {
   });
 });
 
+describe("a statement row the user had already typed by hand, roughly", () => {
+  const csv = [
+    "İşlem Tarihi;Açıklama;Tutar",
+    "13/08/2026;SHELL PETROL;890,00",
+  ].join("\n");
+  const parsed = parseStatement(csv);
+
+  /** 900 written at the pump for a 890.00 fill: still one purchase. */
+  const rounded = () => [
+    entry({ date: "2026-08-13", amountMinor: 90_000, merchant: "Shell", externalId: null }),
+  ];
+
+  it("offers the match instead of filing a second row, but does not tick it", () => {
+    const plan = buildImportPlan(parsed.lines, parsed.skipped, rounded(), CATEGORIES, parsed.source);
+    const shell = plan.rows[0];
+
+    expect(shell?.status).toBe("similar");
+    expect(shell?.match?.exactAmount).toBe(false);
+    // Rounding is a person's guess, so a person confirms it.
+    expect(shell?.merge).toBe(false);
+    expect(plan.counts.near).toBe(1);
+  });
+
+  it("imports it as its own entry while the user leaves it unticked", () => {
+    const plan = buildImportPlan(parsed.lines, parsed.skipped, rounded(), CATEGORIES, parsed.source);
+
+    expect(draftsFrom(plan)).toHaveLength(1);
+    expect(mergesFrom(plan, AT)).toHaveLength(0);
+  });
+
+  it("settles the typed entry at the bank's figure once it is ticked", () => {
+    const plan = buildImportPlan(parsed.lines, parsed.skipped, rounded(), CATEGORIES, parsed.source);
+    const ticked = { ...plan, rows: plan.rows.map((row) => ({ ...row, merge: true })) };
+
+    expect(draftsFrom(ticked)).toHaveLength(0);
+    const merges = mergesFrom(ticked, AT);
+    expect(merges).toHaveLength(1);
+    // The ledger stops saying 900: the fill cost what the bank charged.
+    expect(merges[0]?.patch.amountMinor).toBe(89_000);
+  });
+
+  it("leaves a figure that is nowhere near it as a separate purchase", () => {
+    const other = [
+      entry({ date: "2026-08-13", amountMinor: 95_000, merchant: "Shell", externalId: null }),
+    ];
+    const plan = buildImportPlan(parsed.lines, parsed.skipped, other, CATEGORIES, parsed.source);
+
+    expect(plan.rows[0]?.status).toBe("new");
+    expect(plan.counts.near).toBe(0);
+  });
+});
+
 describe("categories the document does not have yet", () => {
   it("reports what needs creating instead of filing it under nothing", () => {
     const csv = [

@@ -7,15 +7,12 @@ import {
   FileUp,
   PiggyBank,
   Plus,
-  Trash2,
   Wallet,
 } from "lucide-react";
 import { formatDate, toLocalDate } from "@/domain/datetime";
-import { fold } from "@/domain/merchant";
 import {
   accountNames,
   burnRatePerDay,
-  isProvisional,
   formatMoney,
   limitStatus,
   MONEY_FLOWS,
@@ -28,10 +25,11 @@ import {
   type BudgetCategory,
   type MoneyFlow,
 } from "@/domain/money";
-import type { Recurrence } from "@/domain/types";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { useNow, useStore } from "@/state/store";
+import { FixedCosts } from "@/ui/budget/FixedCosts";
+import { Ledger } from "@/ui/budget/Ledger";
 import { SpendingBreakdown } from "@/ui/budget/SpendingBreakdown";
 import { StatementImport } from "@/ui/budget/StatementImport";
 import { SpendFeedReview } from "@/ui/budget/SpendFeedReview";
@@ -54,10 +52,18 @@ const FLOW_LABEL: Record<MoneyFlow, TranslationKey> = {
 /**
  * Budget: the same calendar, viewed in money.
  *
- * One question drives the layout — "where do I stand this month?" — so the
- * answer is the first thing on screen, the breakdown that explains it comes
- * second, and the raw ledger comes last. Entry is a single row rather than a
- * modal: a spend logged three taps later is a spend that does not get logged.
+ * Four questions, in the order they are actually asked, each answered exactly
+ * once:
+ *
+ *  1. Where do I stand? — the four totals across the top.
+ *  2. Where did it go? — one breakdown, category down to shop.
+ *  3. What comes round every month regardless? — the fixed entries.
+ *  4. What exactly happened? — the ledger, by day.
+ *
+ * The "exactly once" is the part that had gone wrong. Two panels used to draw
+ * category totals side by side under two different headings, so the same
+ * ₺8.400 of groceries appeared twice and the ledger underneath led with the
+ * category name as well — three views of the grouping and none of the events.
  */
 export function BudgetView() {
   const { t } = useI18n();
@@ -65,15 +71,15 @@ export function BudgetView() {
   const settings = useStore((s) => s.db.settings);
   const transactions = useStore((s) => s.db.transactions);
   const categories = useStore((s) => s.db.budgetCategories);
-  const deleteTransaction = useStore((s) => s.deleteTransaction);
   const updateBudgetCategory = useStore((s) => s.updateBudgetCategory);
   const materialise = useStore((s) => s.materialiseRecurringTransactions);
   const [generated, setGenerated] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
 
   const currency = settings.currency ?? "TRY";
+  const today = toLocalDate(now);
   const [period, setPeriod] = useState<PeriodId>("month");
-  const [anchor, setAnchor] = useState(() => toLocalDate(now));
+  const [anchor, setAnchor] = useState(() => today);
 
   const range = useMemo(
     () => periodRange(anchor, period, settings.weekStartsOn),
@@ -106,9 +112,9 @@ export function BudgetView() {
   // Catch up on repeating entries whenever the view is opened. The app may
   // have been closed for a month; the answer has to be the same either way.
   useEffect(() => {
-    setGenerated(materialise(toLocalDate(now)));
+    setGenerated(materialise(today));
     // Only on mount and when the calendar day rolls over.
-  }, [materialise, toLocalDate(now)]);
+  }, [materialise, today]);
 
   const [breakdownFlow, setBreakdownFlow] = useState<MoneyFlow>("EXPENSE");
   const breakdown = useMemo(
@@ -143,7 +149,7 @@ export function BudgetView() {
         <button
           type="button"
           className="btn sm"
-          onClick={() => setAnchor(toLocalDate(now))}
+          onClick={() => setAnchor(today)}
         >
           {t("today")}
         </button>
@@ -162,6 +168,16 @@ export function BudgetView() {
             </button>
           ))}
         </div>
+
+        {/* Importing a statement belongs with the period controls, not buried
+            in a panel header: it is a thing you do to the whole window. */}
+        <button
+          type="button"
+          className="btn sm"
+          onClick={() => setImportOpen(true)}
+        >
+          <FileUp size={13} /> {t("importButton")}
+        </button>
       </header>
 
       <section className="budget-totals section">
@@ -195,7 +211,7 @@ export function BudgetView() {
 
       <SpendFeedReview />
 
-      <QuickEntry defaultDate={clampToRange(toLocalDate(now), range)} />
+      <QuickEntry defaultDate={clampToRange(today, range)} />
 
       {generated > 0 ? (
         <p className="budget-generated-note section">
@@ -221,7 +237,25 @@ export function BudgetView() {
             </div>
           </div>
 
-          {breakdown.length === 0 ? (
+          {/*
+            Spending gets the full tree — category, then the shops inside it,
+            then the comparison against last month — because that is the flow
+            with a decision attached to it. Income and investment get plain
+            bars: "where exactly did the salary come from" is not a question
+            anybody has.
+          */}
+          {breakdownFlow === "EXPENSE" ? (
+            <SpendingBreakdown
+              transactions={transactions}
+              categories={categories}
+              range={range}
+              previousRange={previousRange}
+              currency={currency}
+              onSetLimit={(categoryId, minor) =>
+                updateBudgetCategory(categoryId, { monthlyLimitMinor: minor })
+              }
+            />
+          ) : breakdown.length === 0 ? (
             <p className="faint">{t("budgetNothingYet")}</p>
           ) : (
             <ul className="budget-bars">
@@ -243,9 +277,6 @@ export function BudgetView() {
                       <span
                         className="budget-bar-fill"
                         style={{
-                          // Against the limit when there is one, against the
-                          // biggest category when there is not: a bar measured
-                          // against a ceiling answers a different question.
                           width: `${Math.min(100, Math.max(2, (limit ? limit.ratio : row.share) * 100))}%`,
                           background: limit
                             ? LIMIT_COLOURS[limit.state]
@@ -255,26 +286,7 @@ export function BudgetView() {
                     </span>
                     <span className="budget-bar-value mono">
                       {formatMoney(row.amountMinor, currency)}
-                      {limit ? (
-                        <span className={cn("budget-limit-note", limit.state)}>
-                          {" / "}
-                          {formatMoney(limit.limitMinor, currency)}
-                        </span>
-                      ) : null}
                     </span>
-                    {category ? (
-                      <LimitInput
-                        category={category}
-                        currency={currency}
-                        onChange={(minor) =>
-                          updateBudgetCategory(category.id, {
-                            monthlyLimitMinor: minor,
-                          })
-                        }
-                      />
-                    ) : (
-                      <span />
-                    )}
                   </li>
                 );
               })}
@@ -282,110 +294,20 @@ export function BudgetView() {
           )}
         </section>
 
-        <section className="card budget-spend">
-          <div className="section-head">
-            <h3>{t("spendTitle")}</h3>
-            <button
-              type="button"
-              className="btn sm"
-              onClick={() => setImportOpen(true)}
-            >
-              <FileUp size={13} /> {t("importButton")}
-            </button>
-          </div>
-          <SpendingBreakdown
-            transactions={transactions}
-            categories={categories}
-            range={range}
-            previousRange={previousRange}
-            currency={currency}
-          />
-        </section>
-
-        <section className="card budget-ledger">
-          <div className="section-head">
-            <h3>{t("budgetMovements")}</h3>
-            <span className="faint" style={{ fontSize: 12 }}>
-              {rows.length}
-            </span>
-          </div>
-
-          {rows.length === 0 ? (
-            <p className="faint">{t("budgetNothingYet")}</p>
-          ) : (
-            <ul className="budget-rows scroll">
-              {rows.map((row) => {
-                const category = row.categoryId
-                  ? (categoryById.get(row.categoryId) ?? null)
-                  : null;
-                return (
-                  <li key={row.id} className="budget-row">
-                    <span className="budget-row-date mono">
-                      {formatDate(row.date, "d MMM")}
-                    </span>
-                    <span
-                      className="budget-row-icon"
-                      style={{
-                        background: `color-mix(in srgb, ${
-                          category?.color ?? "var(--text-faint)"
-                        } 18%, transparent)`,
-                      }}
-                      aria-hidden
-                    >
-                      {category?.icon ?? "•"}
-                    </span>
-                    <span className="budget-row-text truncate">
-                      <span className="budget-row-title truncate">
-                        {category?.name ?? t("budgetUncategorised")}
-                      </span>
-                      {row.note || row.recurrence || row.recurrenceSourceId ? (
-                        <span className="budget-row-note truncate">
-                          {row.recurrence ? `↻ ${t("budgetRepeating")} · ` : null}
-                          {row.recurrenceSourceId ? `${t("budgetGenerated")} · ` : null}
-                          {/* The shop, unless the note already says it — the
-                              user who typed "migros" does not need "Migros ·
-                              migros" read back to them. */}
-                          {row.merchant && fold(row.merchant) !== fold(row.note)
-                            ? `${row.merchant} · `
-                            : null}
-                          {row.note}
-                        </span>
-                      ) : null}
-                    </span>
-                    {/*
-                      An entry no statement has confirmed yet. Worth a mark
-                      rather than a footnote: it is the difference between a
-                      number the bank has charged and one it has only announced.
-                    */}
-                    {isProvisional(row) ? (
-                      <span className="spend-badge" title={t("spendProvisionalHint")}>
-                        {t("spendProvisional")}
-                      </span>
-                    ) : (
-                      // An empty cell rather than nothing: the ledger is a grid,
-                      // and a column that appears only on some rows makes every
-                      // amount below it sit in a different place.
-                      <span />
-                    )}
-                    <span className={cn("budget-row-amount mono", row.flow.toLowerCase())}>
-                      {row.flow === "INCOME" ? "+" : "−"}
-                      {formatMoney(row.amountMinor, currency)}
-                    </span>
-                    <button
-                      type="button"
-                      className="btn ghost icon sm budget-row-delete"
-                      aria-label={t("delete")}
-                      onClick={() => deleteTransaction(row.id)}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+        <FixedCosts range={range} today={today} currency={currency} />
       </div>
+
+      {/* Full width, and last: the ledger is what you drop into once the three
+          answers above have told you which day to look at. */}
+      <div className="section">
+        <Ledger
+          rows={rows}
+          categories={categories}
+          currency={currency}
+          today={today}
+        />
+      </div>
+
       {importOpen ? <StatementImport onClose={() => setImportOpen(false)} /> : null}
     </div>
   );
@@ -424,6 +346,12 @@ function StatCard({
  * The category field is a free-text input backed by a datalist rather than a
  * fixed dropdown — picking an existing label is one keystroke, and typing a new
  * one adds it permanently instead of forcing a detour into settings.
+ *
+ * There is no repeat picker here any more. A standing charge is not something
+ * you log; it is something you set up once, and it now has a panel of its own
+ * where it can also be seen, corrected and stopped. Leaving a duplicate of it
+ * in the quick-entry row bought a seventh field on the one row in the view that
+ * has to stay fast.
  */
 function QuickEntry({ defaultDate }: { defaultDate: string }) {
   const { t } = useI18n();
@@ -439,7 +367,6 @@ function QuickEntry({ defaultDate }: { defaultDate: string }) {
   const [note, setNote] = useState("");
   const [account, setAccount] = useState("");
   const [date, setDate] = useState(defaultDate);
-  const [repeat, setRepeat] = useState<RepeatId>("none");
   const [error, setError] = useState<string | null>(null);
   const amountRef = useRef<HTMLInputElement>(null);
 
@@ -476,12 +403,10 @@ function QuickEntry({ defaultDate }: { defaultDate: string }) {
       categoryId: category?.id ?? null,
       note,
       account,
-      recurrence: REPEAT_RULES[repeat],
     });
 
     setAmount("");
     setNote("");
-    setRepeat("none");
     setError(null);
     // The card is almost always the same one twice running; the amount never
     // is. Keeping it saves a field on every entry after the first.
@@ -557,18 +482,6 @@ function QuickEntry({ defaultDate }: { defaultDate: string }) {
         onChange={(e) => setDate(e.target.value)}
       />
 
-      <select
-        className="input budget-repeat"
-        value={repeat}
-        aria-label={t("budgetRepeat")}
-        onChange={(e) => setRepeat(e.target.value as RepeatId)}
-      >
-        <option value="none">{t("budgetRepeatNone")}</option>
-        <option value="monthly">{t("budgetRepeatMonthly")}</option>
-        <option value="weekly">{t("budgetRepeatWeekly")}</option>
-        <option value="yearly">{t("budgetRepeatYearly")}</option>
-      </select>
-
       <button type="submit" className="btn primary">
         <Plus size={15} /> {t("add")}
       </button>
@@ -595,63 +508,8 @@ function clampToRange(date: string, range: { from: string; to: string }): string
   return date;
 }
 
-type RepeatId = "none" | "weekly" | "monthly" | "yearly";
-
-/** Rent is monthly; the other two are there because pay and insurance are not. */
-const REPEAT_RULES: Record<RepeatId, Recurrence | null> = {
-  none: null,
-  weekly: { freq: "WEEKLY", interval: 1 },
-  monthly: { freq: "MONTHLY", interval: 1 },
-  yearly: { freq: "YEARLY", interval: 1 },
-};
-
 const LIMIT_COLOURS = {
   ok: "#22c55e",
   close: "#eab308",
   over: "#ef4444",
 } as const;
-
-/**
- * The monthly ceiling for one category, edited in place.
- *
- * Hidden until hovered when unset, so a view about where the money went does
- * not become a form. Committed on blur rather than per keystroke: a half-typed
- * "3" should not briefly mean a three-kuruş budget.
- */
-function LimitInput({
-  category,
-  currency,
-  onChange,
-}: {
-  category: BudgetCategory;
-  currency: string;
-  onChange: (minor: number | null) => void;
-}) {
-  const { t } = useI18n();
-  const [draft, setDraft] = useState<string | null>(null);
-
-  const current = category.monthlyLimitMinor ?? null;
-  const shown =
-    draft ?? (current ? String(Math.round(current / 100)) : "");
-
-  return (
-    <input
-      className="budget-limit-input"
-      inputMode="numeric"
-      placeholder={t("budgetLimit")}
-      title={`${t("budgetSetLimit")} (${currency})`}
-      value={shown}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (draft === null) return;
-        const parsed = parseAmount(draft);
-        onChange(draft.trim() === "" || parsed === null ? null : Math.abs(parsed));
-        setDraft(null);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-        if (e.key === "Escape") setDraft(null);
-      }}
-    />
-  );
-}

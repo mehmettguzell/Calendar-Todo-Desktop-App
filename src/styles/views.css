@@ -49,6 +49,48 @@
   position: relative;
 }
 
+/* Picking rows.
+   The checkbox column only exists while a selection is being made, so a list
+   nobody is selecting in keeps exactly the layout it always had. */
+.task-pick {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  padding-top: 3px;
+  flex: none;
+  cursor: pointer;
+}
+
+.task-pick input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.task-row.picked {
+  background: var(--accent-soft);
+}
+
+/* While picking, a click anywhere on the row means "pick me" rather than
+   "open me" — the cursor is the only warning of that, so it gives one. */
+.task-row.picking .task-main {
+  cursor: pointer;
+}
+
+/* A priority swatch for menus, where there is no room for the full bar. */
+.prio-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+.prio-dot.HIGH { background: var(--danger); }
+.prio-dot.MEDIUM { background: var(--warning); }
+.prio-dot.LOW { background: var(--accent); }
+
 /* -------------------------------------------------- task reordering */
 
 /* Lives inside `.task-actions`, so it fades in with the row's other controls
@@ -2333,93 +2375,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.budget-rows {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  max-height: 420px;
-  overflow-y: auto;
-}
-
-.budget-row {
-  display: grid;
-  /* date · icon · text · provisional badge · amount · delete */
-  grid-template-columns: 56px 28px minmax(0, 1fr) auto auto 26px;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 2px;
-  border-bottom: 1px solid var(--border);
-}
-
-.budget-row:last-child {
-  border-bottom: none;
-}
-
-.budget-row-date {
-  font-size: 11.5px;
-  color: var(--text-faint);
-}
-
-.budget-row-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  font-size: 13px;
-}
-
-.budget-row-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.budget-row-title {
-  font-size: 13px;
-  font-weight: 550;
-}
-.budget-row-note {
-  font-size: 11.5px;
-  color: var(--text-faint);
-}
-
-.budget-row-amount {
-  font-size: 13px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-.budget-row-amount.income {
-  color: #22c55e;
-}
-.budget-row-amount.expense {
-  color: var(--text);
-}
-.budget-row-amount.investment {
-  color: #3b82f6;
-}
-
-/* Row actions stay out of the way until the row is under the pointer. */
-.budget-row-delete {
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-.budget-row:hover .budget-row-delete,
-.budget-row-delete:focus-visible {
-  opacity: 0.75;
-}
-.budget-row-delete:hover {
-  opacity: 1;
-  color: var(--danger);
-}
-
 /* Budget: repeat picker, limits ------------------------------------------- */
-
-.budget-entry .budget-repeat {
-  flex: 0 0 140px;
-}
 
 .budget-generated-note {
   margin: 0;
@@ -3049,3 +3005,446 @@
   font-variant-numeric: tabular-nums;
 }
 .task-deadline.is-overdue { border-color: var(--danger); color: var(--danger); }
+
+/* ==================================================================
+   Fixed income & costs
+   The panel the ledger cannot be: what is standing, what has landed,
+   and what this period still owes.
+   ================================================================== */
+
+.budget-fixed .section-head h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fixed-hint,
+.ledger-hint {
+  margin: -2px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.fixed-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fixed-total {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.fixed-total b {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.fixed-total.expense b {
+  color: #ef4444;
+}
+.fixed-total.income b {
+  color: #22c55e;
+}
+
+/* What the period still owes — the number this panel exists to show, so it is
+   the one allowed to carry a colour of its own. */
+.fixed-total.pending {
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
+  background: var(--warning-soft);
+}
+.fixed-total.pending b {
+  color: var(--warning);
+}
+
+.fixed-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fixed-row {
+  border-bottom: 1px solid var(--border);
+}
+.fixed-row:last-child {
+  border-bottom: none;
+}
+
+.fixed-row-head {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fixed-row-head:hover {
+  background: var(--surface-hover);
+}
+
+.fixed-row-icon,
+.ledger-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.fixed-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fixed-row-name {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.fixed-row-when {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.fixed-row-amount {
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.fixed-row-amount.income {
+  color: #22c55e;
+}
+.fixed-row-amount.investment {
+  color: #3b82f6;
+}
+
+.fixed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fixed-badge.done {
+  color: var(--success);
+  background: var(--success-soft);
+}
+.fixed-badge.waiting {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+.fixed-badge.quiet {
+  color: var(--text-faint);
+  background: var(--surface-2);
+}
+
+.fixed-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.fixed-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 0 0 132px;
+}
+.fixed-field.grow {
+  flex: 1 1 180px;
+  min-width: 150px;
+}
+
+.fixed-field > span {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+.fixed-also {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.fixed-also input {
+  accent-color: var(--accent);
+}
+
+.fixed-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+}
+
+/* ==================================================================
+   Ledger
+   Entries by day, each day carrying its own total, so a long run has a
+   shape the eye can read before a single amount is.
+   ================================================================== */
+
+.ledger-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ledger-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 220px;
+  min-width: 180px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-faint);
+}
+
+.ledger-search .input {
+  flex: 1;
+  border: none;
+  background: none;
+  padding: 6px 0;
+}
+.ledger-search .input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.ledger-days {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+/* The day header sticks while its own rows scroll past, so the date the
+   amounts belong to never leaves the screen. */
+.ledger-day-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 0;
+  background: var(--surface);
+}
+
+.ledger-day-head h4 {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ledger-day-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.ledger-day-total {
+  font-size: 11.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.ledger-day-total.income {
+  color: #22c55e;
+}
+
+.ledger-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ledger-row-head {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ledger-row-head:hover,
+.ledger-row.open .ledger-row-head {
+  background: var(--surface-hover);
+}
+
+.ledger-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The thing that happened leads; the grouping it belongs to follows. The other
+   way round — which is how this list used to read — gives a month of shopping
+   forty rows that all say "Groceries". */
+.ledger-row-title {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.ledger-row-detail {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.ledger-row-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ledger-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ledger-tag.repeat {
+  padding: 1px 5px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ledger-tag.pending {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.ledger-row-amount {
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.ledger-row-amount.income {
+  color: #22c55e;
+}
+.ledger-row-amount.investment {
+  color: #3b82f6;
+}
+
+.ledger-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px;
+  margin: 2px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.ledger-edit-amount {
+  flex: 0 0 110px;
+}
+.ledger-edit-category {
+  flex: 0 0 150px;
+}
+.ledger-edit-account {
+  flex: 0 0 130px;
+}
+.ledger-edit-date {
+  flex: 0 0 148px;
+}
+.ledger-edit-note {
+  flex: 1 1 160px;
+  min-width: 140px;
+}
+
+/* The limit editor sits beside the category head rather than inside it: a
+   button cannot contain a text field, and the number belongs next to the total
+   it constrains. */
+.spend-category-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.spend-category-line .spend-category-head {
+  flex: 1;
+  min-width: 0;
+}
+.spend-category-line .budget-limit-input {
+  flex: none;
+}
+.spend-category-line:hover .budget-limit-input,
+.spend-category-line .budget-limit-input:focus {
+  opacity: 1;
+}
+
+.fixed-total.investment b {
+  color: #3b82f6;
+}
+
+/* When the number beside a bar is measuring a ceiling rather than a share, it
+   carries the ceiling's colour so the two never disagree. */
+.spend-share.close {
+  color: #eab308;
+}
+.spend-share.over {
+  color: var(--danger);
+  font-weight: 650;
+}

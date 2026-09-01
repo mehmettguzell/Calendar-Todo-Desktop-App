@@ -4,8 +4,11 @@ import { useStore } from "@/state/store";
 import { useRequestDelete } from "@/ui/task/useRequestDelete";
 
 /**
- * Deleting a task takes every task beneath it. The question is whether the
- * user was told that before it happened — the delete itself is covered by
+ * Who gets asked before a delete goes through.
+ *
+ * Two facts are being protected: a top-level task is not thrown away on one
+ * click, and a delete never takes tasks the user cannot see with it. A leaf
+ * subtask is deliberately outside both — the delete itself is covered by
  * `destructiveActions`.
  */
 beforeEach(async () => {
@@ -45,13 +48,23 @@ const requestDelete = () => {
 const live = () => useStore.getState().db.tasks.filter((t) => !t.deletedAt);
 
 describe("useRequestDelete", () => {
-  it("deletes a childless top-level task without asking", () => {
+  it("asks before deleting a top-level task, even a childless one", () => {
     const task = useStore.getState().createTask({ title: "Tek görev" });
 
     expect(requestDelete()(task.id)).toBe(true);
 
-    expect(asked).toEqual([]);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("Tek görev");
     expect(live()).toHaveLength(0);
+  });
+
+  it("keeps a top-level task when the question is declined", () => {
+    const task = useStore.getState().createTask({ title: "Tek görev" });
+    answer = false;
+
+    expect(requestDelete()(task.id)).toBe(false);
+
+    expect(live()).toHaveLength(1);
   });
 
   it("names the number of tasks that go with a parent", () => {
@@ -95,15 +108,26 @@ describe("useRequestDelete", () => {
     expect(kept.id).toBeTruthy();
   });
 
-  it("still warns about a childless subtask, which is a different mistake", () => {
+  it("deletes a leaf subtask without asking", () => {
     const plan = useStore.getState().createTask({ title: "Sunum hazırlığı" });
     const child = useStore.getState().createTask({ title: "Slaytlar", parentId: plan.id });
 
     expect(requestDelete()(child.id)).toBe(true);
 
+    expect(asked).toEqual([]);
+    expect(live().map((t) => t.id)).toEqual([plan.id]);
+  });
+
+  it("still asks about a subtask that carries steps of its own", () => {
+    const plan = useStore.getState().createTask({ title: "Sunum hazırlığı" });
+    const step = useStore.getState().createTask({ title: "Slaytlar", parentId: plan.id });
+    useStore.getState().createTask({ title: "Kapak", parentId: step.id });
+
+    expect(requestDelete()(step.id)).toBe(true);
+
+    // Being a subtask is no excuse for taking a row nobody could see with it.
     expect(asked).toHaveLength(1);
-    // The subtask warning points at "remove from today"; it never counts.
-    expect(asked[0]).not.toContain("Slaytlar");
+    expect(asked[0]).toContain("1");
     expect(live().map((t) => t.id)).toEqual([plan.id]);
   });
 

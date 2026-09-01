@@ -43,7 +43,9 @@ import { TodayView } from "@/ui/views/TodayView";
 import { AuthModal } from "@/ui/components/AuthModal";
 import { CommandPalette } from "@/ui/components/CommandPalette";
 import { UndoToast } from "@/ui/components/UndoToast";
+import { BulkActionBar } from "@/ui/task/BulkActionBar";
 import { UpdateGate } from "@/ui/components/UpdateGate";
+import { useSelectionStore } from "@/state/selectionStore";
 import { useUndoStore } from "@/state/undoStore";
 import { pasteTaskOn } from "@/state/clipboardActions";
 import { useClipboardStore } from "@/state/clipboardStore";
@@ -223,7 +225,18 @@ export function App() {
       setAnchor(toLocalDate(new Date()));
       setView("today");
     },
-    onEscape: () => setSelection(null),
+    /*
+     * Escape backs out of one thing at a time, innermost first: a held
+     * selection is what the user is standing in, so it goes before the detail
+     * panel behind it.
+     */
+    onEscape: () => {
+      if (useSelectionStore.getState().active) {
+        useSelectionStore.getState().clear();
+        return;
+      }
+      setSelection(null);
+    },
     onPalette: () => setPaletteOpen((open) => !open),
     onUndo: () => useUndoStore.getState().undo(),
     onCopy: () => {
@@ -399,6 +412,8 @@ export function App() {
       {settingsOpen ? (
         <SettingsModal onClose={() => setSettingsOpen(false)} />
       ) : null}
+
+      <BulkActionBar />
 
       <UndoToast />
 

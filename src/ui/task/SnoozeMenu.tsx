@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { atTime, toLocalDate, toLocalTime } from "@/domain/datetime";
 import {
+  availableSnoozePresets,
   resolveSnooze,
   snoozePreviewDate,
-  SNOOZE_PRESETS,
   type SnoozePresetId,
 } from "@/domain/snooze";
 import type { TaskInstance } from "@/domain/types";
@@ -59,7 +59,7 @@ export function SnoozeMenu({
       <div style={{ padding: "4px 8px 6px", fontSize: 11, fontWeight: 650, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-faint)" }}>
         {t("snooze")}
       </div>
-      {SNOOZE_PRESETS.map((preset) => {
+      {availableSnoozePresets(instance, now).map((preset) => {
         const preview =
           preset.id === "custom"
             ? null

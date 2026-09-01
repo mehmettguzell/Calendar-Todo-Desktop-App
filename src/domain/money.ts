@@ -1,5 +1,5 @@
 import { addDaysLocal, fromLocalDate, toLocalDate } from "./datetime";
-import { expandOccurrences } from "./recurrence";
+import { expandOccurrences, nextOccurrenceAfter } from "./recurrence";
 import type { Instant, LocalDate, Recurrence } from "./types";
 
 /**
@@ -171,6 +171,126 @@ export function dueRecurringTransactions(
   }
 
   return due;
+}
+
+/* ------------------------------------------------------------------ */
+/* Fixed costs                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The entries that repeat — rent, salary, the gym, the insurance.
+ *
+ * These are the *templates*: an ordinary entry that happens to carry a rule.
+ * There is no separate "fixed cost" record, and that is on purpose — a fixed
+ * cost is a transaction you already know about, so making it a second kind of
+ * thing would mean every total in the app had to remember to add it back in.
+ *
+ * Income first, then the money going out, largest first inside each: the list
+ * reads the way a budget is thought about.
+ */
+export function recurringTemplates(transactions: Transaction[]): Transaction[] {
+  const rank: Record<MoneyFlow, number> = { INCOME: 0, EXPENSE: 1, INVESTMENT: 2 };
+  return transactions
+    .filter((entry) => entry.deletedAt === null && entry.recurrence)
+    .sort(
+      (a, b) => rank[a.flow] - rank[b.flow] || b.amountMinor - a.amountMinor,
+    );
+}
+
+export interface FixedCostRow {
+  template: Transaction;
+  /** Every date the rule lands on inside the window, recorded or not. */
+  dates: LocalDate[];
+  /** The entries that have actually been written for those dates. */
+  recorded: Transaction[];
+  /** Dates the rule owes this window but has not produced yet. */
+  pendingDates: LocalDate[];
+  /**
+   * What this template accounts for across the window.
+   *
+   * Recorded entries count at the amount they were actually written for, not
+   * at the template's — rent really was 500 lira more in March, and a forecast
+   * that overwrites that with the standing figure is a forecast that argues
+   * with the ledger sitting underneath it.
+   */
+  expectedMinor: number;
+  /** Of that, the part already in the ledger. */
+  recordedMinor: number;
+  /** The next date the rule produces after today, anywhere — not just here. */
+  nextDate: LocalDate | null;
+}
+
+/**
+ * How each repeating entry lands inside one window.
+ *
+ * The point of this is the part the ledger cannot show: rent due on the 5th is
+ * a fact about this month from the 1st, but nothing is written for it until
+ * the 5th arrives — deliberately, since a budget that already contains money
+ * it has not spent is lying. So the ledger stays honest and this says what is
+ * still coming.
+ */
+export function fixedCostsInRange(
+  transactions: Transaction[],
+  range: DateRange,
+  today: LocalDate,
+): FixedCostRow[] {
+  const live = transactions.filter((entry) => entry.deletedAt === null);
+
+  return recurringTemplates(transactions).map((template) => {
+    const series = {
+      dueDate: template.date,
+      recurrence: template.recurrence ?? null,
+    };
+    const dates = expandOccurrences(series, range.from, range.to);
+
+    const byDate = new Map<LocalDate, Transaction>();
+    for (const entry of live) {
+      // The template is its own first occurrence; the copies point back at it.
+      const belongs =
+        entry.id === template.id || entry.recurrenceSourceId === template.id;
+      if (belongs && inRange(entry.date, range)) byDate.set(entry.date, entry);
+    }
+
+    const recorded = dates
+      .map((date) => byDate.get(date))
+      .filter((entry): entry is Transaction => entry !== undefined);
+
+    return {
+      template,
+      dates,
+      recorded,
+      pendingDates: dates.filter((date) => !byDate.has(date)),
+      expectedMinor: dates.reduce(
+        (sum, date) => sum + (byDate.get(date)?.amountMinor ?? template.amountMinor),
+        0,
+      ),
+      recordedMinor: recorded.reduce((sum, entry) => sum + entry.amountMinor, 0),
+      nextDate: nextOccurrenceAfter(series, today),
+    };
+  });
+}
+
+/** What the fixed entries add up to across a window, split by direction. */
+export function fixedCostTotals(rows: FixedCostRow[]): {
+  income: number;
+  expense: number;
+  investment: number;
+  /** Expected minus recorded: the part of the window still to be charged. */
+  outstanding: number;
+} {
+  let income = 0;
+  let expense = 0;
+  let investment = 0;
+  let outstanding = 0;
+
+  for (const row of rows) {
+    if (row.template.flow === "INCOME") income += row.expectedMinor;
+    else if (row.template.flow === "EXPENSE") expense += row.expectedMinor;
+    else investment += row.expectedMinor;
+    outstanding += row.expectedMinor - row.recordedMinor;
+  }
+
+  return { income, expense, investment, outstanding };
 }
 
 export interface LimitStatus {

@@ -71,6 +71,7 @@ export function TaskList({
           selected={instance.key === selectedKey}
           onOpen={onOpen}
           reorder={reorder.row(index)}
+          listIds={ids}
         />
       ))}
     </div>

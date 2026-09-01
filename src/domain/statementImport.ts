@@ -55,7 +55,12 @@ export interface ImportRow {
    *
    * This is what makes logging a spend at the till safe: the statement finds
    * the row the user already wrote and confirms it, rather than filing a twin
-   * beside it. On by default whenever a match was found.
+   * beside it.
+   *
+   * On by default when the two figures agree to the kuruş. When they only come
+   * close — the user wrote 100 for a 98.75 basket — the match is still offered,
+   * but off, because rounding is the one signal here that a person produced and
+   * so the one that has to be confirmed by a person. See `reconcile`.
    */
   merge: boolean;
   /** Ticked in the preview. Transfers arrive unticked. */
@@ -72,6 +77,12 @@ export interface ImportPlan {
     fresh: number;
     duplicate: number;
     similar: number;
+    /**
+     * Matches whose amount is only close, and which are therefore waiting to
+     * be ticked. A subset of `similar`; the preview counts them separately
+     * because they are the rows that need someone to look.
+     */
+    near: number;
     excluded: number;
   };
   /** Categories the statement needs that this document does not have yet. */
@@ -221,7 +232,13 @@ export function buildImportPlan(
     })),
     matchableEntries(live),
     (row) => row.key,
-    { account: options.account ?? null, windowDays: options.matchWindowDays },
+    {
+      account: options.account ?? null,
+      windowDays: options.matchWindowDays,
+      // Safe here and nowhere else: whatever this finds is shown in a preview
+      // and, when the figures disagree, left for the user to tick.
+      nearAmounts: true,
+    },
   );
 
   for (const row of claimable) {
@@ -232,7 +249,10 @@ export function buildImportPlan(
     row.match = match;
     // Merging is the right default: the entry exists because the user logged
     // the purchase, and the statement is here to confirm it, not to repeat it.
-    row.merge = true;
+    // Unless the amounts merely round to each other, which is a guess, and a
+    // guess that silently swallowed a second real purchase would leave nothing
+    // behind to notice.
+    row.merge = match.exactAmount;
   }
 
   const dates = lines.map((line) => line.date).sort();
@@ -249,6 +269,7 @@ export function buildImportPlan(
       fresh: rows.filter((row) => row.status === "new").length,
       duplicate: rows.filter((row) => row.status === "duplicate").length,
       similar: rows.filter((row) => row.status === "similar").length,
+      near: rows.filter((row) => row.match !== null && !row.match.exactAmount).length,
       excluded: rows.filter((row) => !row.include).length,
     },
     missingCategories: [...missing],
@@ -325,6 +346,9 @@ export function mergesFrom(
           merchant: row.merchant.name,
           categoryId: row.categoryId,
           date: row.line.date,
+          // What the bank settled at replaces what was remembered. Only ever
+          // different on a match the user ticked themselves.
+          amountMinor: row.line.amountMinor,
         },
         { at, account: options.account ?? null, keepDate: options.keepDate },
       ),
