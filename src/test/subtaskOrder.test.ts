@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { arrangeSteps } from "@/state/selectors";
 import { useStore } from "@/state/store";
 
 /**
@@ -63,5 +64,46 @@ describe("reorderSubtasks", () => {
     useStore.getState().reorderSubtasks(parent.id, [children[1]!.id, children[0]!.id]);
 
     expect(useStore.getState().db.history.length).toBe(before);
+  });
+});
+
+/**
+ * What the Plans card and the task panel both read. A finished step is
+ * evidence, not work, so it stops sitting between the user and the next thing
+ * to do — without its dragged place being written away.
+ */
+describe("arrangeSteps", () => {
+  const stepsOf = (parentId: string) =>
+    arrangeSteps(useStore.getState().db.tasks.filter((t) => t.parentId === parentId)).map(
+      (t) => t.title,
+    );
+
+  it("sinks a completed step below the ones still open", () => {
+    const { parent, children } = seed();
+
+    useStore.getState().setStatus({ taskId: children[0]!.id, occurrenceDate: null }, "COMPLETED");
+
+    expect(stepsOf(parent.id)).toEqual(["Slides", "Rehearse", "Outline"]);
+  });
+
+  it("keeps the dragged order inside each half", () => {
+    const { parent, children } = seed();
+    useStore
+      .getState()
+      .reorderSubtasks(parent.id, [children[2]!.id, children[1]!.id, children[0]!.id]);
+
+    useStore.getState().setStatus({ taskId: children[1]!.id, occurrenceDate: null }, "COMPLETED");
+    useStore.getState().setStatus({ taskId: children[2]!.id, occurrenceDate: null }, "COMPLETED");
+
+    expect(stepsOf(parent.id)).toEqual(["Outline", "Rehearse", "Slides"]);
+  });
+
+  it("puts a reopened step straight back where it was", () => {
+    const { parent, children } = seed();
+
+    useStore.getState().setStatus({ taskId: children[0]!.id, occurrenceDate: null }, "COMPLETED");
+    useStore.getState().setStatus({ taskId: children[0]!.id, occurrenceDate: null }, "TODO");
+
+    expect(stepsOf(parent.id)).toEqual(["Outline", "Slides", "Rehearse"]);
   });
 });

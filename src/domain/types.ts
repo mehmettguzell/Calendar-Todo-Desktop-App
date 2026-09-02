@@ -174,6 +174,9 @@ export type HistoryKind =
   | "REMINDER_ADDED"
   | "REMINDER_REMOVED"
   | "REMINDER_FIRED"
+  | "DEADLINE_ADDED"
+  | "DEADLINE_REMOVED"
+  | "DEADLINE_MET"
   | "FOCUS_LOGGED"
   | "DELETED"
   | "RESTORED";
@@ -245,55 +248,6 @@ export interface Settings {
   /** The last day the nudge was delivered, so it fires once and not again. */
   lastSpendNudgeOn?: LocalDate | null;
 
-  /** Reading the bank's transaction notification mail. See `mail.ts`. */
-  mailSync?: MailSyncSettings;
-}
-
-/**
- * Where the automatic spending feed comes from.
- *
- * A Turkish bank will not hand account data to a personal application — that
- * needs a payment-services licence — but it will send a message per
- * transaction. Reading that mailbox is the only route by which a purchase can
- * reach the ledger without anyone typing it.
- *
- * The password is deliberately absent: it lives in the OS credential store,
- * reachable only by the native side. This object is written to the same plain
- * JSON document as everything else, and a mailbox password in a file the user
- * can open is a mailbox password in every backup they ever make.
- */
-export interface MailSyncSettings {
-  enabled: boolean;
-  host: string;
-  port: number;
-  /** TLS on connect (993). Off means STARTTLS on 143. */
-  secure: boolean;
-  username: string;
-  /** The mailbox to read; a filing rule may put bank mail outside INBOX. */
-  folder: string;
-  /**
-   * Addresses or domains whose mail is read at all.
-   *
-   * Empty means "read everything in the folder", which is only sensible for a
-   * mailbox that exists solely for bank notifications.
-   */
-  senders: string[];
-  /** How often to look, in minutes. */
-  everyMinutes: number;
-  /**
-   * Write recognised purchases straight to the ledger.
-   *
-   * When off, they wait in a review list. On is the point of the feature — an
-   * entry that needs confirming is an entry that needs attention, which is the
-   * cost the automatic feed exists to remove — but the ledger is the user's,
-   * so they get to say.
-   */
-  autoRecord: boolean;
-  /** Highest message id already read, so a poll asks only for what is new. */
-  lastUid?: number | null;
-  lastSyncAt?: Instant | null;
-  /** What went wrong last time, shown in Settings rather than swallowed. */
-  lastError?: string | null;
 }
 
 /**
@@ -335,6 +289,26 @@ export interface TaskInstance {
    * differently, never to decide which task it belongs to.
    */
   isDeadline: boolean;
+  /**
+   * The name of the checkpoint this instance marks, when it marks one.
+   *
+   * A named deadline is drawn on the calendar under its own label — "Backend
+   * bitecek" is what the user wrote down and what they are looking for on the
+   * 25th, not the name of the project it belongs to. `null` on every other
+   * instance, including the task's own final deadline, which has no name of
+   * its own to show.
+   */
+  deadlineLabel?: string | null;
+  /** Set alongside `deadlineLabel`, so a met checkpoint can render as met. */
+  deadlineMet?: boolean;
+  /**
+   * Which checkpoint this instance is, when it is one.
+   *
+   * Carried rather than parsed back out of `key`: a chip the user clicks has to
+   * edit or delete the checkpoint itself, and reading an id out of a string
+   * that exists to be a React key is how the two quietly drift apart.
+   */
+  deadlineId?: string | null;
 }
 
 /** Position of one rendered date within a task's `dueDate`..`endDate` range. */

@@ -23,6 +23,8 @@ import type {
   Tombstone,
 } from "@/domain/types";
 import type { BudgetCategory, Transaction } from "@/domain/money";
+import { normaliseLink, type WishlistItem } from "@/domain/wishlist";
+import { normaliseLabel, type Deadline } from "@/domain/deadline";
 import type { HistoryEntry } from "@/domain/types";
 
 /**
@@ -786,6 +788,7 @@ function localTransactionFingerprint(t: Transaction): string {
     nz(t.lastGeneratedFor),
     nz(t.merchant),
     nz(t.externalId),
+    t.instalments ?? null,
     t.deletedAt !== null,
   ]);
 }
@@ -802,6 +805,61 @@ function cloudTransactionFingerprint(row: Record<string, unknown>): string {
     nz(row.last_generated_for),
     nz(row.merchant),
     nz(row.external_id),
+    // A project without the column reads as "no plan", which is what every row
+    // written before instalments existed actually is.
+    typeof row.instalments === "number" ? row.instalments : null,
+    Boolean(row.is_deleted),
+  ]);
+}
+
+function localWishlistFingerprint(item: WishlistItem): string {
+  return JSON.stringify([
+    item.title,
+    item.priceMinor ?? null,
+    nz(item.url),
+    nz(item.note),
+    nz(item.categoryId),
+    item.order,
+    nz(item.boughtAt),
+    nz(item.transactionId),
+    item.deletedAt !== null,
+  ]);
+}
+
+function cloudWishlistFingerprint(row: Record<string, unknown>): string {
+  return JSON.stringify([
+    String(row.title ?? ""),
+    row.price_minor === null || row.price_minor === undefined
+      ? null
+      : Math.round(Number(row.price_minor) || 0),
+    nz(row.url),
+    nz(row.note),
+    nz(row.category_id),
+    Number(row.sort_order) || 0,
+    nz(row.bought_at),
+    nz(row.transaction_id),
+    Boolean(row.is_deleted),
+  ]);
+}
+
+function localDeadlineFingerprint(d: Deadline): string {
+  return JSON.stringify([
+    d.taskId,
+    d.label,
+    d.date,
+    nz(d.completedAt),
+    d.order,
+    d.deletedAt !== null,
+  ]);
+}
+
+function cloudDeadlineFingerprint(row: Record<string, unknown>): string {
+  return JSON.stringify([
+    String(row.task_id ?? ""),
+    String(row.label ?? ""),
+    String(row.date ?? ""),
+    nz(row.completed_at),
+    Number(row.sort_order) || 0,
     Boolean(row.is_deleted),
   ]);
 }
@@ -842,6 +900,8 @@ const syncedOccurrenceFingerprints = new Map<string, string>();
 const syncedReminderFingerprints = new Map<string, string>();
 const syncedTransactionFingerprints = new Map<string, string>();
 const syncedBudgetCategoryFingerprints = new Map<string, string>();
+const syncedWishlistFingerprints = new Map<string, string>();
+const syncedDeadlineFingerprints = new Map<string, string>();
 const syncedFocusIds = new Set<string>();
 /**
  * The activity trail is append-only (spec section 5.5): an entry is never
@@ -914,6 +974,8 @@ function forgetSyncedState() {
   syncedReminderFingerprints.clear();
   syncedTransactionFingerprints.clear();
   syncedBudgetCategoryFingerprints.clear();
+  syncedWishlistFingerprints.clear();
+  syncedDeadlineFingerprints.clear();
   syncedFocusIds.clear();
   syncedHistoryIds.clear();
 }
@@ -1383,7 +1445,7 @@ export interface SyncContext {
  */
 export const OPTIONAL_COLUMNS: Record<string, string[]> = {
   tasks: ["end_date", "estimate_minutes", "deadline"],
-  transactions: ["merchant", "external_id"],
+  transactions: ["merchant", "external_id", "instalments"],
 };
 
 const droppedColumns = new Map<string, Set<string>>();
@@ -1664,6 +1726,7 @@ const TRANSACTION_SPEC: CollectionSpec<Transaction> = {
     last_generated_for: t.lastGeneratedFor ?? null,
     merchant: t.merchant ?? null,
     external_id: t.externalId ?? null,
+    instalments: t.instalments ?? null,
     is_deleted: t.deletedAt !== null,
     created_at: t.createdAt,
     updated_at: t.updatedAt,
@@ -1695,6 +1758,109 @@ const BUDGET_CATEGORY_SPEC: CollectionSpec<BudgetCategory> = {
   }),
   fromCloud: budgetCategoryFromCloud,
 };
+
+/**
+ * Things the user means to buy.
+ *
+ * Syncs like the money tables even though it is not money: a shopping list
+ * that only exists on the machine it was typed on is a shopping list you do
+ * not have with you in the shop.
+ */
+const WISHLIST_SPEC: CollectionSpec<WishlistItem> = {
+  table: "wishlist",
+  synced: syncedWishlistFingerprints,
+  idOf: (item) => item.id,
+  updatedAtOf: (item) => item.updatedAt,
+  localFingerprint: localWishlistFingerprint,
+  cloudFingerprint: cloudWishlistFingerprint,
+  // `title` is NOT NULL, and an item with no name is unreachable in the UI too.
+  isUploadable: (item) => Boolean(item.title),
+  toCloud: (item, userId) => ({
+    id: item.id,
+    user_id: userId,
+    title: item.title,
+    price_minor: item.priceMinor,
+    url: item.url,
+    note: item.note || null,
+    category_id: item.categoryId,
+    sort_order: item.order,
+    bought_at: item.boughtAt,
+    transaction_id: item.transactionId,
+    is_deleted: item.deletedAt !== null,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt,
+  }),
+  fromCloud: wishlistFromCloud,
+};
+
+/**
+ * Task-owned like reminders, so it is dropped by the same rule: a checkpoint
+ * whose task is gone is a date belonging to nothing.
+ */
+const DEADLINE_SPEC: CollectionSpec<Deadline> = {
+  table: "deadlines",
+  synced: syncedDeadlineFingerprints,
+  idOf: (d) => d.id,
+  updatedAtOf: (d) => d.updatedAt,
+  localFingerprint: localDeadlineFingerprint,
+  cloudFingerprint: cloudDeadlineFingerprint,
+  // `task_id`, `label` and `date` are all NOT NULL; one row failing any of
+  // them takes the whole push down with it.
+  isUploadable: (d) => Boolean(d.taskId && d.label && d.date),
+  isOrphan: (row, ctx) => !ctx.liveTaskIds.has(row.task_id as string),
+  toCloud: (d, userId) => ({
+    id: d.id,
+    user_id: userId,
+    task_id: d.taskId,
+    label: d.label,
+    date: d.date,
+    completed_at: d.completedAt,
+    sort_order: d.order,
+    is_deleted: d.deletedAt !== null,
+    created_at: d.createdAt,
+    updated_at: d.updatedAt,
+  }),
+  fromCloud: deadlineFromCloud,
+};
+
+function deadlineFromCloud(row: Record<string, unknown>): Deadline {
+  const at = new Date().toISOString();
+  return {
+    id: row.id as string,
+    taskId: row.task_id as string,
+    // Trimmed here as well as on the way in: another device wrote this.
+    label: normaliseLabel(String(row.label ?? "")) ?? "",
+    date: String(row.date ?? ""),
+    completedAt: (row.completed_at as string) ?? null,
+    order: Number(row.sort_order) || 0,
+    createdAt: (row.created_at as string) ?? at,
+    updatedAt: (row.updated_at as string) ?? at,
+    deletedAt: row.is_deleted ? ((row.updated_at as string) ?? at) : null,
+  };
+}
+
+function wishlistFromCloud(row: Record<string, unknown>): WishlistItem {
+  const at = new Date().toISOString();
+  return {
+    id: row.id as string,
+    title: String(row.title ?? ""),
+    priceMinor:
+      row.price_minor === null || row.price_minor === undefined
+        ? null
+        : Math.round(Number(row.price_minor) || 0),
+    // Checked here as well as on the way out of the file: another device wrote
+    // this, and a link is about to become an href on this one.
+    url: typeof row.url === "string" ? normaliseLink(row.url) : null,
+    note: (row.note as string) ?? "",
+    categoryId: (row.category_id as string) ?? null,
+    order: Number(row.sort_order) || 0,
+    boughtAt: (row.bought_at as string) ?? null,
+    transactionId: (row.transaction_id as string) ?? null,
+    createdAt: (row.created_at as string) ?? at,
+    updatedAt: (row.updated_at as string) ?? at,
+    deletedAt: row.is_deleted ? ((row.updated_at as string) ?? at) : null,
+  };
+}
 
 function occurrenceFromCloud(row: Record<string, unknown>): Occurrence {
   return {
@@ -1736,6 +1902,7 @@ function transactionFromCloud(row: Record<string, unknown>): Transaction {
     lastGeneratedFor: (row.last_generated_for as string) ?? null,
     merchant: (row.merchant as string) ?? null,
     externalId: (row.external_id as string) ?? null,
+    instalments: typeof row.instalments === "number" ? row.instalments : null,
     createdAt: (row.created_at as string) ?? new Date().toISOString(),
     updatedAt: (row.updated_at as string) ?? new Date().toISOString(),
     deletedAt: row.is_deleted ? ((row.updated_at as string) ?? null) : null,
@@ -2033,6 +2200,8 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       remRes,
       txRes,
       budgetCatRes,
+      wishlistRes,
+      deadlinesRes,
       historyRes,
     ] = await Promise.all([
       withTimeout(
@@ -2063,6 +2232,8 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       fetchOptional("reminders", userId),
       fetchOptional("transactions", userId),
       fetchOptional("budget_categories", userId),
+      fetchOptional("wishlist", userId),
+      fetchOptional("deadlines", userId),
       fetchOptional("task_history", userId, {
         limit: 100,
         orderColumn: "at",
@@ -2286,6 +2457,27 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       context,
       userId,
     );
+    // Nothing ever hard-deletes a wish, so there are no tombstones to consult:
+    // an item that is gone is an item carrying `deletedAt`, and that travels
+    // as an ordinary field.
+    const mergedWishlist = await reconcileCollection(
+      WISHLIST_SPEC,
+      localDb.wishlist,
+      wishlistRes,
+      new Set<string>(),
+      context,
+      userId,
+    );
+    // Soft-deleted like a wish rather than tombstoned like a reminder: undo
+    // has to be able to put a checkpoint back, so removal is a field change.
+    const mergedDeadlines = await reconcileCollection(
+      DEADLINE_SPEC,
+      localDb.deadlines,
+      deadlinesRes,
+      new Set<string>(),
+      context,
+      userId,
+    );
 
     /* --- FOCUS SESSIONS ----------------------------------------------- */
     const cloudFocusRaw = focusRes.data ?? [];
@@ -2416,6 +2608,8 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
         reminders: mergedReminders,
         transactions: syncedTransactions,
         budgetCategories: nextBudgetCategories,
+        wishlist: mergedWishlist,
+        deadlines: mergedDeadlines,
         focusSessions: mergedFocus,
         history: mergedHistory,
         tombstones: pruneTombstones(s.db.tombstones),
@@ -2446,6 +2640,12 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
         c.id,
         localBudgetCategoryFingerprint(c),
       );
+    }
+    for (const item of mergedWishlist) {
+      syncedWishlistFingerprints.set(item.id, localWishlistFingerprint(item));
+    }
+    for (const d of mergedDeadlines) {
+      syncedDeadlineFingerprints.set(d.id, localDeadlineFingerprint(d));
     }
     for (const session of mergedFocus) syncedFocusIds.add(session.id);
     for (const entry of mergedHistory) syncedHistoryIds.add(entry.id);

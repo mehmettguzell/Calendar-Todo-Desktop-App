@@ -1,4 +1,5 @@
 import { addDaysLocal, fromLocalDate, toLocalDate } from "./datetime";
+import { expandInstalments } from "./instalments";
 import { expandOccurrences, nextOccurrenceAfter } from "./recurrence";
 import type { Instant, LocalDate, Recurrence } from "./types";
 
@@ -105,6 +106,26 @@ export interface Transaction {
    * for every entry written before this field existed.
    */
   origin?: TransactionOrigin;
+  /**
+   * How many monthly charges this purchase is split into.
+   *
+   * Absent, null or 1 all mean "paid in one go", which is almost every row.
+   * The entry keeps the whole price — that is what was bought and what is
+   * owed — and the months it lands in are worked out from here rather than
+   * stored, so correcting the price of a twelve-month plan stays a one-field
+   * edit. See `instalments.ts`.
+   */
+  instalments?: number | null;
+  /**
+   * Which charge of a plan this row is, 1-based.
+   *
+   * DERIVED AND NEVER STORED. Aggregation hands out one row per monthly charge
+   * so that every total in the app is built from what the bank charges rather
+   * than from the sticker price; this is what lets a view label that row
+   * "3/12". A row carrying it is a twelfth of a purchase, so it must never be
+   * written back to the document — `normaliseTransaction` drops it.
+   */
+  instalmentIndex?: number;
   /**
    * When a statement vouched for this entry.
    *
@@ -500,13 +521,21 @@ export function inRange(date: LocalDate, range: DateRange): boolean {
 /* Aggregation                                                         */
 /* ------------------------------------------------------------------ */
 
-/** Live transactions inside a window, newest first. */
+/**
+ * Live transactions inside a window, newest first.
+ *
+ * The one seam where a purchase becomes what the bank actually charges: a
+ * twelve-month plan enters as one row and leaves as the single instalment that
+ * falls inside this window. Everything downstream — the totals, the category
+ * bars, the daily chart, the ledger — is built from what comes out of here, so
+ * none of them has to know that instalments exist. See `instalments.ts`.
+ */
 export function transactionsInRange(
   transactions: Transaction[],
   range: DateRange,
 ): Transaction[] {
-  return transactions
-    .filter((t) => t.deletedAt === null && inRange(t.date, range))
+  return expandInstalments(transactions.filter((t) => t.deletedAt === null))
+    .filter((t) => inRange(t.date, range))
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
 }
 

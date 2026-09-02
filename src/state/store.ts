@@ -45,10 +45,10 @@ import {
   dueRecurringTransactions,
   type CategoryKey,
 } from "@/domain/money";
+import { normaliseLink, type WishlistItem } from "@/domain/wishlist";
+import { normaliseLabel, type Deadline } from "@/domain/deadline";
+import { NOTE_TAG } from "@/domain/note";
 import type { ImportDraft, ImportMerge } from "@/domain/statementImport";
-import { isSpendingAlert, type BankAlert } from "@/domain/bankAlert";
-import { identifyMerchant } from "@/domain/merchant";
-import { matchRows, matchableEntries } from "@/domain/reconcile";
 import {
   syncDeleteCategoryToCloud,
   syncDeleteTaskToCloud,
@@ -126,7 +126,35 @@ export interface TransactionDraft {
   origin?: TransactionOrigin;
   /** Identity of the source record, for alerts and imports. */
   externalId?: string | null;
+  /** Split over this many monthly charges. See `Transaction.instalments`. */
+  instalments?: number | null;
 }
+
+export interface DeadlineDraft {
+  taskId: string;
+  /** What has to be true by `date`. Blank input is rejected, not stored. */
+  label: string;
+  date: LocalDate;
+}
+
+export type DeadlinePatch = Partial<Pick<Deadline, "label" | "date" | "order">>;
+
+export interface WishlistDraft {
+  title: string;
+  /** Minor units, or null while the price is still unknown. */
+  priceMinor?: number | null;
+  /** Raw text as typed; the store is what checks it is a link. */
+  url?: string;
+  note?: string;
+  categoryId?: string | null;
+}
+
+export type WishlistPatch = Partial<
+  Pick<WishlistItem, "title" | "priceMinor" | "note" | "categoryId" | "order">
+> & {
+  /** Raw text again, so a corrected link goes through the same check. */
+  url?: string | null;
+};
 
 export type TransactionPatch = Partial<
   Pick<
@@ -142,6 +170,7 @@ export type TransactionPatch = Partial<
     | "externalId"
     | "origin"
     | "confirmedAt"
+    | "instalments"
   >
 >;
 
@@ -303,17 +332,44 @@ interface StoreState {
    * already in the ledger are skipped here as well as in the plan, so a stale
    * preview can never double a month.
    */
-  importTransactions(drafts: ImportDraft[], merges?: ImportMerge[]): number;
   /**
-   * Write what the bank's notification mail said.
+   * Turn a task into a note, or report why it cannot become one.
    *
-   * Returns how many entries the ledger gained. An alert whose purchase is
-   * already there — because the user typed it at the till a minute earlier —
-   * settles that entry instead of adding a second one, so the count can be
-   * smaller than the number of alerts handed in, and that is the feature
-   * working rather than a message being lost.
+   * The inverse of what the note panel does by dropping one tag, but not its
+   * mirror image: a note has none of the things a task can carry, so the ones
+   * that would be left dangling are cleared here rather than hidden. Returns
+   * `false` without changing anything when the task has subtasks — those would
+   * keep a parent that no list shows, which is data quietly disappearing.
    */
-  recordBankAlerts(alerts: BankAlert[]): number;
+  convertToNote(taskId: string): boolean;
+
+  importTransactions(drafts: ImportDraft[], merges?: ImportMerge[]): number;
+
+  /* Wishlist -------------------------------------------------------- */
+  /* Deadlines: the dated checkpoints a task is broken into. */
+  addDeadline(draft: DeadlineDraft): Deadline | null;
+  updateDeadline(id: string, patch: DeadlinePatch): void;
+  /** Ticks a checkpoint off, or puts it back. */
+  setDeadlineMet(id: string, met: boolean): void;
+  removeDeadline(id: string): void;
+
+  addWishlistItem(draft: WishlistDraft): WishlistItem;
+  updateWishlistItem(id: string, patch: WishlistPatch): void;
+  /** Take it off the list. Soft, like everything else, and undoable. */
+  removeWishlistItem(id: string): void;
+  /**
+   * The moment a wish becomes money.
+   *
+   * Writes an ordinary ledger entry — the wishlist has no totals of its own
+   * and never touches the budget until this is called — and marks the item
+   * bought rather than deleting it, because "did I already buy this?" is a
+   * question a shopping list has to be able to answer.
+   *
+   * Returns the entry it created, or `null` when there was nothing to buy:
+   * the item is gone, already bought, or has no price to charge.
+   */
+  buyWishlistItem(id: string, date?: LocalDate): Transaction | null;
+
   /** Remember that today's spending prompt has been shown. */
   markSpendNudged(date: LocalDate): void;
   updateBudgetCategory(
@@ -1555,6 +1611,12 @@ export const useStore = create<StoreState>((set, get) => {
         merchant: draft.merchant?.trim() || null,
         origin: draft.origin ?? "manual",
         externalId: draft.externalId ?? null,
+        // One charge is not a plan: anything under two months is stored as the
+        // ordinary purchase it is, so no view has to special-case "1/1".
+        instalments:
+          draft.instalments && draft.instalments > 1
+            ? Math.trunc(draft.instalments)
+            : null,
         // Nothing typed or pushed is confirmed. Only a statement can say what
         // a purchase finally cost.
         confirmedAt: null,
@@ -1927,114 +1989,327 @@ export const useStore = create<StoreState>((set, get) => {
       return created.length + settling.length;
     },
 
-    /**
-     * Write what the bank's notification mail said.
-     *
-     * Every alert goes through the same reconciler a statement does, for the
-     * same reason: someone who types "migros 250" at the till and then gets the
-     * bank's mail two minutes later has made one purchase, and a feed that
-     * cannot see that turns the convenience into a chore. The alert settles the
-     * entry that is already there — teaching it the shop and the card — rather
-     * than filing a twin beside it.
-     */
-    recordBankAlerts(alerts) {
-      const spending = alerts.filter(isSpendingAlert);
-      if (spending.length === 0) return 0;
-
-      const live = get().db.transactions.filter(
-        (entry) => entry.deletedAt === null,
+    convertToNote(taskId) {
+      const db = get().db;
+      const task = db.tasks.find((t) => t.id === taskId);
+      if (!task || task.deletedAt !== null || task.tags.includes(NOTE_TAG)) {
+        return false;
+      }
+      // Refused rather than fudged: nothing renders the children of a note.
+      const hasSubtasks = db.tasks.some(
+        (t) => t.parentId === taskId && t.deletedAt === null,
       );
-      const taken = new Set(
-        live.map((entry) => entry.externalId).filter(Boolean) as string[],
-      );
-      const incoming = spending.filter((alert) => !taken.has(alert.externalId));
-      if (incoming.length === 0) return 0;
-
-      // The shop the bank named decides the category, exactly as it does for a
-      // statement row — the two are the same descriptor arriving by two doors.
-      const identified = incoming.map((alert) => ({
-        alert,
-        merchant: identifyMerchant(alert.description),
-      }));
-      const keys = [
-        ...new Set(
-          identified
-            .map(({ merchant }) => merchant.categoryKey)
-            .filter((key): key is CategoryKey => key !== null),
-        ),
-      ];
-      const categoryIds =
-        keys.length > 0 ? get().ensureCategoriesForKeys(keys) : {};
-
-      const matches = matchRows(
-        identified.map(({ alert, merchant }) => ({
-          key: alert.externalId,
-          date: alert.date,
-          amountMinor: alert.amountMinor,
-          flow: alert.flow,
-          merchant: merchant.name,
-          account: alert.account,
-        })),
-        matchableEntries(live).filter((entry) => !entry.externalId),
-        (row) => row.key,
-      );
+      if (hasSubtasks) return false;
 
       const at = nowInstant();
-      const created: Transaction[] = [];
-      const patches = new Map<string, Partial<Transaction>>();
+      const before = {
+        tags: task.tags,
+        dueDate: task.dueDate,
+        endDate: task.endDate ?? null,
+        deadline: task.deadline ?? null,
+        recurrence: task.recurrence,
+        startTime: task.startTime,
+        endTime: task.endTime,
+        allDay: task.allDay,
+      };
+      /*
+       * The reminders go with the schedule they were set against.
+       *
+       * A RELATIVE one has nothing left to count back from once the date is
+       * gone, and an ABSOLUTE one would go on firing for something that now
+       * lives in Notes and shows nowhere else. They are handed to the undo
+       * whole, so taking this back really does take all of it back.
+       */
+      const dropped = db.reminders.filter((r) => r.taskId === taskId);
 
-      for (const { alert, merchant } of identified) {
-        const categoryId = merchant.categoryKey
-          ? (categoryIds[merchant.categoryKey] ?? null)
-          : null;
-        const match = matches.get(alert.externalId);
+      commit((next) =>
+        appendHistory(
+          {
+            ...next,
+            tasks: next.tasks.map((t) =>
+              t.id === taskId
+                ? {
+                    ...t,
+                    tags: [...t.tags.filter((tag) => tag !== NOTE_TAG), NOTE_TAG],
+                    dueDate: null,
+                    endDate: null,
+                    deadline: null,
+                    recurrence: null,
+                    startTime: null,
+                    endTime: null,
+                    allDay: true,
+                    updatedAt: at,
+                  }
+                : t,
+            ),
+            reminders: next.reminders.filter((r) => r.taskId !== taskId),
+          },
+          historyEntry({
+            taskId,
+            kind: "UPDATED",
+            field: "type",
+            from: "task",
+            to: "note",
+          }),
+        ),
+      );
 
-        if (match) {
-          patches.set(match.entry.id, {
-            externalId: alert.externalId,
-            merchant: match.entry.merchant ?? merchant.name,
-            account: match.entry.account ?? alert.account,
-            categoryId: match.entry.categoryId ?? categoryId,
-            // Deliberately NOT confirmed: an alert announces what the merchant
-            // asked for, not what the bank finally charged.
-            updatedAt: at,
-          });
-          continue;
-        }
+      useUndoStore.getState().push("undoneConvertedToNote", () => {
+        const at2 = nowInstant();
+        commit((next) => ({
+          ...next,
+          tasks: next.tasks.map((t) =>
+            t.id === taskId ? { ...t, ...before, updatedAt: at2 } : t,
+          ),
+          reminders: [
+            ...next.reminders.filter((r) => r.taskId !== taskId),
+            ...dropped,
+          ],
+        }));
+      });
 
-        created.push({
-          id: createId("x"),
-          date: alert.date,
-          amountMinor: alert.amountMinor,
-          flow: alert.flow,
-          categoryId,
-          note: alert.description,
-          merchant: merchant.name,
-          account: alert.account,
-          origin: "alert",
-          externalId: alert.externalId,
-          confirmedAt: null,
-          recurrence: null,
-          recurrenceSourceId: null,
-          lastGeneratedFor: null,
-          createdAt: at,
-          updatedAt: at,
-          deletedAt: null,
-        });
-      }
+      return true;
+    },
 
+    addDeadline(draft) {
+      // A checkpoint with no name is a bare date nobody can act on, so an
+      // empty label is refused here rather than stored and hidden later.
+      const label = normaliseLabel(draft.label);
+      if (!label || !draft.date) return null;
+
+      const at = nowInstant();
+      const deadline: Deadline = {
+        id: createId("dl"),
+        taskId: draft.taskId,
+        label,
+        date: draft.date,
+        completedAt: null,
+        // Only ever a tie-breaker between two checkpoints on one day; the list
+        // itself is ordered by date, which is the order dates come in.
+        order: get().db.deadlines.filter((d) => d.taskId === draft.taskId).length,
+        createdAt: at,
+        updatedAt: at,
+        deletedAt: null,
+      };
+      commit((db) =>
+        appendHistory(
+          { ...db, deadlines: [...db.deadlines, deadline] },
+          historyEntry({
+            taskId: deadline.taskId,
+            kind: "DEADLINE_ADDED",
+            field: deadline.label,
+            to: deadline.date,
+          }),
+        ),
+      );
+      return deadline;
+    },
+
+    updateDeadline(id, patch) {
+      const at = nowInstant();
+      const previous = get().db.deadlines.find((d) => d.id === id);
+      if (!previous) return;
+      const label =
+        patch.label === undefined
+          ? previous.label
+          : (normaliseLabel(patch.label) ?? previous.label);
+      const date = patch.date || previous.date;
+
+      commit((db) => {
+        const next = {
+          ...db,
+          deadlines: db.deadlines.map((d) =>
+            d.id === id ? { ...d, ...patch, label, date, updatedAt: at } : d,
+          ),
+        };
+        // Moving a checkpoint is the kind of edit people forget making, so the
+        // trail records the move itself rather than just that something changed.
+        return date === previous.date
+          ? next
+          : appendHistory(
+              next,
+              historyEntry({
+                taskId: previous.taskId,
+                kind: "RESCHEDULED",
+                field: label,
+                from: previous.date,
+                to: date,
+              }),
+            );
+      });
+    },
+
+    setDeadlineMet(id, met) {
+      const at = nowInstant();
+      const previous = get().db.deadlines.find((d) => d.id === id);
+      if (!previous || (previous.completedAt !== null) === met) return;
+      commit((db) => {
+        const next = {
+          ...db,
+          deadlines: db.deadlines.map((d) =>
+            d.id === id ? { ...d, completedAt: met ? at : null, updatedAt: at } : d,
+          ),
+        };
+        return met
+          ? appendHistory(
+              next,
+              historyEntry({
+                taskId: previous.taskId,
+                kind: "DEADLINE_MET",
+                field: previous.label,
+                to: previous.date,
+              }),
+            )
+          : next;
+      });
+    },
+
+    removeDeadline(id) {
+      const at = nowInstant();
+      const previous = get().db.deadlines.find((d) => d.id === id);
+      if (!previous) return;
+      commit((db) =>
+        appendHistory(
+          {
+            ...db,
+            deadlines: db.deadlines.map((d) =>
+              d.id === id ? { ...d, deletedAt: at, updatedAt: at } : d,
+            ),
+          },
+          historyEntry({
+            taskId: previous.taskId,
+            kind: "DEADLINE_REMOVED",
+            field: previous.label,
+            from: previous.date,
+          }),
+        ),
+      );
+      useUndoStore.getState().push("undoneDeadlineRemoved", () => {
+        const at2 = nowInstant();
+        commit((db) => ({
+          ...db,
+          deadlines: db.deadlines.map((d) =>
+            d.id === id ? { ...d, deletedAt: null, updatedAt: at2 } : d,
+          ),
+        }));
+      });
+    },
+
+    addWishlistItem(draft) {
+      const at = nowInstant();
+      const item: WishlistItem = {
+        id: createId("w"),
+        title: draft.title.trim(),
+        priceMinor:
+          typeof draft.priceMinor === "number" && Number.isFinite(draft.priceMinor)
+            ? Math.abs(Math.round(draft.priceMinor))
+            : null,
+        url: normaliseLink(draft.url ?? ""),
+        note: draft.note?.trim() ?? "",
+        categoryId: draft.categoryId ?? null,
+        // Newest first is wrong for a shopping list — the thing you added last
+        // is the thing you are still thinking about — so it goes on the end.
+        order: get().db.wishlist.length,
+        boughtAt: null,
+        transactionId: null,
+        createdAt: at,
+        updatedAt: at,
+        deletedAt: null,
+      };
+      commit((db) => ({ ...db, wishlist: [...db.wishlist, item] }));
+      return item;
+    },
+
+    updateWishlistItem(id, patch) {
+      const at = nowInstant();
       commit((db) => ({
         ...db,
-        transactions: [
-          ...db.transactions.map((entry) => {
-            const patch = patches.get(entry.id);
-            return patch ? { ...entry, ...patch } : entry;
-          }),
-          ...created,
-        ],
+        wishlist: db.wishlist.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                ...patch,
+                title: patch.title === undefined ? item.title : patch.title.trim(),
+                priceMinor:
+                  patch.priceMinor === undefined
+                    ? item.priceMinor
+                    : patch.priceMinor === null
+                      ? null
+                      : Math.abs(Math.round(patch.priceMinor)),
+                url: patch.url === undefined ? item.url : normaliseLink(patch.url ?? ""),
+                updatedAt: at,
+              }
+            : item,
+        ),
+      }));
+    },
+
+    removeWishlistItem(id) {
+      const at = nowInstant();
+      const previous = get().db.wishlist.find((item) => item.id === id);
+      if (!previous) return;
+      commit((db) => ({
+        ...db,
+        wishlist: db.wishlist.map((item) =>
+          item.id === id ? { ...item, deletedAt: at, updatedAt: at } : item,
+        ),
+      }));
+      useUndoStore.getState().push("undoneWishlistRemoved", () => {
+        const at2 = nowInstant();
+        commit((db) => ({
+          ...db,
+          wishlist: db.wishlist.map((item) =>
+            item.id === id ? { ...item, deletedAt: null, updatedAt: at2 } : item,
+          ),
+        }));
+      });
+    },
+
+    buyWishlistItem(id, date) {
+      const item = get().db.wishlist.find((each) => each.id === id);
+      if (!item || item.deletedAt !== null || item.boughtAt !== null) return null;
+      if (item.priceMinor === null || item.priceMinor === 0) return null;
+
+      const transaction = get().addTransaction({
+        date: date ?? toLocalDate(new Date(get().now)),
+        amountMinor: item.priceMinor,
+        flow: "EXPENSE",
+        categoryId: item.categoryId,
+        // The name it was wanted under is the name it is remembered by.
+        note: item.title,
+      });
+
+      const at = nowInstant();
+      commit((db) => ({
+        ...db,
+        wishlist: db.wishlist.map((each) =>
+          each.id === id
+            ? { ...each, boughtAt: at, transactionId: transaction.id, updatedAt: at }
+            : each,
+        ),
       }));
 
-      return created.length;
+      // One act, one reversal: the entry goes back out of the ledger and the
+      // item back onto the list. Undoing half of it would leave the budget
+      // charged for something the list still says has not been bought.
+      useUndoStore.getState().push("undoneWishlistBought", () => {
+        const at2 = nowInstant();
+        commit((db) => ({
+          ...db,
+          transactions: db.transactions.map((entry) =>
+            entry.id === transaction.id
+              ? { ...entry, deletedAt: at2, updatedAt: at2 }
+              : entry,
+          ),
+          wishlist: db.wishlist.map((each) =>
+            each.id === id
+              ? { ...each, boughtAt: null, transactionId: null, updatedAt: at2 }
+              : each,
+          ),
+        }));
+      });
+
+      return transaction;
     },
 
     markSpendNudged(date) {

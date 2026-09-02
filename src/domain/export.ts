@@ -1,5 +1,6 @@
 import type { Database } from "@/data/db";
 import { atTime, formatDuration } from "./datetime";
+import { sortDeadlines } from "./deadline";
 import { expandOccurrences } from "./recurrence";
 import type { Task } from "./types";
 
@@ -187,6 +188,22 @@ export function exportBudgetCsv(db: Database, today: string): ExportFile {
 }
 
 /** Tasks, for a spreadsheet. */
+/**
+ * A task's checkpoints in one cell: `label@date`, oldest first.
+ *
+ * A spreadsheet row is one task, and a task has any number of these, so they
+ * are joined rather than given columns nobody could count in advance. Written
+ * out at all because the alternative is an export that silently drops dates
+ * the user typed.
+ */
+function deadlinesFor(db: Database, taskId: string): string {
+  return sortDeadlines(
+    db.deadlines.filter((d) => d.taskId === taskId && d.deletedAt === null),
+  )
+    .map((d) => `${d.label}@${d.date}`)
+    .join("; ");
+}
+
 export function exportTasksCsv(db: Database, today: string): ExportFile {
   const categories = new Map(db.categories.map((c) => [c.id, c.name]));
   const trackedByTask = new Map<string, number>();
@@ -206,6 +223,7 @@ export function exportTasksCsv(db: Database, today: string): ExportFile {
       "due_date",
       "end_date",
       "deadline",
+      "deadlines",
       "start_time",
       "end_time",
       "tags",
@@ -224,6 +242,7 @@ export function exportTasksCsv(db: Database, today: string): ExportFile {
         t.dueDate ?? "",
         t.endDate ?? "",
         t.deadline ?? "",
+        deadlinesFor(db, t.id),
         t.startTime ?? "",
         t.endTime ?? "",
         t.tags.join(" "),

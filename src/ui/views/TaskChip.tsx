@@ -41,6 +41,15 @@ export function TaskChip({
   const isDeadline = instance.isDeadline;
   const spanning = span.length > 1 && !isDeadline;
   const continues = spanning && !span.isStart;
+  /*
+   * A named checkpoint is drawn under its own name.
+   *
+   * "Backend bitecek" is what the user wrote down and what they are scanning
+   * the 25th for; the project it belongs to is the one thing they already
+   * know. The title still travels in the tooltip, so the chip never becomes a
+   * label with no owner.
+   */
+  const label = instance.deadlineLabel ?? task.title;
 
   return (
     <button
@@ -49,7 +58,7 @@ export function TaskChip({
         "chip truncate",
         allDay && !isDeadline && "allday",
         isDeadline && "chip-deadline",
-        done && "done",
+        (done || instance.deadlineMet) && "done",
         instance.status === "OVERDUE" && "overdue",
         spanning && "spanning",
         spanning && !span.isStart && "span-continued",
@@ -64,9 +73,11 @@ export function TaskChip({
             : undefined
       }
       title={
-        spanning
-          ? `${task.title} · ${task.dueDate} → ${task.endDate} (${span.index + 1}/${span.length})`
-          : task.title
+        instance.deadlineLabel
+          ? `${instance.deadlineLabel} · ${task.title}`
+          : spanning
+            ? `${task.title} · ${task.dueDate} → ${task.endDate} (${span.index + 1}/${span.length})`
+            : task.title
       }
       draggable={draggable}
       onDragStart={onDragStart ? (e) => onDragStart(e, instance) : undefined}
@@ -81,7 +92,7 @@ export function TaskChip({
       {allDay || continues || isDeadline ? null : (
         <span className="chip-time">{task.startTime}</span>
       )}
-      <span className="chip-title truncate">{task.title}</span>
+      <span className="chip-title truncate">{label}</span>
       {spanning && span.isStart && span.length > 1 ? (
         <span className="chip-span-count">{span.length}d</span>
       ) : null}

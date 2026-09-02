@@ -9,6 +9,7 @@ import {
   Scissors,
   Trash2,
   RotateCcw,
+  Pencil,
 } from "lucide-react";
 import { addDaysLocal, daysBetween } from "@/domain/datetime";
 import type { LocalDate, TaskInstance } from "@/domain/types";
@@ -44,6 +45,9 @@ export function useCalendarInteractions({
   const duplicateTask = useStore((s) => s.duplicateTask);
   const reschedule = useStore((s) => s.reschedule);
   const toggleComplete = useStore((s) => s.toggleComplete);
+  const setDeadlineMet = useStore((s) => s.setDeadlineMet);
+  const updateDeadline = useStore((s) => s.updateDeadline);
+  const removeDeadline = useStore((s) => s.removeDeadline);
   const requestDelete = useRequestDelete();
 
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
@@ -78,6 +82,59 @@ export function useCalendarInteractions({
       const { task } = instance;
       const day = instance.date ?? task.dueDate;
       const done = instance.storedStatus === "COMPLETED";
+
+      /*
+       * A checkpoint chip is not the task it hangs off.
+       *
+       * Every item below acts on `task` — copy it, duplicate it, complete it,
+       * delete it — which on a deadline marker means the whole plan. That is
+       * how "delete" here used to answer by taking the plan away instead of the
+       * date, so a marker gets the three verbs it actually has.
+       */
+      if (instance.deadlineId) {
+        const deadlineId = instance.deadlineId;
+        setMenu({
+          x: event.clientX,
+          y: event.clientY,
+          items: [
+            {
+              id: "edit",
+              label: t("planDeadlineEdit"),
+              icon: <Pencil size={ICON} />,
+              onSelect: () => onOpen(instance),
+            },
+            {
+              id: "met",
+              label: instance.deadlineMet
+                ? t("planDeadlineUnmet")
+                : t("planDeadlineMet"),
+              icon: instance.deadlineMet ? (
+                <RotateCcw size={ICON} />
+              ) : (
+                <Check size={ICON} />
+              ),
+              onSelect: () => setDeadlineMet(deadlineId, !instance.deadlineMet),
+            },
+            {
+              id: "open-plan",
+              label: t("menuOpenPlan"),
+              icon: <ExternalLink size={ICON} />,
+              onSelect: () => onOpen({ ...instance, deadlineId: null }),
+            },
+            {
+              // Not `menuDelete`: that reads "move to trash", which is what
+              // happens to a task. A checkpoint has no trash to go to — it is
+              // removed, and the undo toast is how it comes back.
+              id: "delete",
+              label: t("planDeadlineRemove"),
+              icon: <Trash2 size={ICON} />,
+              danger: true,
+              onSelect: () => removeDeadline(deadlineId),
+            },
+          ],
+        });
+        return;
+      }
 
       const items: ContextMenuItem[] = [
         {
@@ -141,6 +198,8 @@ export function useCalendarInteractions({
       cutToClipboard,
       duplicateTask,
       toggleComplete,
+      setDeadlineMet,
+      removeDeadline,
       requestDelete,
     ],
   );
@@ -200,6 +259,20 @@ export function useCalendarInteractions({
       const asCopy = event.ctrlKey || event.altKey || event.metaKey;
       const { task } = instance;
 
+      /*
+       * Dragging a checkpoint moves the checkpoint.
+       *
+       * Everything below moves the *task*, which on a deadline marker would
+       * drag the whole plan to wherever its 25 September date was dropped.
+       * There is nothing to copy either: a second checkpoint with the same
+       * name on a different day is two answers to one question.
+       */
+      if (instance.deadlineId) {
+        if (!asCopy) updateDeadline(instance.deadlineId, { date });
+        endDrag();
+        return;
+      }
+
       if (asCopy) {
         duplicateTask(task.id, {
           dueDate: date,
@@ -214,7 +287,7 @@ export function useCalendarInteractions({
       }
       endDrag();
     },
-    [duplicateTask, reschedule, endDrag],
+    [duplicateTask, reschedule, updateDeadline, endDrag],
   );
 
   return {

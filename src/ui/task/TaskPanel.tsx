@@ -12,6 +12,7 @@ import {
   CornerDownRight,
   Copy,
   Plus,
+  StickyNote,
   Target,
   Trash2,
   Unlink,
@@ -82,6 +83,7 @@ export function TaskPanel({
   const history = useTaskHistory(task.id);
   const tracked = useTrackedSeconds(task.id);
   const subtasks = useSubtasks(task.id);
+  const convertToNote = useStore((s) => s.convertToNote);
   const reminders = useStore((s) => s.db.reminders);
 
   /*
@@ -691,6 +693,23 @@ export function TaskPanel({
               {t("removeFromTodayShort")}
             </button>
           ) : null}
+
+          {/* The mirror of the note panel's "turn into a task". Disabled rather
+              than hidden when the task has subtasks, so the answer to "why can
+              I not do this here" is on the button itself. */}
+          <button
+            type="button"
+            className="btn ghost sm"
+            disabled={subtasks.length > 0}
+            title={
+              subtasks.length > 0 ? t("taskToNoteBlocked") : t("taskToNoteHint")
+            }
+            onClick={() => {
+              if (convertToNote(task.id)) onClose();
+            }}
+          >
+            <StickyNote size={13} /> {t("taskToNote")}
+          </button>
         </div>
 
         <div className="panel-foot-meta">

@@ -9,7 +9,6 @@ import {
   QUICK_SPEND_EVENT,
   onDesktopEvent,
 } from "@/services/desktop";
-import { useSpendFeed } from "@/services/spendFeed";
 import { notify } from "@/services/notifications";
 import { spendNudgeDue } from "@/domain/spendLog";
 import { useReminderScheduler } from "@/services/scheduler";
@@ -26,6 +25,7 @@ import { ReminderAlerts } from "@/ui/components/ReminderAlerts";
 import { QuickAdd } from "@/ui/task/QuickAdd";
 import { TaskPanel } from "@/ui/task/TaskPanel";
 import { NotePanel } from "@/ui/task/NotePanel";
+import { DeadlineEditor } from "@/ui/task/DeadlineEditor";
 import {
   CalendarView,
   calendarTitle,
@@ -103,6 +103,17 @@ export function App() {
   );
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [selection, setSelection] = useState<Selection | null>(null);
+  /**
+   * The checkpoint being edited, when a deadline chip was the thing clicked.
+   *
+   * A deadline marker is not the task it belongs to: opening the task panel on
+   * it offers a title, a schedule and a status that all belong to the plan,
+   * and none of the two fields the marker actually has.
+   */
+  const [editingDeadline, setEditingDeadline] = useState<{
+    taskId: string;
+    deadlineId: string;
+  } | null>(null);
   const [quickAdd, setQuickAdd] = useState<QuickAddSeed | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -170,9 +181,6 @@ export function App() {
       unlisten?.();
     };
   }, []);
-
-  // Poll the bank's notification mailbox while the app is open.
-  useSpendFeed();
 
   /*
    * The evening prompt.
@@ -267,11 +275,19 @@ export function App() {
     );
   }
 
-  const openInstance = (instance: TaskInstance) =>
+  const openInstance = (instance: TaskInstance) => {
+    if (instance.deadlineId) {
+      setEditingDeadline({
+        taskId: instance.task.id,
+        deadlineId: instance.deadlineId,
+      });
+      return;
+    }
     setSelection({
       taskId: instance.task.id,
       occurrenceDate: instance.isRecurring ? instance.date : null,
     });
+  };
 
   const openTaskId = (
     taskId: string,
@@ -436,6 +452,14 @@ export function App() {
         onOpenTask={(taskId) => openTaskId(taskId)}
         onSettings={() => setSettingsOpen(true)}
       />
+
+      {editingDeadline ? (
+        <DeadlineEditor
+          taskId={editingDeadline.taskId}
+          deadlineId={editingDeadline.deadlineId}
+          onClose={() => setEditingDeadline(null)}
+        />
+      ) : null}
 
       <AuthModal />
     </div>

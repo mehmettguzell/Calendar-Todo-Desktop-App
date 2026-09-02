@@ -1,6 +1,11 @@
 import { useMemo, useState } from "react";
 import { Search, Trash2, X } from "lucide-react";
 import { addDaysLocal, formatDate } from "@/domain/datetime";
+import {
+  instalmentCount,
+  outstandingCount,
+  outstandingMinor,
+} from "@/domain/instalments";
 import { fold } from "@/domain/merchant";
 import {
   formatMoney,
@@ -50,6 +55,20 @@ interface DayGroup {
  * broken into days, each with its own total, the eye can find "what did
  * Saturday cost" without reading a single amount.
  */
+/**
+ * One row's identity in this list.
+ *
+ * A purchase on instalments appears once per monthly charge, so its id is not
+ * unique here — over a year view the same plan is twelve rows. Everything that
+ * points at a *row* (the key, which one is open) has to say which charge it
+ * means; everything that points at the *purchase* still uses the plain id.
+ */
+function rowKey(entry: Transaction): string {
+  return entry.instalmentIndex === undefined
+    ? entry.id
+    : `${entry.id}#${entry.instalmentIndex}`;
+}
+
 export function Ledger({
   rows,
   categories,
@@ -168,7 +187,7 @@ export function Ledger({
               <ul className="ledger-rows">
                 {day.entries.map((entry) => (
                   <LedgerRow
-                    key={entry.id}
+                    key={rowKey(entry)}
                     entry={entry}
                     category={
                       entry.categoryId
@@ -177,9 +196,10 @@ export function Ledger({
                     }
                     categories={categories}
                     currency={currency}
-                    open={openId === entry.id}
+                    today={today}
+                    open={openId === rowKey(entry)}
                     onToggle={() =>
-                      setOpenId(openId === entry.id ? null : entry.id)
+                      setOpenId(openId === rowKey(entry) ? null : rowKey(entry))
                     }
                     onClose={() => setOpenId(null)}
                   />
@@ -198,6 +218,7 @@ function LedgerRow({
   category,
   categories,
   currency,
+  today,
   open,
   onToggle,
   onClose,
@@ -206,12 +227,24 @@ function LedgerRow({
   category: BudgetCategory | null;
   categories: BudgetCategory[];
   currency: string;
+  today: LocalDate;
   open: boolean;
   onToggle: () => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
   const deleteTransaction = useStore((s) => s.deleteTransaction);
+  /*
+   * The purchase behind the row.
+   *
+   * A row of an instalment plan is one twelfth of a purchase — the right thing
+   * to show in August, and the wrong thing to put in an edit form, where
+   * saving it would replace the price with the monthly charge. Editing always
+   * opens the purchase itself.
+   */
+  const purchase = useStore(
+    (s) => s.db.transactions.find((row) => row.id === entry.id) ?? entry,
+  );
 
   /*
    * What actually happened, in the user's own words.
@@ -267,6 +300,18 @@ function LedgerRow({
               ↻
             </span>
           ) : null}
+          {entry.instalmentIndex !== undefined ? (
+            <span
+              className="ledger-tag instalment"
+              title={t("ledgerInstalmentHint", {
+                index: entry.instalmentIndex,
+                count: instalmentCount(purchase),
+                total: formatMoney(purchase.amountMinor, currency),
+              })}
+            >
+              {entry.instalmentIndex}/{instalmentCount(purchase)}
+            </span>
+          ) : null}
           {origin !== "manual" ? (
             <span className="ledger-tag">{t(ORIGIN_LABEL[origin])}</span>
           ) : null}
@@ -292,8 +337,10 @@ function LedgerRow({
 
       {open ? (
         <EntryEditor
-          entry={entry}
+          entry={purchase}
           categories={categories}
+          currency={currency}
+          today={today}
           onClose={onClose}
           onDelete={() => {
             if (!window.confirm(t("ledgerDeleteConfirm"))) return;
@@ -317,11 +364,15 @@ function LedgerRow({
 function EntryEditor({
   entry,
   categories,
+  currency,
+  today,
   onClose,
   onDelete,
 }: {
   entry: Transaction;
   categories: BudgetCategory[];
+  currency: string;
+  today: LocalDate;
   onClose: () => void;
   onDelete: () => void;
 }) {
@@ -337,9 +388,13 @@ function EntryEditor({
   const [note, setNote] = useState(entry.note);
   const [account, setAccount] = useState(entry.account ?? "");
   const [date, setDate] = useState(entry.date);
+  const [instalments, setInstalments] = useState(
+    entry.instalments && entry.instalments > 1 ? String(entry.instalments) : "",
+  );
   const [error, setError] = useState<string | null>(null);
 
   const suggestions = categories.filter((category) => category.flow === flow);
+  const outstanding = outstandingMinor(entry, today);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -352,6 +407,8 @@ function EntryEditor({
       ? ensureBudgetCategory(categoryName, flow)
       : null;
 
+    const months = Number.parseInt(instalments, 10);
+
     updateTransaction(entry.id, {
       amountMinor: Math.abs(amountMinor),
       flow,
@@ -359,6 +416,9 @@ function EntryEditor({
       note: note.trim(),
       account: account.trim() || null,
       date,
+      // The field holds months, not money: the amount above stays the price of
+      // the thing, and the monthly charge is worked out from the two.
+      instalments: Number.isFinite(months) && months > 1 ? months : null,
     });
     onClose();
   };
@@ -428,6 +488,20 @@ function EntryEditor({
         onChange={(e) => setDate(e.target.value || entry.date)}
       />
 
+      {/*
+        Empty means "paid in one go", which is almost every row — so the field
+        says nothing at all until somebody puts a number in it.
+      */}
+      <input
+        className="input mono ledger-edit-instalments"
+        inputMode="numeric"
+        aria-label={t("budgetInstalments")}
+        placeholder={t("budgetInstalmentsShort")}
+        title={t("budgetInstalmentsHint")}
+        value={instalments}
+        onChange={(e) => setInstalments(e.target.value.replace(/\D/g, ""))}
+      />
+
       <button type="submit" className="btn primary sm">
         {t("save")}
       </button>
@@ -442,6 +516,14 @@ function EntryEditor({
       >
         <Trash2 size={13} />
       </button>
+      {outstanding > 0 ? (
+        <span className="ledger-edit-hint faint">
+          {t("budgetInstalmentRemaining", {
+            amount: formatMoney(outstanding, currency),
+            n: outstandingCount(entry, today),
+          })}
+        </span>
+      ) : null}
       {error ? <span className="budget-entry-error">{error}</span> : null}
     </form>
   );

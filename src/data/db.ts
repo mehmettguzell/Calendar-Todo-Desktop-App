@@ -1,4 +1,6 @@
 import { createId } from "@/domain/ids";
+import { normaliseLink, type WishlistItem } from "@/domain/wishlist";
+import { normaliseLabel, type Deadline } from "@/domain/deadline";
 import {
   seedBudgetCategories,
   type BudgetCategory,
@@ -76,6 +78,10 @@ export interface Database {
   /** Budget: money in, money out, money set aside. */
   transactions: Transaction[];
   budgetCategories: BudgetCategory[];
+  /** Things the user means to buy: money that has not moved yet. */
+  wishlist: WishlistItem[];
+  /** The dated checkpoints tasks are broken into. See `domain/deadline`. */
+  deadlines: Deadline[];
   settings: Settings;
 }
 
@@ -140,6 +146,8 @@ export function emptyDatabase(): Database {
     tombstones: [],
     transactions: [],
     budgetCategories: defaultBudgetCategories(),
+    wishlist: [],
+    deadlines: [],
     settings: {
       ...DEFAULT_SETTINGS,
       categorySeedVersion: CATEGORY_SEED_VERSION,
@@ -375,7 +383,16 @@ export function migrate(raw: unknown): Database {
   const tasks = Array.isArray(doc.tasks)
     ? doc.tasks.map(normaliseTask)
     : base.tasks;
-  const settings = { ...DEFAULT_SETTINGS, ...(doc.settings ?? {}) };
+  /*
+   * The bank-mail feed is gone, and so is its configuration.
+   *
+   * Stripped rather than ignored: the block held a mailbox host and username,
+   * and a document that keeps carrying them writes them into every backup the
+   * user ever makes, for a feature that no longer exists to read them.
+   */
+  const { mailSync: _removedMailSync, ...storedSettings } = (doc.settings ??
+    {}) as Record<string, unknown>;
+  const settings = { ...DEFAULT_SETTINGS, ...storedSettings } as Settings;
   const language = settings.language ?? "tr";
 
   const storedCategories =
@@ -428,6 +445,15 @@ export function migrate(raw: unknown): Database {
       : base.tombstones,
     transactions: cleanTransactions,
     budgetCategories: cleanBudgetCategories,
+    wishlist: Array.isArray(doc.wishlist)
+      ? doc.wishlist.map(normaliseWishlistItem)
+      : base.wishlist,
+    // A checkpoint with no name or no day cannot be drawn or read, and one
+    // pointing at no task belongs to nothing — all three are dropped rather
+    // than carried as rows nothing can ever show.
+    deadlines: Array.isArray(doc.deadlines)
+      ? doc.deadlines.map(normaliseDeadline).filter(isUsableDeadline)
+      : base.deadlines,
     settings: { ...settings, categorySeedVersion: CATEGORY_SEED_VERSION },
   };
 }
@@ -470,8 +496,15 @@ function normaliseReminder(reminder: Reminder): Reminder {
 }
 
 function normaliseTransaction(t: Transaction): Transaction {
+  // A row carrying `instalmentIndex` is one monthly charge of a purchase, not
+  // a purchase: aggregation makes those and nothing may ever write one back.
+  const { instalmentIndex: _derived, ...stored } = t;
   return {
-    ...t,
+    ...stored,
+    instalments:
+      typeof t.instalments === "number" && t.instalments > 1
+        ? Math.trunc(t.instalments)
+        : null,
     amountMinor: Math.round(Number(t.amountMinor) || 0),
     note: t.note ?? "",
     flow: t.flow ?? "EXPENSE",
@@ -481,6 +514,29 @@ function normaliseTransaction(t: Transaction): Transaction {
     lastGeneratedFor: t.lastGeneratedFor ?? null,
     deletedAt: t.deletedAt ?? null,
     updatedAt: t.updatedAt ?? t.createdAt ?? EPOCH,
+  };
+}
+
+function normaliseWishlistItem(item: WishlistItem): WishlistItem {
+  return {
+    ...item,
+    title: (item.title ?? "").trim(),
+    // A price of 0 is a price; "not priced yet" is null, and the two have to
+    // stay apart or the total silently counts an unknown as free.
+    priceMinor:
+      typeof item.priceMinor === "number" && Number.isFinite(item.priceMinor)
+        ? Math.round(item.priceMinor)
+        : null,
+    // Re-checked on the way in rather than trusted: the document is a file on
+    // disk, and a link is about to become an href. See `normaliseLink`.
+    url: typeof item.url === "string" ? normaliseLink(item.url) : null,
+    note: item.note ?? "",
+    categoryId: item.categoryId ?? null,
+    order: typeof item.order === "number" ? item.order : 0,
+    boughtAt: item.boughtAt ?? null,
+    transactionId: item.transactionId ?? null,
+    updatedAt: item.updatedAt ?? item.createdAt ?? EPOCH,
+    deletedAt: item.deletedAt ?? null,
   };
 }
 
@@ -496,6 +552,23 @@ function normaliseBudgetCategory(c: BudgetCategory): BudgetCategory {
       typeof c.monthlyLimitMinor === "number" ? c.monthlyLimitMinor : null,
     updatedAt: c.updatedAt ?? EPOCH,
   };
+}
+
+function normaliseDeadline(deadline: Deadline): Deadline {
+  const at = deadline.createdAt ?? new Date().toISOString();
+  return {
+    ...deadline,
+    label: normaliseLabel(String(deadline.label ?? "")) ?? "",
+    order: typeof deadline.order === "number" ? deadline.order : 0,
+    completedAt: deadline.completedAt ?? null,
+    createdAt: at,
+    updatedAt: deadline.updatedAt ?? at,
+    deletedAt: deadline.deletedAt ?? null,
+  };
+}
+
+function isUsableDeadline(deadline: Deadline): boolean {
+  return Boolean(deadline.id && deadline.taskId && deadline.label && deadline.date);
 }
 
 function normaliseTask(task: Task): Task {

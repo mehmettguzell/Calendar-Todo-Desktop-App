@@ -32,3 +32,15 @@ export function instanceKey(taskId: string, date: LocalDate | null, recurring: b
 export function deadlineKey(taskId: string): string {
   return `${taskId}::deadline`;
 }
+
+/**
+ * React key for one of a task's named deadlines.
+ *
+ * Distinct from `deadlineKey`: that marks the task's own final deadline, of
+ * which there is at most one, while a task can carry any number of these and
+ * several can land in the same rendered range. Like the other marker key it is
+ * never a mutation target — the chip opens the task it belongs to.
+ */
+export function namedDeadlineKey(taskId: string, deadlineId: string): string {
+  return `${taskId}::deadline::${deadlineId}`;
+}

@@ -1,4 +1,5 @@
 import { daysBetween } from "./datetime";
+import { expandInstalments } from "./instalments";
 import { fold } from "./merchant";
 import type { BudgetCategory, Transaction } from "./money";
 import type { LocalDate } from "./types";
@@ -135,7 +136,12 @@ function absorb(bucket: Bucket, entry: Transaction): void {
  * Income is included only when it can be matched to a shop — a refund. A salary
  * has no merchant and no business in a spending report.
  */
-function spendingEntries(transactions: Transaction[], range: DateRange): Transaction[] {
+function spendingEntries(rows: Transaction[], range: DateRange): Transaction[] {
+  // A purchase on instalments counts here as the charge that falls in this
+  // window, not as its price — the same rule the month totals follow, and they
+  // have to agree or the breakdown stops summing to the number above it.
+  const transactions = expandInstalments(rows);
+
   const merchantsWithSpend = new Set<string>();
   for (const entry of transactions) {
     if (entry.deletedAt !== null || entry.flow !== "EXPENSE") continue;

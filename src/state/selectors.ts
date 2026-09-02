@@ -1,8 +1,9 @@
 import { useMemo } from "react";
 import { addDaysLocal, localeTag, toLocalDate } from "@/domain/datetime";
-import { occurrenceId } from "@/domain/ids";
+import { namedDeadlineKey, occurrenceId } from "@/domain/ids";
 import { arrangePinned, pinOf } from "@/domain/manualOrder";
-import { instancesInRange, representativeInstance } from "@/domain/task";
+import { instancesInRange, representativeInstance, toInstance } from "@/domain/task";
+import { sortDeadlines, type Deadline } from "@/domain/deadline";
 import type {
   Category,
   FocusSession,
@@ -97,6 +98,7 @@ export function useInstancesInRange(
 ): TaskInstance[] {
   const tasks = useLiveTasks();
   const occurrences = useOccurrenceIndex();
+  const deadlineIndex = useDeadlineIndex();
   const now = useNow();
 
   return useMemo(() => {
@@ -125,9 +127,28 @@ export function useInstancesInRange(
         if (!filters.showCompleted && instance.status === "COMPLETED") continue;
         out.push(instance);
       }
+
+      /*
+       * A task's checkpoints are drawn like its own deadline: once, on the day
+       * they fall, under their own name. They are markers rather than work, so
+       * they never paint the days leading up to them and never become a second
+       * row for the task on a day it already occupies.
+       */
+      for (const deadline of deadlineIndex.get(task.id) ?? []) {
+        if (deadline.date < from || deadline.date > to) continue;
+        if (!filters.showCompleted && deadline.completedAt !== null) continue;
+        out.push({
+          ...toInstance(task, deadline.date, null, now),
+          key: namedDeadlineKey(task.id, deadline.id),
+          isDeadline: true,
+          deadlineId: deadline.id,
+          deadlineLabel: deadline.label,
+          deadlineMet: deadline.completedAt !== null,
+        });
+      }
     }
     return out.sort(compareInstances);
-  }, [tasks, occurrences, from, to, filters, now]);
+  }, [tasks, occurrences, deadlineIndex, from, to, filters, now]);
 }
 
 export function groupByDate(
@@ -159,6 +180,29 @@ export function compareInstances(a: TaskInstance, b: TaskInstance): number {
   return (
     a.task.order - b.task.order || a.task.title.localeCompare(b.task.title)
   );
+}
+
+/**
+ * Plan steps as they read on screen: what the user dragged, finished last.
+ *
+ * A plan is a list you work down, so a ticked step has stopped being part of
+ * it — it is evidence that the plan is moving. Left where it was, it pushes
+ * the next thing to do further down the card every time something gets done,
+ * which is the opposite of what finishing something should do.
+ *
+ * Order inside each half is untouched, and nothing is written: a step that is
+ * reopened climbs straight back to the place it was dragged to, because that
+ * place was never given away.
+ */
+export function compareSteps(a: Task, b: Task): number {
+  return (
+    Number(a.status === "COMPLETED") - Number(b.status === "COMPLETED") ||
+    a.order - b.order
+  );
+}
+
+export function arrangeSteps(steps: Task[]): Task[] {
+  return [...steps].sort(compareSteps);
 }
 
 /**
@@ -339,7 +383,7 @@ function subtaskIndex(tasks: Task[]): Map<string, Task[]> {
     if (bucket) bucket.push(task);
     else index.set(task.parentId, [task]);
   }
-  for (const bucket of index.values()) bucket.sort((a, b) => a.order - b.order);
+  for (const bucket of index.values()) bucket.sort(compareSteps);
   subtaskIndexes.set(tasks, index);
   return index;
 }
@@ -391,6 +435,41 @@ function reminderIndex(reminders: Reminder[]): Set<string> {
 export function useHasReminder(taskId: string): boolean {
   const reminders = useStore((s) => s.db.reminders);
   return reminderIndex(reminders).has(taskId);
+}
+
+/**
+ * The checkpoints of one task, in date order.
+ *
+ * Soft-deleted rows are filtered here rather than at every call site: a removed
+ * deadline is kept so an undo can put it back, and nothing else should ever
+ * have to know that.
+ */
+export function useDeadlines(taskId: string | null): Deadline[] {
+  const deadlines = useStore((s) => s.db.deadlines);
+  return useMemo(() => {
+    if (!taskId) return EMPTY_DEADLINES;
+    const own = deadlines.filter(
+      (d) => d.taskId === taskId && d.deletedAt === null,
+    );
+    return own.length > 0 ? sortDeadlines(own) : EMPTY_DEADLINES;
+  }, [deadlines, taskId]);
+}
+
+const EMPTY_DEADLINES: Deadline[] = [];
+
+/** Every live deadline, bucketed by the task it belongs to. */
+export function useDeadlineIndex(): Map<string, Deadline[]> {
+  const deadlines = useStore((s) => s.db.deadlines);
+  return useMemo(() => {
+    const index = new Map<string, Deadline[]>();
+    for (const d of deadlines) {
+      if (d.deletedAt !== null) continue;
+      const bucket = index.get(d.taskId);
+      if (bucket) bucket.push(d);
+      else index.set(d.taskId, [d]);
+    }
+    return index;
+  }, [deadlines]);
 }
 
 export function useSubtasks(parentId: string): Task[] {

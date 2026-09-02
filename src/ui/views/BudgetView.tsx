@@ -32,7 +32,7 @@ import { FixedCosts } from "@/ui/budget/FixedCosts";
 import { Ledger } from "@/ui/budget/Ledger";
 import { SpendingBreakdown } from "@/ui/budget/SpendingBreakdown";
 import { StatementImport } from "@/ui/budget/StatementImport";
-import { SpendFeedReview } from "@/ui/budget/SpendFeedReview";
+import { Wishlist } from "@/ui/budget/Wishlist";
 
 type PeriodId = "day" | "week" | "month" | "year";
 
@@ -180,6 +180,8 @@ export function BudgetView() {
         </button>
       </header>
 
+      <Wishlist currency={currency} />
+
       <section className="budget-totals section">
         <StatCard
           tone="income"
@@ -208,8 +210,6 @@ export function BudgetView() {
           emphasis
         />
       </section>
-
-      <SpendFeedReview />
 
       <QuickEntry defaultDate={clampToRange(today, range)} />
 

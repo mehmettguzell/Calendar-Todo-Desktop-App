@@ -1,4 +1,3 @@
-mod mail;
 
 use std::fs;
 use std::path::PathBuf;
@@ -356,12 +355,7 @@ pub fn run() {
             focus_main_window,
             quit_app,
             autostart_enabled,
-            set_autostart,
-            mail::mail_fetch,
-            mail::mail_probe,
-            mail::mail_set_password,
-            mail::mail_has_password,
-            mail::mail_clear_password
+            set_autostart
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
