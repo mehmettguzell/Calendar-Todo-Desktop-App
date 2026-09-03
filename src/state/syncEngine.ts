@@ -158,7 +158,20 @@ let realtimeChannel: RealtimeChannel | null = null;
 let isSyncing = false;
 let isApplyingRemoteUpdate = false;
 let isStoreSubscribed = false;
+let isEngineInitialized = false;
 let syncedNamespace: string | null = null;
+
+/**
+ * Tail of the account-change chain.
+ *
+ * `handleAccountChange` tears the engine down and builds it back up around two
+ * awaits, so two overlapping runs interleave: the second one's `stopSync()`
+ * clears `isSyncing` and removes the channel that the first one is still in the
+ * middle of subscribing, leaving a live socket nothing owns and a reconciliation
+ * that believes it is still running. Signing out and straight back in is enough
+ * to reach that. Chaining the runs makes each one see a settled engine.
+ */
+let accountChangeChain: Promise<void> = Promise.resolve();
 
 /* ------------------------------------------------------------------ */
 /* Optional cloud tables                                               */
@@ -230,6 +243,13 @@ function tableAvailable(table: string): boolean {
  * Initializes cross-device cloud synchronization (Desktop ↔ Mobile).
  */
 export function initSyncEngine() {
+  // Every listener below outlives the call and none of them is ever released,
+  // so a second call doubles them: two auth subscribers each starting their own
+  // reconciliation, two `online` handlers each rebuilding the realtime channel.
+  // React's development double-invoke of effects calls this twice.
+  if (isEngineInitialized) return;
+  isEngineInitialized = true;
+
   if (!supabase) {
     useSyncStore.getState().setPhase("disabled");
   }
@@ -243,7 +263,7 @@ export function initSyncEngine() {
     const nextUserId = state.user?.id ?? state.session?.user?.id ?? null;
     if (nextUserId === prevUserId) return;
 
-    void handleAccountChange(nextUserId);
+    void enqueueAccountChange(nextUserId);
   });
 
   // Watch local Zustand store mutations and automatically sync to Supabase
@@ -308,7 +328,7 @@ export function initSyncEngine() {
   // Initial check if already logged in
   const userId = currentUserId();
   if (userId) {
-    void handleAccountChange(userId);
+    void enqueueAccountChange(userId);
   }
 
   watchConnectivity();
@@ -372,6 +392,14 @@ function queueTombstones(prev: Tombstone[], next: Tombstone[]): void {
  * after a second person signs in on a shared machine, is the first person's
  * task list.
  */
+/** Run account changes one at a time, in the order they arrived. */
+function enqueueAccountChange(userId: string | null): Promise<void> {
+  accountChangeChain = accountChangeChain
+    .catch(() => undefined)
+    .then(() => handleAccountChange(userId));
+  return accountChangeChain;
+}
+
 async function handleAccountChange(userId: string | null): Promise<void> {
   stopSync();
   forgetSyncedState();

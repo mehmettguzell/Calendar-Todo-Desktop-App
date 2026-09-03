@@ -63,6 +63,21 @@ interface AuthState {
   initAuth: () => Promise<void>;
 }
 
+/**
+ * The single auth-change listener, kept so `initAuth` stays idempotent.
+ *
+ * Held at module scope rather than in the store because it is a property of the
+ * Supabase client — which is itself a module-level singleton — not of the
+ * React-visible state.
+ */
+let authListener: { unsubscribe: () => void } | null = null;
+
+/** Release the auth listener. Only tests need this; the app holds it for life. */
+export function disposeAuthListener(): void {
+  authListener?.unsubscribe();
+  authListener = null;
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   isConfigured: isSupabaseConfigured(),
   initialized: false,
@@ -105,6 +120,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ initialized: true });
       return;
     }
+    // `onAuthStateChange` registers a listener that nothing ever releases, so a
+    // second call would leave two of them attached to the same client: every
+    // sign-in would then set the session twice and hydrate the account twice.
+    // React's development double-invoke of effects is enough to reach this.
+    if (authListener) return;
 
     try {
       const {
@@ -119,7 +139,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       // Listen for auth state changes (login, logout, refresh token)
-      supabase.auth.onAuthStateChange((event, newSession) => {
+      const { data } = supabase.auth.onAuthStateChange((event, newSession) => {
         // A token refresh that could not reach the server is a network problem,
         // not a sign-out. Only an explicit SIGNED_OUT — or Supabase deciding the
         // refresh token itself is dead — clears the account.
@@ -144,6 +164,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ session: newSession });
         void get().hydrateAccountDetails(newSession.user.id);
       });
+      authListener = data.subscription;
     } catch (err) {
       console.error("Failed to initialize auth:", err);
     } finally {
