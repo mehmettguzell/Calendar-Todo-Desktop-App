@@ -78,6 +78,33 @@ describe("the selection", () => {
     expect(useSelectionStore.getState().ids).toEqual(["a", "z"]);
   });
 
+  it("takes a whole set at once, replacing what was held", () => {
+    useSelectionStore.getState().pick("a");
+    useSelectionStore.getState().replace(["b", "c"]);
+    // Replacing, not merging: a second "select the completed ones" answers
+    // that question rather than the union of both presses.
+    expect(useSelectionStore.getState().ids).toEqual(["b", "c"]);
+    expect(useSelectionStore.getState().active).toBe(true);
+  });
+
+  it("keeps the mode on when a whole set turns out to be empty", () => {
+    useSelectionStore.getState().begin();
+    useSelectionStore.getState().replace([]);
+    // Nothing matched is not the same as "stop selecting" — the checkboxes
+    // stay put so the next button can be tried.
+    expect(useSelectionStore.getState().ids).toEqual([]);
+    expect(useSelectionStore.getState().active).toBe(true);
+  });
+
+  it("drops an anchor no set was ever clicked into place", () => {
+    const list = ["a", "b", "c", "d"];
+    useSelectionStore.getState().pick("a", { listIds: list });
+    useSelectionStore.getState().replace(["c"]);
+    useSelectionStore.getState().pick("d", { listIds: list, range: true });
+    // Without the reset this would have spanned a..d off the stale anchor.
+    expect(useSelectionStore.getState().ids).toEqual(["c", "d"]);
+  });
+
   it("clears back to invisible", () => {
     useSelectionStore.getState().pick("a");
     useSelectionStore.getState().clear();

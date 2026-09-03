@@ -34,6 +34,16 @@ interface SelectionState {
    * different lists is not a range the user can see.
    */
   pick(taskId: string, options?: { listIds?: string[]; range?: boolean }): void;
+  /**
+   * Hand the selection a whole set at once — what a "select every completed
+   * one" button does.
+   *
+   * It replaces rather than merges, so pressing two such buttons in a row
+   * answers the second question instead of the union of both, and passing an
+   * empty list leaves the mode on with nothing picked (the same place `begin`
+   * puts you) rather than quietly switching it off.
+   */
+  replace(taskIds: string[]): void;
   clear(): void;
 }
 
@@ -75,6 +85,13 @@ export const useSelectionStore = create<SelectionState>((set, get) => ({
       // is what lets someone correct a misclick without starting over.
       active: true,
     });
+  },
+
+  replace: (taskIds) => {
+    const ids = [...new Set(taskIds)];
+    // The anchor is where a Shift-click measures from, and a set nobody
+    // clicked has no such point: the next Shift-click starts a fresh range.
+    set({ ids, anchorId: null, active: true });
   },
 
   clear: () => set({ ids: [], anchorId: null, active: false }),

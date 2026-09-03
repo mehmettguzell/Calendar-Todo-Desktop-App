@@ -6,6 +6,7 @@ import {
   ChevronRight,
   GripVertical,
   Lightbulb,
+  MousePointerClick,
   Plus,
   Sun,
   X,
@@ -30,6 +31,7 @@ import {
   useDeadlines,
   useLiveTasks,
 } from "@/state/selectors";
+import { useSelectionStore } from "@/state/selectionStore";
 import { useNow, useStore } from "@/state/store";
 import { useListReorder, type RowReorder } from "@/ui/task/useListReorder";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
@@ -133,6 +135,12 @@ export function PlansView({
   const { t } = useI18n();
   const categories = useCategories();
 
+  const selecting = useSelectionStore((s) => s.active);
+  const pickedCount = useSelectionStore((s) => s.ids.length);
+  const beginSelecting = useSelectionStore((s) => s.begin);
+  const clearSelection = useSelectionStore((s) => s.clear);
+  const replaceSelection = useSelectionStore((s) => s.replace);
+
   const [filter, setFilter] = useState<PlanFilter>("ALL");
   const [newPlanModal, setNewPlanModal] = useState(false);
   const [inlineTitle, setInlineTitle] = useState("");
@@ -173,9 +181,40 @@ export function PlansView({
     });
   }, [plans, subtasksMap, filter]);
 
+  const planIds = useMemo(() => visiblePlans.map((p) => p.id), [visiblePlans]);
+
+  /**
+   * What the quick-select buttons reach: every plan currently on screen and
+   * every step under it, each tagged with whether it is finished.
+   *
+   * Steps are in because "delete the ones I have done" is mostly about steps —
+   * a plan is rarely finished outright, while the checklist beneath it fills
+   * up with ticked rows that nobody wants to keep scrolling past.
+   */
+  const pickable = useMemo(() => {
+    const rows: { id: string; done: boolean }[] = [];
+    for (const plan of visiblePlans) {
+      const steps = subtasksMap.get(plan.id) ?? [];
+      const planDone =
+        plan.status === "COMPLETED" ||
+        (steps.length > 0 && steps.every((s) => s.status === "COMPLETED"));
+      rows.push({ id: plan.id, done: planDone });
+      for (const step of steps) {
+        rows.push({ id: step.id, done: step.status === "COMPLETED" });
+      }
+    }
+    return rows;
+  }, [visiblePlans, subtasksMap]);
+
+  const pickWhere = (keep: (row: { done: boolean }) => boolean) =>
+    replaceSelection(pickable.filter(keep).map((row) => row.id));
+
+  const doneCount = pickable.filter((row) => row.done).length;
+  const activeCount = pickable.length - doneCount;
+
   const planReorder = useListReorder({
     listId: "plans:grid",
-    ids: visiblePlans.map((p) => p.id),
+    ids: planIds,
     onReorder: reorderTasks,
   });
 
@@ -261,6 +300,19 @@ export function PlansView({
           </div>
 
           <div className="row" style={{ gap: 6 }}>
+            {/* The one visible door into selecting; a Ctrl-click on any card or
+                step does the same for anyone who already knows the gesture. */}
+            <button
+              type="button"
+              className={cn("btn ghost sm", selecting && "active")}
+              style={{ gap: 6, padding: "5px 10px", fontSize: 12 }}
+              aria-pressed={selecting}
+              title={t("plansPickHint")}
+              onClick={() => (selecting ? clearSelection() : beginSelecting())}
+            >
+              <MousePointerClick size={13} />
+              {t("bulkSelect")}
+            </button>
             <ResetOrderButton tasks={plans} />
             <button
               type="button"
@@ -271,6 +323,49 @@ export function PlansView({
             </button>
           </div>
         </div>
+
+        {/* Only while selecting. What is picked is acted on from the bulk bar
+            at the bottom of the window, so this row is about picking alone. */}
+        {selecting ? (
+          <div className="plans-pick-bar" role="group" aria-label={t("bulkTitle")}>
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => pickWhere(() => true)}
+            >
+              {t("plansPickAll")} ({pickable.length})
+            </button>
+            <button
+              type="button"
+              className="btn ghost sm"
+              disabled={doneCount === 0}
+              onClick={() => pickWhere((row) => row.done)}
+            >
+              <CheckCircle2 size={13} /> {t("plansPickDone")} ({doneCount})
+            </button>
+            <button
+              type="button"
+              className="btn ghost sm"
+              disabled={activeCount === 0}
+              onClick={() => pickWhere((row) => !row.done)}
+            >
+              {t("plansPickActive")} ({activeCount})
+            </button>
+            <span className="grow" />
+            <span className="faint" style={{ fontSize: 12 }}>
+              {t("plansPickCount", { n: pickedCount })}
+            </span>
+            <button
+              type="button"
+              className="btn ghost icon sm"
+              aria-label={t("bulkClear")}
+              title={`${t("bulkClear")} (Esc)`}
+              onClick={clearSelection}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {/* Inline Fast Add */}
@@ -343,6 +438,7 @@ export function PlansView({
               plan={plan}
               subtasks={subtasksMap.get(plan.id) ?? []}
               selected={plan.id === selectedKey}
+              planIds={planIds}
               onOpen={onOpen}
               now={now}
               reorder={planReorder.row(index)}
@@ -397,6 +493,7 @@ function PlanCard({
   plan,
   subtasks,
   selected,
+  planIds,
   onOpen,
   now,
   reorder,
@@ -404,6 +501,8 @@ function PlanCard({
   plan: Task;
   subtasks: Task[];
   selected: boolean;
+  /** The cards on screen, in the order drawn — what a Shift-click spans. */
+  planIds: string[];
   onOpen: (instance: TaskInstance) => void;
   now: Date;
   reorder?: RowReorder;
@@ -415,6 +514,10 @@ function PlanCard({
   const requestDelete = useRequestDelete();
   const reorderSubtasks = useStore((s) => s.reorderSubtasks);
   const categories = useCategoryIndex();
+
+  const picking = useSelectionStore((s) => s.active);
+  const pickedIds = useSelectionStore((s) => s.ids);
+  const pick = useSelectionStore((s) => s.pick);
 
   const [expanded, setExpanded] = useState(true);
   const [showAllSubtasks, setShowAllSubtasks] = useState(false);
@@ -445,6 +548,34 @@ function PlanCard({
   // A plan is late by its deadline alone: it has no schedule to be late against.
   const planOverdue = plan.deadline !== null && plan.deadline !== undefined && plan.deadline < today;
   const openPlan = () => onOpen(toInstance(plan, null, null, now));
+
+  const planPicked = pickedIds.includes(plan.id);
+  const stepIds = subtasks.map((step) => step.id);
+
+  /**
+   * Whether this click was a pick rather than an open.
+   *
+   * While selecting, every plain click on a card or a step means "pick me" —
+   * opening one would throw away a selection someone is halfway through
+   * building. Before selecting has started, a modifier click is what asks for
+   * it, the same gesture every desktop file list already uses.
+   */
+  const pickIf = (
+    e: React.MouseEvent,
+    taskId: string,
+    listIds: string[],
+  ): boolean => {
+    if (!picking && !e.ctrlKey && !e.metaKey && !e.shiftKey) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    pick(taskId, { listIds, range: e.shiftKey });
+    return true;
+  };
+
+  const activatePlan = (e: React.MouseEvent) => {
+    if (pickIf(e, plan.id, planIds)) return;
+    openPlan();
+  };
 
   const togglePlanToday = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -512,13 +643,31 @@ function PlanCard({
         "plan-card",
         selected && "selected",
         isPlanCompleted && "completed",
+        picking && "picking",
+        planPicked && "picked",
         planDragClass,
       )}
       {...planDragHandlers}
     >
       {/* Plan Card Head */}
       <div className="plan-card-head">
-        <div className="plan-card-title-row" onClick={openPlan}>
+        <div className="plan-card-title-row" onClick={activatePlan}>
+          {picking ? (
+            <label className="task-pick" onClick={(e) => e.stopPropagation()}>
+              <input
+                type="checkbox"
+                checked={planPicked}
+                aria-label={t("bulkSelectAria", { title: plan.title })}
+                onChange={() => pick(plan.id, { listIds: planIds })}
+                onClick={(e) => {
+                  if (e.shiftKey) {
+                    e.preventDefault();
+                    pick(plan.id, { listIds: planIds, range: true });
+                  }
+                }}
+              />
+            </label>
+          ) : null}
           {reorder && (
             <div
               role="button"
@@ -612,12 +761,12 @@ function PlanCard({
 
       {/* Plan Description & Meta */}
       {plan.description && (
-        <p className="plan-card-desc" onClick={openPlan}>
+        <p className="plan-card-desc" onClick={activatePlan}>
           {plan.description}
         </p>
       )}
 
-      <div className="plan-card-meta-row" onClick={openPlan}>
+      <div className="plan-card-meta-row" onClick={activatePlan}>
         {isPlanToday && (
           <span className="plan-today-pill" title={t("plansAddedToToday")}>
             <Sun size={11} /> {t("today")}
@@ -690,6 +839,7 @@ function PlanCard({
                   const subDone = sub.status === "COMPLETED";
                   const subInstance = toInstance(sub, sub.dueDate, null, now);
                   const isSubToday = sub.dueDate === today;
+                  const subPicked = pickedIds.includes(sub.id);
                   const {
                     onGripKeyDown,
                     className: dragClass,
@@ -701,17 +851,50 @@ function PlanCard({
                       className={cn(
                         "plan-subtask-item",
                         subDone && "done",
+                        picking && "picking",
+                        subPicked && "picked",
                         dragClass,
                       )}
                       {...dragHandlers}
                     >
+                      {/* Two boxes on one row, doing two different jobs: the
+                          left one says what happens to this step, the right one
+                          says whether it is finished. The pick box only exists
+                          while a selection is being made, so the row nobody is
+                          selecting in looks exactly as it always did. */}
+                      {picking ? (
+                        <label
+                          className="task-pick"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={subPicked}
+                            aria-label={t("bulkSelectAria", {
+                              title: sub.title,
+                            })}
+                            onChange={() =>
+                              pick(sub.id, { listIds: stepIds })
+                            }
+                            onClick={(e) => {
+                              if (e.shiftKey) {
+                                e.preventDefault();
+                                pick(sub.id, { listIds: stepIds, range: true });
+                              }
+                            }}
+                          />
+                        </label>
+                      ) : null}
                       <Checkbox
                         done={subDone}
                         onToggle={() => toggleComplete(subInstance)}
                       />
                       <span
                         className="plan-subtask-label grow truncate"
-                        onClick={() => onOpen(subInstance)}
+                        onClick={(e) => {
+                          if (pickIf(e, sub.id, stepIds)) return;
+                          onOpen(subInstance);
+                        }}
                         title={t("plansSubtaskOpen")}
                       >
                         {sub.title}

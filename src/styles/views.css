@@ -241,6 +241,46 @@
   animation: panel-in 260ms ease-out;
 }
 
+/* The panel taking the whole window.
+   Fixed rather than a wider grid track: the track animating from 400px to the
+   full width would relayout the calendar behind it on every frame, and that
+   view is about to be covered anyway. The reserved track is deliberately left
+   in place so restoring is a repaint rather than a second relayout. */
+.panel.is-maximized {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  width: 100vw;
+  height: 100vh;
+  border-left: none;
+  animation: panel-max-in 180ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* A form stretched across a 27" monitor is unreadable, so the content keeps a
+   comfortable measure. Padding rather than a centred wrapper, so the head and
+   foot rules still span the whole window like a window's own chrome. */
+.panel.is-maximized .panel-head,
+.panel.is-maximized .panel-body,
+.panel.is-maximized .panel-foot {
+  padding-inline: max(var(--space-4), calc((100% - 920px) / 2));
+  animation: none;
+}
+
+@keyframes panel-max-in {
+  from {
+    opacity: 0.6;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel.is-maximized { animation: none; }
+}
+
 /* Held in the tree for the length of its exit and nothing more: it is sliding
    away under the grid transition, so it must not still take clicks. */
 .panel.is-closing {
@@ -1446,6 +1486,38 @@
 .plan-card:hover {
   border-color: var(--border-strong);
   box-shadow: var(--shadow);
+}
+
+/* Picking plans.
+   Same two states the todo rows use — a soft fill for what is held, a pointer
+   for the surface that now means "pick me" rather than "open me". */
+.plan-card.picked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.plan-card.picking .plan-card-title-row,
+.plan-card.picking .plan-card-desc,
+.plan-card.picking .plan-card-meta-row,
+.plan-subtask-item.picking .plan-subtask-label {
+  cursor: pointer;
+}
+
+.plan-subtask-item.picked {
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+}
+
+/* The quick ways into a selection, on their own line under the filter tabs so
+   the header keeps its shape when nobody is selecting. */
+.plans-pick-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
 
 .plan-card.selected {

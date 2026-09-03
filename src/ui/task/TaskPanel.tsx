@@ -11,6 +11,8 @@ import {
   ChevronRight,
   CornerDownRight,
   Copy,
+  Maximize2,
+  Minimize2,
   Plus,
   StickyNote,
   Target,
@@ -54,12 +56,23 @@ import { useRequestDelete } from "./useRequestDelete";
 export function TaskPanel({
   instance,
   closing,
+  maximized = false,
+  onToggleMaximize,
   onClose,
   onOpenTask,
 }: {
   instance: TaskInstance;
   /** Rendering only so it can animate out; see `usePresence`. */
   closing?: boolean;
+  /**
+   * Filling the window instead of the right-hand column.
+   *
+   * Held by the shell rather than here so that Escape can back out of it
+   * before it closes the panel, and so it does not survive as a stale `true`
+   * on the next task opened.
+   */
+  maximized?: boolean;
+  onToggleMaximize?: () => void;
   onClose: () => void;
   onOpenTask: (taskId: string) => void;
 }) {
@@ -180,7 +193,14 @@ export function TaskPanel({
   );
 
   return (
-    <aside className={cn("panel", closing && "is-closing")} inert={closing}>
+    <aside
+      className={cn(
+        "panel",
+        maximized && "is-maximized",
+        closing && "is-closing",
+      )}
+      inert={closing}
+    >
       <div className="panel-head">
         <StatusBadge status={instance.status} />
         {instance.isRecurring && instance.date ? (
@@ -202,6 +222,20 @@ export function TaskPanel({
         >
           <Copy size={14} />
         </button>
+        {/* Next to close, in the order a window's own controls use: the two
+            things you do to the frame rather than to the task. */}
+        {onToggleMaximize ? (
+          <button
+            type="button"
+            className={cn("btn ghost icon", maximized && "active")}
+            onClick={onToggleMaximize}
+            aria-pressed={maximized}
+            aria-label={maximized ? t("panelRestore") : t("panelMaximize")}
+            title={maximized ? t("panelRestore") : t("panelMaximize")}
+          >
+            {maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
+        ) : null}
         <button
           type="button"
           className="btn ghost icon"
