@@ -15,6 +15,25 @@ import { App } from "@/App";
  */
 const today = toLocalDate(new Date());
 
+/** An instant on `day`, at an hour that is the same date in every zone. */
+const noonOn = (day: string) => new Date(`${day}T12:00:00`).toISOString();
+
+const batch = (over: Record<string, unknown> = {}) => ({
+  id: "imp1",
+  label: "Agustos.pdf",
+  account: null,
+  importedAt: noonOn(today),
+  from: "2026-07-01",
+  to: "2026-07-31",
+  mode: "rows",
+  createdCount: 12,
+  createdMinor: 120_000,
+  settled: [],
+  revertedAt: null,
+  deletedAt: null,
+  ...over,
+});
+
 beforeEach(() => {
   localStorage.clear();
   useStore.setState({ db: emptyDatabase(), ready: false, runningFocus: null });
@@ -76,5 +95,58 @@ describe("the budget tab", () => {
     // The ledger row shows the charge, not the price, and says which one it is.
     expect(screen.getByText("1/12")).toBeDefined();
     expect(screen.getAllByText(/1\.000,00/).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The list is filed by the day an import happened, not the period it covers.
+ *
+ * A statement arrives weeks after its own month, so grouping by the period
+ * would hide yesterday's mistaken import behind a month you are not looking at
+ * — while grouping by the load date keeps the list to one month's worth and
+ * still puts the row where somebody would go looking for it.
+ */
+describe("the imported statements list", () => {
+  // After `hydrate`, not before: hydrating loads the (empty) document over
+  // whatever the store was holding.
+  const withBatches = async (batches: unknown[]) => {
+    await openBudget();
+    await act(async () => {
+      useStore.setState((state) => ({
+        db: { ...state.db, statementBatches: batches as never },
+      }));
+    });
+  };
+
+  it("lists a statement loaded this month, whatever period it covers", async () => {
+    await withBatches([batch()]);
+
+    expect(screen.getByText(/^(Imported statements|Yüklenen ekstreler)$/)).toBeDefined();
+    expect(screen.getByText("2026-07-01 → 2026-07-31")).toBeDefined();
+  });
+
+  it("leaves out one loaded in another month, so the list cannot pile up", async () => {
+    await withBatches([batch({ importedAt: noonOn("2024-02-15") })]);
+
+    expect(screen.queryByText(/^(Imported statements|Yüklenen ekstreler)$/)).toBeNull();
+  });
+
+  it("says nothing at all until something has been imported", async () => {
+    await withBatches([]);
+
+    expect(screen.queryByText(/^(Imported statements|Yüklenen ekstreler)$/)).toBeNull();
+  });
+
+  it("offers the way back out", async () => {
+    await withBatches([batch()]);
+
+    expect(screen.getByRole("button", { name: /^(Undo|Geri al)$/ })).toBeDefined();
+  });
+
+  it("hides one that has already been taken back behind its own label", async () => {
+    await withBatches([batch({ revertedAt: noonOn(today) })]);
+
+    expect(screen.queryByRole("button", { name: /^(Undo|Geri al)$/ })).toBeNull();
+    expect(screen.getByText(/^(Undone|Geri alındı)$/)).toBeDefined();
   });
 });

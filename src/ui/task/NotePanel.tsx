@@ -97,6 +97,25 @@ export function NotePanel({
     return () => clearTimeout(handle);
   }, [description, task.id, task.description, updateTask]);
 
+  /*
+   * Whatever the timer above had not written yet, written on the way out.
+   *
+   * Its cleanup cancels the pending save, which is right between keystrokes and
+   * wrong on the last one: closing the panel within the autosave window — Escape,
+   * or opening another note — would drop the words typed since the last tick.
+   * The ref is what lets an unmount effect see the latest text without
+   * re-running, and so without saving on every character.
+   */
+  const latest = useRef({ description, id: task.id, stored: task.description });
+  latest.current = { description, id: task.id, stored: task.description };
+  useEffect(
+    () => () => {
+      const { description: text, id, stored } = latest.current;
+      if (text !== stored) updateTask(id, { description: text });
+    },
+    [updateTask],
+  );
+
   const commitTitle = () => {
     const trimmed = title.trim();
     if (trimmed !== task.title) updateTask(task.id, { title: trimmed });

@@ -25,6 +25,7 @@ import type {
 import type { BudgetCategory, Transaction } from "@/domain/money";
 import { normaliseLink, type WishlistItem } from "@/domain/wishlist";
 import { normaliseLabel, type Deadline } from "@/domain/deadline";
+import type { SettledSnapshot, StatementBatch } from "@/domain/statementBatch";
 import type { HistoryEntry } from "@/domain/types";
 
 /**
@@ -842,6 +843,37 @@ function cloudWishlistFingerprint(row: Record<string, unknown>): string {
   ]);
 }
 
+function localBatchFingerprint(b: StatementBatch): string {
+  return JSON.stringify([
+    b.label,
+    nz(b.account),
+    b.from,
+    b.to,
+    b.mode,
+    b.createdCount,
+    b.createdMinor,
+    b.settled.length,
+    nz(b.revertedAt),
+    b.deletedAt !== null,
+  ]);
+}
+
+function cloudBatchFingerprint(row: Record<string, unknown>): string {
+  const settled = Array.isArray(row.settled) ? row.settled : [];
+  return JSON.stringify([
+    String(row.label ?? ""),
+    nz(row.account),
+    String(row.from_date ?? ""),
+    String(row.to_date ?? ""),
+    row.mode === "daily" ? "daily" : "rows",
+    Number(row.created_count) || 0,
+    Math.round(Number(row.created_minor) || 0),
+    settled.length,
+    nz(row.reverted_at),
+    Boolean(row.is_deleted),
+  ]);
+}
+
 function localDeadlineFingerprint(d: Deadline): string {
   return JSON.stringify([
     d.taskId,
@@ -902,6 +934,7 @@ const syncedTransactionFingerprints = new Map<string, string>();
 const syncedBudgetCategoryFingerprints = new Map<string, string>();
 const syncedWishlistFingerprints = new Map<string, string>();
 const syncedDeadlineFingerprints = new Map<string, string>();
+const syncedBatchFingerprints = new Map<string, string>();
 const syncedFocusIds = new Set<string>();
 /**
  * The activity trail is append-only (spec section 5.5): an entry is never
@@ -976,6 +1009,7 @@ function forgetSyncedState() {
   syncedBudgetCategoryFingerprints.clear();
   syncedWishlistFingerprints.clear();
   syncedDeadlineFingerprints.clear();
+  syncedBatchFingerprints.clear();
   syncedFocusIds.clear();
   syncedHistoryIds.clear();
 }
@@ -1017,6 +1051,16 @@ function forgetSyncedState() {
  * have skipped.
  */
 const FLUSH_DELAY_MS = 5_000;
+/**
+ * How long a continuous stream of edits may hold the queue back.
+ *
+ * The delay below is a *trailing* one: every new change pushes it out again, so
+ * a request never leaves while the user is still typing. On its own that starves
+ * — someone writing a long note would sync nothing for as long as they wrote —
+ * so the first queued change also starts this ceiling, and once it passes the
+ * flush goes regardless of what is still being typed.
+ */
+const FLUSH_MAX_WAIT_MS = 30_000;
 const pendingTaskIds = new Set<string>();
 const pendingCategoryIds = new Set<string>();
 const pendingOccurrenceIds = new Set<string>();
@@ -1031,6 +1075,8 @@ const pendingDeletedBudgetCategoryIds = new Set<string>();
 const pendingFocusIds = new Set<string>();
 const pendingHistoryIds = new Set<string>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+/** When the oldest un-flushed change was queued; drives the ceiling above. */
+let queuedSince: number | null = null;
 let flushInFlight: Promise<void> | null = null;
 
 const ALL_QUEUES = [
@@ -1070,15 +1116,34 @@ function clearPending(): void {
   useSyncStore.getState().setPending(0);
 }
 
+/**
+ * Send the queue once the edits stop, not once they start.
+ *
+ * The timer used to be set by the first change and left alone, so a burst of
+ * editing fired a request five seconds in — mid-sentence, with more of the same
+ * field still to come, and every keystroke after it queued for a second round.
+ * Restarting it on each change means one request per edit rather than one per
+ * five seconds of thinking, and `FLUSH_MAX_WAIT_MS` keeps a long stream from
+ * postponing the write forever.
+ */
 function scheduleFlush() {
   useSyncStore.getState().setPending(pendingCount());
-  if (flushTimer) return;
-  flushTimer = setTimeout(() => {
-    flushTimer = null;
-    flushInFlight = flushPendingWrites().finally(() => {
-      flushInFlight = null;
-    });
-  }, FLUSH_DELAY_MS);
+
+  const now = Date.now();
+  if (queuedSince === null) queuedSince = now;
+
+  if (flushTimer) clearTimeout(flushTimer);
+  const remainingCap = FLUSH_MAX_WAIT_MS - (now - queuedSince);
+  flushTimer = setTimeout(
+    () => {
+      flushTimer = null;
+      queuedSince = null;
+      flushInFlight = flushPendingWrites().finally(() => {
+        flushInFlight = null;
+      });
+    },
+    Math.max(0, Math.min(FLUSH_DELAY_MS, remainingCap)),
+  );
 }
 
 /** Lets callers (e.g. a manual sync) wait for queued writes to land first. */
@@ -1086,6 +1151,7 @@ async function drainPendingWrites(): Promise<void> {
   if (flushTimer) {
     clearTimeout(flushTimer);
     flushTimer = null;
+    queuedSince = null;
     flushInFlight = flushPendingWrites().finally(() => {
       flushInFlight = null;
     });
@@ -1445,7 +1511,7 @@ export interface SyncContext {
  */
 export const OPTIONAL_COLUMNS: Record<string, string[]> = {
   tasks: ["end_date", "estimate_minutes", "deadline"],
-  transactions: ["merchant", "external_id", "instalments"],
+  transactions: ["merchant", "external_id", "instalments", "import_id"],
 };
 
 const droppedColumns = new Map<string, Set<string>>();
@@ -1727,6 +1793,7 @@ const TRANSACTION_SPEC: CollectionSpec<Transaction> = {
     merchant: t.merchant ?? null,
     external_id: t.externalId ?? null,
     instalments: t.instalments ?? null,
+    import_id: t.importId ?? null,
     is_deleted: t.deletedAt !== null,
     created_at: t.createdAt,
     updated_at: t.updatedAt,
@@ -1823,6 +1890,61 @@ const DEADLINE_SPEC: CollectionSpec<Deadline> = {
   fromCloud: deadlineFromCloud,
 };
 
+/**
+ * What an import did, so undoing it works on whichever device notices.
+ *
+ * `settled` travels whole, as JSON: it is the previous shape of rows the import
+ * stamped, and half of it is no use — an undo that put some fields back would
+ * not be an undo.
+ */
+const BATCH_SPEC: CollectionSpec<StatementBatch> = {
+  table: "statement_batches",
+  synced: syncedBatchFingerprints,
+  idOf: (b) => b.id,
+  updatedAtOf: (b) => b.revertedAt ?? b.importedAt,
+  localFingerprint: localBatchFingerprint,
+  cloudFingerprint: cloudBatchFingerprint,
+  // `label`, `from_date` and `to_date` are NOT NULL; one bad row would take
+  // the whole push down with it.
+  isUploadable: (b) => Boolean(b.label && b.from && b.to),
+  toCloud: (b, userId) => ({
+    id: b.id,
+    user_id: userId,
+    label: b.label,
+    account: b.account,
+    imported_at: b.importedAt,
+    from_date: b.from,
+    to_date: b.to,
+    mode: b.mode,
+    created_count: b.createdCount,
+    created_minor: b.createdMinor,
+    settled: b.settled,
+    reverted_at: b.revertedAt,
+    is_deleted: b.deletedAt !== null,
+    updated_at: b.revertedAt ?? b.importedAt,
+  }),
+  fromCloud: batchFromCloud,
+};
+
+function batchFromCloud(row: Record<string, unknown>): StatementBatch {
+  const at = new Date().toISOString();
+  const importedAt = (row.imported_at as string) ?? at;
+  return {
+    id: row.id as string,
+    label: String(row.label ?? ""),
+    account: (row.account as string) ?? null,
+    importedAt,
+    from: String(row.from_date ?? ""),
+    to: String(row.to_date ?? ""),
+    mode: row.mode === "daily" ? "daily" : "rows",
+    createdCount: Number(row.created_count) || 0,
+    createdMinor: Math.round(Number(row.created_minor) || 0),
+    settled: Array.isArray(row.settled) ? (row.settled as SettledSnapshot[]) : [],
+    revertedAt: (row.reverted_at as string) ?? null,
+    deletedAt: row.is_deleted ? ((row.updated_at as string) ?? importedAt) : null,
+  };
+}
+
 function deadlineFromCloud(row: Record<string, unknown>): Deadline {
   const at = new Date().toISOString();
   return {
@@ -1903,6 +2025,7 @@ function transactionFromCloud(row: Record<string, unknown>): Transaction {
     merchant: (row.merchant as string) ?? null,
     externalId: (row.external_id as string) ?? null,
     instalments: typeof row.instalments === "number" ? row.instalments : null,
+    importId: (row.import_id as string) ?? null,
     createdAt: (row.created_at as string) ?? new Date().toISOString(),
     updatedAt: (row.updated_at as string) ?? new Date().toISOString(),
     deletedAt: row.is_deleted ? ((row.updated_at as string) ?? null) : null,
@@ -2202,6 +2325,7 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       budgetCatRes,
       wishlistRes,
       deadlinesRes,
+      batchesRes,
       historyRes,
     ] = await Promise.all([
       withTimeout(
@@ -2234,6 +2358,7 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       fetchOptional("budget_categories", userId),
       fetchOptional("wishlist", userId),
       fetchOptional("deadlines", userId),
+      fetchOptional("statement_batches", userId),
       fetchOptional("task_history", userId, {
         limit: 100,
         orderColumn: "at",
@@ -2478,6 +2603,14 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       context,
       userId,
     );
+    const mergedBatches = await reconcileCollection(
+      BATCH_SPEC,
+      localDb.statementBatches,
+      batchesRes,
+      new Set<string>(),
+      context,
+      userId,
+    );
 
     /* --- FOCUS SESSIONS ----------------------------------------------- */
     const cloudFocusRaw = focusRes.data ?? [];
@@ -2610,6 +2743,7 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
         budgetCategories: nextBudgetCategories,
         wishlist: mergedWishlist,
         deadlines: mergedDeadlines,
+        statementBatches: mergedBatches,
         focusSessions: mergedFocus,
         history: mergedHistory,
         tombstones: pruneTombstones(s.db.tombstones),
@@ -2646,6 +2780,9 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
     }
     for (const d of mergedDeadlines) {
       syncedDeadlineFingerprints.set(d.id, localDeadlineFingerprint(d));
+    }
+    for (const b of mergedBatches) {
+      syncedBatchFingerprints.set(b.id, localBatchFingerprint(b));
     }
     for (const session of mergedFocus) syncedFocusIds.add(session.id);
     for (const entry of mergedHistory) syncedHistoryIds.add(entry.id);

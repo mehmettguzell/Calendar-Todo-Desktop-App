@@ -58,7 +58,12 @@ export function TaskChip({
         "chip truncate",
         allDay && !isDeadline && "allday",
         isDeadline && "chip-deadline",
-        (done || instance.deadlineMet) && "done",
+        // A named checkpoint of a plan, which is neither a task nor a day of
+        // one. It gets its own mark so a glance at the month never reads it as
+        // something to be done on the 25th — it is a date something is due by.
+        instance.deadlineLabel ? "chip-checkpoint" : null,
+        instance.deadlineMet && "is-met",
+        done && "done",
         instance.status === "OVERDUE" && "overdue",
         spanning && "spanning",
         spanning && !span.isStart && "span-continued",

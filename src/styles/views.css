@@ -1903,6 +1903,36 @@
   background: var(--surface-hover);
 }
 
+/* The deadline's own control. Sized and spaced like the checkbox it replaced
+   so the two lists still line up, but shaped like nothing on the task side:
+   an outline that fills when the date is met. */
+.plan-deadline-flag {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+.plan-deadline-flag:hover {
+  background: var(--surface-hover);
+  color: var(--text-muted);
+}
+.plan-deadline-flag.is-met {
+  color: var(--success);
+}
+.plan-deadline-item.missed .plan-deadline-flag:not(.is-met) {
+  color: var(--danger);
+}
+
 .plan-deadline-label {
   cursor: pointer;
 }
@@ -3091,6 +3121,95 @@
 }
 
 /* The bank's queue --------------------------------------------------- */
+
+/* Imported statements ------------------------------------------------
+   One line per import: what it was, how much it added, and the way out. It
+   only renders when there is something to list, so the budget page of someone
+   who never imports is exactly as it was. */
+.imported-statements .section-head {
+  margin-bottom: 6px;
+}
+
+.statement-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.statement-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.statement-row:last-child {
+  border-bottom: none;
+}
+
+.statement-what {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.statement-what strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+.statement-what .faint {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.statement-count {
+  flex: none;
+  font-size: 11.5px;
+}
+
+.statement-amount {
+  flex: none;
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Quiet until pointed at: undoing an import is not something to invite. */
+.statement-revert {
+  flex: none;
+  opacity: 0.55;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease;
+}
+.statement-row:hover .statement-revert,
+.statement-revert:focus-visible {
+  opacity: 1;
+}
+.statement-revert:hover {
+  color: var(--danger);
+}
+
+.statement-done {
+  flex: none;
+  font-size: 11.5px;
+}
+
+.statement-row.is-reverted .statement-what strong,
+.statement-row.is-reverted .statement-amount {
+  text-decoration: line-through;
+  color: var(--text-faint);
+}
+
+/* What the daily mode would actually write, under the import toolbar. */
+.import-daily-note {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 12px;
+}
 
 /* Reconciliation in the import preview -------------------------------- */
 

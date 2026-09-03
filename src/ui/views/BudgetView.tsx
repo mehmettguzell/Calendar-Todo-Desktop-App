@@ -32,6 +32,7 @@ import { FixedCosts } from "@/ui/budget/FixedCosts";
 import { Ledger } from "@/ui/budget/Ledger";
 import { SpendingBreakdown } from "@/ui/budget/SpendingBreakdown";
 import { StatementImport } from "@/ui/budget/StatementImport";
+import { ImportedStatements } from "@/ui/budget/ImportedStatements";
 import { Wishlist } from "@/ui/budget/Wishlist";
 
 type PeriodId = "day" | "week" | "month" | "year";
@@ -210,6 +211,8 @@ export function BudgetView() {
           emphasis
         />
       </section>
+
+      <ImportedStatements range={range} currency={currency} />
 
       <QuickEntry defaultDate={clampToRange(today, range)} />
 

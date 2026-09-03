@@ -1,5 +1,10 @@
 import { fold, identifyMerchant, type MerchantMatch } from "./merchant";
 import {
+  dailyShortfalls,
+  shortfallExternalId,
+  type DailyShortfall,
+} from "./statementBatch";
+import {
   categoryNamesFor,
   type BudgetCategory,
   type CategoryKey,
@@ -311,6 +316,50 @@ export function draftsFrom(plan: ImportPlan): ImportDraft[] {
     }));
 }
 
+
+/**
+ * The daily top-ups a statement implies, as importable entries.
+ *
+ * The other way to read a statement. `draftsFrom` files every row the bank
+ * printed; this files one row per day, for the part of that day the ledger does
+ * not already know about. See `dailyShortfalls` for why the day's total is the
+ * only figure either side agrees on.
+ *
+ * Rows the user unticked in the preview are left out of the statement side, so
+ * excluding a transfer or a row on the wrong card still means what it means.
+ * Nothing is merged in this mode: a top-up is by construction the part no
+ * existing entry covers, so there is nothing for it to settle.
+ */
+export function dailyDraftsFrom(
+  plan: ImportPlan,
+  existing: Transaction[],
+  label: string,
+  categoryId: string | null = null,
+): { drafts: ImportDraft[]; days: DailyShortfall[] } {
+  const days = dailyShortfalls(
+    plan.rows
+      .filter((row) => row.include)
+      .map((row) => ({
+        date: row.line.date,
+        amountMinor: row.line.amountMinor,
+        flow: row.line.flow,
+      })),
+    existing,
+  );
+
+  return {
+    days,
+    drafts: days.map((day) => ({
+      date: day.date,
+      amountMinor: day.shortfallMinor,
+      flow: "EXPENSE" as const,
+      categoryId,
+      note: label,
+      merchant: "",
+      externalId: shortfallExternalId(day),
+    })),
+  };
+}
 
 /** One matched entry, and what the statement teaches it. */
 export interface ImportMerge {

@@ -60,12 +60,13 @@ export function Checkbox({
   square?: boolean;
   title?: string;
 }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
       className={cn("check", done && "done", square && "square")}
       aria-pressed={done}
-      title={title ?? (done ? "Mark as not done" : "Mark as done")}
+      title={title ?? (done ? t("checkboxUndo") : t("checkboxDone"))}
       onClick={(e) => {
         e.stopPropagation();
         onToggle();

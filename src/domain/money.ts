@@ -107,6 +107,14 @@ export interface Transaction {
    */
   origin?: TransactionOrigin;
   /**
+   * The statement import that created this entry, when one did.
+   *
+   * The durable half of "undo this import": the batch record holds what an
+   * import did to rows that already existed, and this holds which rows it
+   * brought into being. Absent on everything typed by hand.
+   */
+  importId?: string | null;
+  /**
    * How many monthly charges this purchase is split into.
    *
    * Absent, null or 1 all mean "paid in one go", which is almost every row.

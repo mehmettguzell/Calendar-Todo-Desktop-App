@@ -50,6 +50,13 @@ import { normaliseLabel, type Deadline } from "@/domain/deadline";
 import { NOTE_TAG } from "@/domain/note";
 import type { ImportDraft, ImportMerge } from "@/domain/statementImport";
 import {
+  isLive as batchIsLive,
+  restorePatch,
+  snapshotOf,
+  type ImportMode,
+  type StatementBatch,
+} from "@/domain/statementBatch";
+import {
   syncDeleteCategoryToCloud,
   syncDeleteTaskToCloud,
   syncTaskToCloud,
@@ -128,6 +135,15 @@ export interface TransactionDraft {
   externalId?: string | null;
   /** Split over this many monthly charges. See `Transaction.instalments`. */
   instalments?: number | null;
+}
+
+/** What an import wants its record labelled with. See `statementBatch`. */
+export interface BatchInfo {
+  label: string;
+  account?: string | null;
+  from?: LocalDate;
+  to?: LocalDate;
+  mode?: ImportMode;
 }
 
 export interface DeadlineDraft {
@@ -343,7 +359,20 @@ interface StoreState {
    */
   convertToNote(taskId: string): boolean;
 
-  importTransactions(drafts: ImportDraft[], merges?: ImportMerge[]): number;
+  importTransactions(
+    drafts: ImportDraft[],
+    merges?: ImportMerge[],
+    batch?: BatchInfo,
+  ): number;
+  /**
+   * Put the ledger back the way it was before one import.
+   *
+   * Returns how many entries moved. Safe to call on a batch that has already
+   * been reverted, or whose rows the user has since edited or deleted by hand:
+   * every step below checks what is actually there rather than what the import
+   * left behind.
+   */
+  revertImport(batchId: string): number;
 
   /* Wishlist -------------------------------------------------------- */
   /* Deadlines: the dated checkpoints a task is broken into. */
@@ -1907,7 +1936,7 @@ export const useStore = create<StoreState>((set, get) => {
      * hundred separate writes would be a hundred renders and a hundred disk
      * flushes for what the user experienced as a single action.
      */
-    importTransactions(drafts, merges = []) {
+    importTransactions(drafts, merges = [], batchInfo) {
       if (drafts.length === 0 && merges.length === 0) return 0;
 
       const taken = new Set(
@@ -1926,6 +1955,7 @@ export const useStore = create<StoreState>((set, get) => {
       if (fresh.length === 0 && settling.length === 0) return 0;
 
       const at = nowInstant();
+      const batchId = createId("imp");
       const created: Transaction[] = fresh.map((draft) => ({
         id: createId("x"),
         date: draft.date,
@@ -1935,6 +1965,7 @@ export const useStore = create<StoreState>((set, get) => {
         note: draft.note,
         merchant: draft.merchant,
         externalId: draft.externalId,
+        importId: batchId,
         recurrence: null,
         recurrenceSourceId: null,
         lastGeneratedFor: null,
@@ -1959,8 +1990,38 @@ export const useStore = create<StoreState>((set, get) => {
           .map((entry) => [entry.id, entry] as const),
       );
 
+      /*
+       * The import itself, written down.
+       *
+       * The undo toast below is seconds long, and importing the same file twice
+       * is a mistake nobody notices in seconds — it shows up when the month's
+       * total is read the next day. The batch is what makes "geri al" still
+       * available then, and it carries the settled rows' previous shape for the
+       * same reason the toast does: undoing a merge has to put a row back, not
+       * take it away.
+       */
+      const dates = [
+        ...created.map((entry) => entry.date),
+        ...[...before.values()].map((entry) => entry.date),
+      ].sort();
+      const batch: StatementBatch = {
+        id: batchId,
+        label: batchInfo?.label?.trim() || "Ekstre",
+        account: batchInfo?.account ?? null,
+        importedAt: at,
+        from: batchInfo?.from ?? dates[0] ?? at.slice(0, 10),
+        to: batchInfo?.to ?? dates[dates.length - 1] ?? at.slice(0, 10),
+        mode: batchInfo?.mode ?? "rows",
+        createdCount: created.length,
+        createdMinor: created.reduce((sum, entry) => sum + entry.amountMinor, 0),
+        settled: [...before.values()].map(snapshotOf),
+        revertedAt: null,
+        deletedAt: null,
+      };
+
       commit((db) => ({
         ...db,
+        statementBatches: [...db.statementBatches, batch],
         transactions: [
           ...db.transactions.map((entry) => {
             const patch = patchById.get(entry.id);
@@ -1972,21 +2033,54 @@ export const useStore = create<StoreState>((set, get) => {
 
       // A hundred rows landing in the wrong month is exactly the mistake
       // someone wants back immediately, and undoing it row by row is no undo.
-      const ids = new Set(created.map((entry) => entry.id));
-      useUndoStore.getState().push("undoneImport", () => {
-        const at2 = nowInstant();
-        commit((db) => ({
-          ...db,
-          transactions: db.transactions.map((entry) => {
-            if (ids.has(entry.id))
-              return { ...entry, deletedAt: at2, updatedAt: at2 };
-            const original = before.get(entry.id);
-            return original ? { ...original, updatedAt: at2 } : entry;
-          }),
-        }));
-      });
+      // One reversal, two doors: the toast now runs exactly what the list in
+      // the budget view runs, so the two can never drift into disagreeing.
+      useUndoStore
+        .getState()
+        .push("undoneImport", () => void get().revertImport(batchId));
 
       return created.length + settling.length;
+    },
+
+    revertImport(batchId) {
+      const db = get().db;
+      const batch = db.statementBatches.find((b) => b.id === batchId);
+      if (!batch || !batchIsLive(batch)) return 0;
+
+      const at = nowInstant();
+      const snapshots = new Map(batch.settled.map((snap) => [snap.id, snap]));
+      let touched = 0;
+
+      commit((next) => ({
+        ...next,
+        statementBatches: next.statementBatches.map((b) =>
+          b.id === batchId ? { ...b, revertedAt: at } : b,
+        ),
+        transactions: next.transactions.map((entry) => {
+          /*
+           * Rows this import created go back to deleted — soft, so they are in
+           * the trash rather than gone, and skipped when the user has already
+           * removed them by hand.
+           */
+          if (entry.importId === batchId) {
+            if (entry.deletedAt !== null) return entry;
+            touched += 1;
+            return { ...entry, deletedAt: at, updatedAt: at };
+          }
+
+          /*
+           * Rows it stamped go back to what they were. `deletedAt` is
+           * deliberately not restored: if the user has thrown one away since,
+           * un-deleting it here would resurrect a row they meant to be rid of.
+           */
+          const snap = snapshots.get(entry.id);
+          if (!snap || entry.deletedAt !== null) return entry;
+          touched += 1;
+          return { ...entry, ...restorePatch(snap), updatedAt: at };
+        }),
+      }));
+
+      return touched;
     },
 
     convertToNote(taskId) {

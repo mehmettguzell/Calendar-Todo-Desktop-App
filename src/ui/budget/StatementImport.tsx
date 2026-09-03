@@ -8,8 +8,10 @@ import {
   type CategoryKey,
 } from "@/domain/money";
 import { parseStatement, type StatementSource } from "@/domain/statement";
+import type { ImportMode } from "@/domain/statementBatch";
 import {
   buildImportPlan,
+  dailyDraftsFrom,
   draftsFrom,
   mergesFrom,
   type ImportPlan,
@@ -50,6 +52,15 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
    * identical one on the World card the same afternoon.
    */
   const [account, setAccount] = useState("");
+  /**
+   * How this file should become entries.
+   *
+   * `rows` files every purchase the bank printed. `daily` files only the part
+   * of each day the ledger does not already know about — the mode for someone
+   * who writes their spending down as it happens and misses some of it. See
+   * `dailyShortfalls`.
+   */
+  const [mode, setMode] = useState<ImportMode>("rows");
   const [merging, setMerging] = useState<Record<string, boolean>>({});
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [dragging, setDragging] = useState(false);
@@ -69,6 +80,22 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
       { account: account.trim() || null },
     );
   }, [text, sourceOverride, transactions, categories, account]);
+
+  /**
+   * What daily mode would actually write, computed as the toggle is flipped.
+   *
+   * Shown rather than described: "36 rows" and "8 days, 412,60 ₺" are two very
+   * different imports, and which one is about to happen is not something to
+   * work out from a sentence.
+   */
+  const dailyPreview = useMemo(() => {
+    if (!plan) return null;
+    const { days } = dailyDraftsFrom(plan, transactions, "");
+    return {
+      days: days.length,
+      totalMinor: days.reduce((sum, day) => sum + day.shortfallMinor, 0),
+    };
+  }, [plan, transactions]);
 
   const isIncluded = (id: string, fallback: boolean) => included[id] ?? fallback;
   const isMerging = (id: string, fallback: boolean) => merging[id] ?? fallback;
@@ -169,12 +196,35 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
     });
 
     const resolved = { ...plan, rows };
+    const label = fileName?.trim() || t("importBatchFallbackLabel");
+    const batch = {
+      label,
+      account: account.trim() || null,
+      from: plan.range?.from,
+      to: plan.range?.to,
+      mode,
+    };
+
+    /*
+     * Nothing is settled in daily mode.
+     *
+     * A top-up is by construction the part of a day no existing entry covers,
+     * so there is no row for it to confirm — and confirming one would be
+     * claiming the bank vouched for a figure the user guessed.
+     */
+    if (mode === "daily") {
+      const { drafts } = dailyDraftsFrom(resolved, transactions, label);
+      importTransactions(drafts, [], batch);
+      setDone({ created: drafts.length, merged: 0 });
+      return;
+    }
+
     const drafts = draftsFrom(resolved);
     const merges = mergesFrom(resolved, new Date().toISOString(), {
       account: account.trim() || null,
     });
 
-    importTransactions(drafts, merges);
+    importTransactions(drafts, merges, batch);
     setDone({ created: drafts.length, merged: merges.length });
   };
 
@@ -312,6 +362,23 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
 
             <span className="grow" />
 
+            {/* Two ways to read one file, side by side rather than in a
+                settings panel: which one is right depends on this file and
+                this month, not on a preference set once. */}
+            <div className="segmented sm">
+              {(["rows", "daily"] as ImportMode[]).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={mode === option}
+                  title={t(option === "rows" ? "importModeRowsHint" : "importModeDailyHint")}
+                  onClick={() => setMode(option)}
+                >
+                  {t(option === "rows" ? "importModeRows" : "importModeDaily")}
+                </button>
+              ))}
+            </div>
+
             {/* The one guess worth making reversible in one click. */}
             <div className="segmented sm">
               {(["card", "account"] as StatementSource[]).map((source) => (
@@ -326,6 +393,17 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
               ))}
             </div>
           </div>
+
+          {mode === "daily" ? (
+            <p className="import-daily-note">
+              {dailyPreview && dailyPreview.days > 0
+                ? t("importModeDailySummary", {
+                    n: dailyPreview.days,
+                    total: formatMoney(dailyPreview.totalMinor, currency, language),
+                  })
+                : t("importModeDailyNothing")}
+            </p>
+          ) : null}
 
           <label className="field import-account">
             <span>{t("importAccountLabel")}</span>

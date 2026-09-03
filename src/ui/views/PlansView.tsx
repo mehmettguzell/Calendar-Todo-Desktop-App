@@ -964,7 +964,23 @@ function PlanDeadlineRow({
 
   return (
     <div className={cn("plan-deadline-item", done && "done", missed && "missed")}>
-      <Checkbox done={done} onToggle={onToggle} />
+      {/* A flag, not a task's tick box.
+          A deadline is a date the project has to reach, and the control that
+          says it was reached should not be the same square that says a job is
+          finished — it is the difference the whole record type exists to make.
+          The flag fills in when the date is met, which is what a flag does. */}
+      <button
+        type="button"
+        className={cn("plan-deadline-flag", done && "is-met")}
+        aria-pressed={done}
+        title={done ? t("planDeadlineUnmet") : t("planDeadlineMet")}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+      >
+        <Flag size={13} fill={done ? "currentColor" : "none"} aria-hidden />
+      </button>
       {/* The checkbox beside it is the way to tick a checkpoint off, so the
           text is free to be what it reads as: the thing you click to change
           what it says and when it is due. */}

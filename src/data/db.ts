@@ -1,6 +1,7 @@
 import { createId } from "@/domain/ids";
 import { normaliseLink, type WishlistItem } from "@/domain/wishlist";
 import { normaliseLabel, type Deadline } from "@/domain/deadline";
+import type { StatementBatch } from "@/domain/statementBatch";
 import {
   seedBudgetCategories,
   type BudgetCategory,
@@ -11,6 +12,7 @@ import type {
   FocusSession,
   HistoryEntry,
   Instant,
+  LocalDate,
   Occurrence,
   Reminder,
   Settings,
@@ -82,6 +84,8 @@ export interface Database {
   wishlist: WishlistItem[];
   /** The dated checkpoints tasks are broken into. See `domain/deadline`. */
   deadlines: Deadline[];
+  /** Statement imports, kept so one can be taken back. See `statementBatch`. */
+  statementBatches: StatementBatch[];
   settings: Settings;
 }
 
@@ -148,6 +152,7 @@ export function emptyDatabase(): Database {
     budgetCategories: defaultBudgetCategories(),
     wishlist: [],
     deadlines: [],
+    statementBatches: [],
     settings: {
       ...DEFAULT_SETTINGS,
       categorySeedVersion: CATEGORY_SEED_VERSION,
@@ -426,6 +431,25 @@ export function migrate(raw: unknown): Database {
     language,
   );
 
+  /*
+   * Imports that happened before imports were recorded.
+   *
+   * The batch record is what "geri al" hangs off, and a document written before
+   * it existed has none — so the one import someone most wants back, the one
+   * they made by mistake last week, is the one the list cannot offer. Every row
+   * a statement wrote carries the instant of the import that wrote it, and one
+   * import writes them all at the same instant, so the groups are exact.
+   */
+  const {
+    transactions: linkedTransactions,
+    batches: recoveredBatches,
+  } = recoverStatementBatches(
+    cleanTransactions,
+    Array.isArray(doc.statementBatches)
+      ? doc.statementBatches.map(normaliseStatementBatch)
+      : base.statementBatches,
+  );
+
   return {
     version: DB_VERSION,
     tasks: cleanTasks,
@@ -443,7 +467,7 @@ export function migrate(raw: unknown): Database {
     tombstones: Array.isArray(doc.tombstones)
       ? pruneTombstones(doc.tombstones)
       : base.tombstones,
-    transactions: cleanTransactions,
+    transactions: linkedTransactions,
     budgetCategories: cleanBudgetCategories,
     wishlist: Array.isArray(doc.wishlist)
       ? doc.wishlist.map(normaliseWishlistItem)
@@ -454,6 +478,7 @@ export function migrate(raw: unknown): Database {
     deadlines: Array.isArray(doc.deadlines)
       ? doc.deadlines.map(normaliseDeadline).filter(isUsableDeadline)
       : base.deadlines,
+    statementBatches: recoveredBatches,
     settings: { ...settings, categorySeedVersion: CATEGORY_SEED_VERSION },
   };
 }
@@ -495,6 +520,95 @@ function normaliseReminder(reminder: Reminder): Reminder {
   };
 }
 
+/**
+ * Give the entries of a past import a batch to belong to.
+ *
+ * Runs once: the pass stamps every row it groups with an `importId`, and a
+ * stamped row is no longer looking for a home. Deleted rows are left out of
+ * both the group and its totals — an import whose entries were half thrown away
+ * by hand should say what it still holds, and reverting must not put back what
+ * someone deliberately removed.
+ *
+ * `settled` comes back empty, and that is the one thing a recovered batch
+ * cannot know: the rows this import *stamped* rather than created are
+ * indistinguishable now from rows stamped by any other. Undoing one of these
+ * takes away what it added, which is the mistake worth undoing.
+ */
+function recoverStatementBatches(
+  transactions: Transaction[],
+  existing: StatementBatch[],
+): { transactions: Transaction[]; batches: StatementBatch[] } {
+  const groups = new Map<Instant, Transaction[]>();
+  for (const entry of transactions) {
+    if (entry.deletedAt !== null) continue;
+    if (entry.importId) continue;
+    if (typeof entry.externalId !== "string") continue;
+    if (!entry.externalId.startsWith("stmt")) continue;
+    const bucket = groups.get(entry.createdAt);
+    if (bucket) bucket.push(entry);
+    else groups.set(entry.createdAt, [entry]);
+  }
+  if (groups.size === 0) return { transactions, batches: existing };
+
+  const idByEntry = new Map<string, string>();
+  const recovered: StatementBatch[] = [];
+
+  for (const [importedAt, rows] of groups) {
+    const id = `imp_recovered_${importedAt.replace(/[^0-9]/g, "")}`;
+    const dates = rows.map((row) => row.date).sort();
+    // Only when every row agrees; a mixed group is two cards in one file, and
+    // naming one of them would be a guess presented as a fact.
+    const accounts = new Set(rows.map((row) => row.account ?? ""));
+    for (const row of rows) idByEntry.set(row.id, id);
+
+    recovered.push({
+      id,
+      // The day it was loaded, because the file it came from is not recoverable
+      // and the period it covers is already the line underneath. It also
+      // answers the question a recovered row otherwise cannot: when was this.
+      label: importedAt.slice(0, 10),
+      account: accounts.size === 1 ? ([...accounts][0] || null) : null,
+      importedAt,
+      from: dates[0] as LocalDate,
+      to: dates[dates.length - 1] as LocalDate,
+      mode: rows.every((row) => row.externalId?.startsWith("stmt-daily:"))
+        ? "daily"
+        : "rows",
+      createdCount: rows.length,
+      createdMinor: rows.reduce((sum, row) => sum + row.amountMinor, 0),
+      settled: [],
+      revertedAt: null,
+      deletedAt: null,
+    });
+  }
+
+  return {
+    transactions: transactions.map((entry) => {
+      const id = idByEntry.get(entry.id);
+      return id ? { ...entry, importId: id } : entry;
+    }),
+    batches: [...existing, ...recovered].sort((a, b) =>
+      a.importedAt.localeCompare(b.importedAt),
+    ),
+  };
+}
+
+function normaliseStatementBatch(batch: StatementBatch): StatementBatch {
+  const at = batch.importedAt ?? EPOCH;
+  return {
+    ...batch,
+    label: (batch.label ?? "").trim(),
+    account: batch.account ?? null,
+    mode: batch.mode === "daily" ? "daily" : "rows",
+    createdCount: Math.max(0, Math.trunc(Number(batch.createdCount) || 0)),
+    createdMinor: Math.round(Number(batch.createdMinor) || 0),
+    settled: Array.isArray(batch.settled) ? batch.settled : [],
+    importedAt: at,
+    revertedAt: batch.revertedAt ?? null,
+    deletedAt: batch.deletedAt ?? null,
+  };
+}
+
 function normaliseTransaction(t: Transaction): Transaction {
   // A row carrying `instalmentIndex` is one monthly charge of a purchase, not
   // a purchase: aggregation makes those and nothing may ever write one back.
@@ -512,6 +626,7 @@ function normaliseTransaction(t: Transaction): Transaction {
     recurrence: t.recurrence ?? null,
     recurrenceSourceId: t.recurrenceSourceId ?? null,
     lastGeneratedFor: t.lastGeneratedFor ?? null,
+    importId: t.importId ?? null,
     deletedAt: t.deletedAt ?? null,
     updatedAt: t.updatedAt ?? t.createdAt ?? EPOCH,
   };

@@ -295,3 +295,42 @@
 .chip.chip-deadline .chip-flag { flex: none; opacity: 0.9; }
 .chip.chip-deadline .chip-title { color: var(--text); }
 .chip.chip-deadline.overdue { border-color: var(--danger); color: var(--danger); }
+
+/* A plan's own checkpoint — "backend bitecek, 25 Eylul".
+   Not a task, not a day of one, and so not drawn as either: no pill, no fill,
+   no rounded body that reads as something sitting on the 25th. A flag and a
+   ruled line under the words, which is what a date written against a day looks
+   like on paper. Met ones stay legible and step back rather than vanishing:
+   "we hit that one" is part of what the month has to say. */
+.chip.chip-checkpoint {
+  border: 0;
+  border-radius: 0;
+  padding: 1px 2px;
+  background: none;
+  color: var(--text-muted);
+  box-shadow: inset 0 -1px 0 0 var(--border-strong);
+}
+.chip.chip-checkpoint:hover {
+  background: none;
+  color: var(--text);
+  box-shadow: inset 0 -1px 0 0 var(--accent);
+}
+.chip.chip-checkpoint .chip-flag {
+  color: var(--accent);
+  opacity: 1;
+}
+.chip.chip-checkpoint .chip-title {
+  color: inherit;
+  font-weight: 550;
+}
+.chip.chip-checkpoint.overdue {
+  color: var(--danger);
+  box-shadow: inset 0 -1px 0 0 var(--danger);
+}
+.chip.chip-checkpoint.overdue .chip-flag { color: var(--danger); }
+.chip.chip-checkpoint.is-met {
+  color: var(--text-faint);
+  box-shadow: inset 0 -1px 0 0 var(--border);
+}
+.chip.chip-checkpoint.is-met .chip-flag { color: var(--success); }
+.chip.chip-checkpoint.is-met .chip-title { text-decoration: line-through; }

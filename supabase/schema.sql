@@ -223,8 +223,38 @@ CREATE TABLE IF NOT EXISTS public.deadlines (
 CREATE INDEX IF NOT EXISTS deadlines_user_task_idx
   ON public.deadlines (user_id, task_id);
 
+-- 10d. Statement imports (so one can be taken back later)
+--    The undo toast lives for seconds; importing the same file twice is noticed
+--    the next day. `settled` is the previous shape of rows the import stamped
+--    rather than created, kept whole because a half-restored row is not a
+--    restored row. Rolling back sets `reverted_at`; the record itself stays.
+CREATE TABLE IF NOT EXISTS public.statement_batches (
+  id TEXT NOT NULL,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  account TEXT,
+  imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  from_date TEXT NOT NULL,
+  to_date TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'rows',
+  created_count INTEGER NOT NULL DEFAULT 0,
+  created_minor BIGINT NOT NULL DEFAULT 0,
+  settled JSONB NOT NULL DEFAULT '[]'::jsonb,
+  reverted_at TIMESTAMPTZ,
+  is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS statement_batches_user_range_idx
+  ON public.statement_batches (user_id, from_date, to_date);
+
 -- 11. Backfill columns added after the first release.
 --    Re-runnable: `IF NOT EXISTS` makes this safe on an existing project.
+-- Which statement import created an entry, so "undo this import" can find its
+-- own rows on any device.
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS import_id TEXT;
 ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS end_date TEXT;
 ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS estimate_minutes INTEGER;
 -- The day a task has to be finished by. Distinct from end_date, which is the
@@ -261,6 +291,7 @@ ALTER TABLE public.budget_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wishlist ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.deadlines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.statement_batches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_history ENABLE ROW LEVEL SECURITY;
 
 -- Profiles Policies
@@ -373,7 +404,7 @@ DECLARE
   t TEXT;
   op TEXT;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['occurrences', 'reminders', 'budget_categories', 'transactions', 'wishlist', 'deadlines', 'task_history']
+  FOREACH t IN ARRAY ARRAY['occurrences', 'reminders', 'budget_categories', 'transactions', 'wishlist', 'deadlines', 'statement_batches', 'task_history']
   LOOP
     FOREACH op IN ARRAY ARRAY['select', 'insert', 'update', 'delete']
     LOOP
@@ -449,7 +480,7 @@ CREATE TRIGGER on_auth_user_created
 DO $$
 DECLARE t TEXT;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['profiles', 'subscriptions', 'categories', 'tasks', 'focus_sessions', 'occurrences', 'reminders', 'budget_categories', 'transactions', 'wishlist', 'deadlines']
+  FOREACH t IN ARRAY ARRAY['profiles', 'subscriptions', 'categories', 'tasks', 'focus_sessions', 'occurrences', 'reminders', 'budget_categories', 'transactions', 'wishlist', 'deadlines', 'statement_batches']
   LOOP
     IF NOT EXISTS (
       SELECT 1 FROM pg_publication_tables
