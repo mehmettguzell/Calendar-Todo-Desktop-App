@@ -104,6 +104,15 @@ export function App() {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [selection, setSelection] = useState<Selection | null>(null);
   /**
+   * Whether the task panel fills the window.
+   *
+   * Kept here rather than inside the panel so Escape can back out of it before
+   * it closes the panel, and so opening the next task starts docked again —
+   * a maximised frame left over from a task you have finished with is a
+   * surprise, not a preference.
+   */
+  const [panelMaximized, setPanelMaximized] = useState(false);
+  /**
    * The checkpoint being edited, when a deadline chip was the thing clicked.
    *
    * A deadline marker is not the task it belongs to: opening the task panel on
@@ -225,6 +234,12 @@ export function App() {
    */
   const panel = usePresence(selected, PANEL_EXIT_MS);
 
+  // Nothing selected, nothing to maximise. Left set, the next task would open
+  // full-screen without having been asked to.
+  useEffect(() => {
+    if (!selected) setPanelMaximized(false);
+  }, [selected]);
+
   useApplyTheme(settings.theme);
   useApplyLanguage(language);
   useShortcuts({
@@ -241,6 +256,12 @@ export function App() {
     onEscape: () => {
       if (useSelectionStore.getState().active) {
         useSelectionStore.getState().clear();
+        return;
+      }
+      // Full screen is a layer of its own: shrinking back to the column is
+      // what someone in it expects Escape to do, not losing the task.
+      if (panelMaximized) {
+        setPanelMaximized(false);
         return;
       }
       setSelection(null);
@@ -399,6 +420,8 @@ export function App() {
           <TaskPanel
             instance={panel.held}
             closing={panel.closing}
+            maximized={panelMaximized}
+            onToggleMaximize={() => setPanelMaximized((on) => !on)}
             onClose={() => setSelection(null)}
             onOpenTask={(taskId) => openTaskId(taskId)}
           />
