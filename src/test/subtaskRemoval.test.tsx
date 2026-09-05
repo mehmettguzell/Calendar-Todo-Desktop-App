@@ -48,10 +48,22 @@ const dueDateOf = (taskId: string) =>
 
 const live = () => useStore.getState().db.tasks.filter((t) => !t.deletedAt);
 
-const removeStep = () =>
+/**
+ * Both destructive controls moved into the row's overflow menu, so reaching
+ * them is now two presses. The behaviour behind them is unchanged, and that is
+ * exactly what these tests are here to keep true.
+ */
+const openRowMenu = () =>
   act(() => {
-    screen.getByTitle("Listeden / Tarihten Kaldır (Planda kalır)").click();
+    screen.getByTitle("Diğer eylemler").click();
   });
+
+const removeStep = () => {
+  openRowMenu();
+  act(() => {
+    screen.getByText("Listeden / Tarihten Kaldır (Planda kalır)").click();
+  });
+};
 
 describe("the bin button on a subtask row", () => {
   it("takes the subtask off the schedule without asking", () => {
@@ -91,8 +103,9 @@ describe("the bin button on a subtask row", () => {
       .createTask({ title: "Tek görev", dueDate: today });
 
     mountRow(task.id);
+    openRowMenu();
     act(() => {
-      screen.getByTitle("Çöpe taşı").click();
+      screen.getByText("Çöpe taşı").click();
     });
 
     expect(asked).toHaveLength(1);

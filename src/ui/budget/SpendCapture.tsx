@@ -139,7 +139,7 @@ export function SpendCapture({
   return (
     <Modal title={t("spendQuickTitle")} onClose={onClose} width={420}>
       <form className="spend-capture" onSubmit={submit}>
-        <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+        <p className="faint" style={{ margin: 0, fontSize: "var(--text-xs)" }}>
           {t("spendQuickHint")}
         </p>
 

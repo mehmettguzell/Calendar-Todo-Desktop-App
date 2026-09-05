@@ -6,6 +6,7 @@ import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/shell.css";
 import "./styles/controls.css";
+import "./styles/ui.css";
 import "./styles/views.css";
 import "./styles/calendar.css";
 import "./styles/notes.css";

@@ -39,9 +39,12 @@ import { useNow, useStore } from "@/state/store";
 import { useListReorder, type RowReorder } from "@/ui/task/useListReorder";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
 import { Checkbox, Field, Modal, Popover } from "@/ui/components/primitives";
+import { PageHeader } from "@/ui/components/PageHeader";
+import { Segmented } from "@/ui/components/Segmented";
 import { cn } from "@/lib/cn";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { useRequestDelete } from "@/ui/task/useRequestDelete";
+import { Composer } from "@/ui/task/Composer";
 import { DeadlineEditor } from "@/ui/task/DeadlineEditor";
 
 /**
@@ -161,7 +164,6 @@ export function PlansView({
 
   const [filter, setFilter] = useState<PlanFilter>("ALL");
   const [newPlanModal, setNewPlanModal] = useState(false);
-  const [inlineTitle, setInlineTitle] = useState("");
 
   const plans = useMemo(() => {
     const raw = tasks
@@ -255,20 +257,6 @@ export function PlansView({
     onReorder: reorderTasks,
   });
 
-  const handleQuickAdd = () => {
-    const trimmed = inlineTitle.trim();
-    if (!trimmed) return;
-    const newPlan = createTask({
-      title: trimmed,
-      tags: ["plan"],
-      dueDate: null,
-      allDay: true,
-      priority: "MEDIUM",
-    });
-    setInlineTitle("");
-    onOpen(toInstance(newPlan, null, null, now));
-  };
-
   const handleApplyStarter = (starter: PlanStarter) => {
     const cat = categories.find((c) =>
       (STARTER_CATEGORY_NAMES[starter.categoryKey] as readonly string[]).some(
@@ -300,56 +288,54 @@ export function PlansView({
   return (
     <div className="page wide">
       {/* Plans Header & Filter Bar */}
-      <div className="plans-header section">
-        {/* Name, then the one thing you came to press. The icon tile and the
-            explanatory sentence under the title were furniture: they said the
-            same thing the page already says by being the page. */}
-        <div className="plans-top-row">
-          <h2 className="plans-main-title">{t("plansTitle")}</h2>
-          <span className="grow" />
-          <button
-            type="button"
-            className={cn("btn ghost sm", selecting && "active")}
-            aria-pressed={selecting}
-            title={t("plansPickHint")}
-            onClick={() => (selecting ? clearSelection() : beginSelecting())}
-          >
-            <MousePointerClick size={13} />
-            {t("bulkSelect")}
-          </button>
-          <ResetOrderButton tasks={plans} />
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => setNewPlanModal(true)}
-          >
-            <Plus size={14} /> {t("plansNewButton")}
-          </button>
-        </div>
+      {/* Same header as every other page. The gradient icon tile and the
+          explanatory sentence that used to sit here were furniture: they said
+          what the page already says by being the page.
 
-        {/* Counts on the tabs, so "how much is actually on my plate" is
-            answered without pressing anything. A tab that would show nothing
-            still renders — an empty "Başladıklarım" is itself the answer. */}
-        <div className="plans-filter-tabs" role="tablist">
-          {PLAN_TABS.map((tab) => (
+          Counts ride on the tabs, so "how much is actually on my plate" is
+          answered without pressing anything. Every tab renders even at zero —
+          an empty "Başladıklarım" is itself the answer. */}
+      <PageHeader
+        actions={
+          <>
             <button
-              key={tab.id}
               type="button"
-              role="tab"
-              aria-selected={filter === tab.id}
-              className={cn("plan-tab-btn", filter === tab.id && "active")}
-              onClick={() => setFilter(tab.id)}
+              className={cn("btn ghost sm", selecting && "active")}
+              aria-pressed={selecting}
+              title={t("plansPickHint")}
+              onClick={() => (selecting ? clearSelection() : beginSelecting())}
             >
-              {t(tab.labelKey)}
-              <span className="plan-tab-count">{stageCounts[tab.id]}</span>
+              <MousePointerClick size={13} />
+              {t("bulkSelect")}
             </button>
-          ))}
-        </div>
+            <ResetOrderButton tasks={plans} />
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => setNewPlanModal(true)}
+            >
+              <Plus size={14} /> {t("plansNewButton")}
+            </button>
+          </>
+        }
+        tabs={
+          <Segmented
+            ariaLabel={t("plansFilterAria")}
+            value={filter}
+            onChange={setFilter}
+            segments={PLAN_TABS.map((tab) => ({
+              id: tab.id,
+              label: t(tab.labelKey),
+              count: stageCounts[tab.id],
+            }))}
+          />
+        }
+      />
 
-        {/* Only while selecting. What is picked is acted on from the bulk bar
-            at the bottom of the window, so this row is about picking alone. */}
-        {selecting ? (
-          <div className="plans-pick-bar" role="group" aria-label={t("bulkTitle")}>
+      {/* Only while selecting. What is picked is acted on from the bulk bar at
+          the bottom of the window, so this row is about picking alone. */}
+      {selecting ? (
+        <div className="plans-pick-bar section" role="group" aria-label={t("bulkTitle")}>
             <button
               type="button"
               className="btn ghost sm"
@@ -374,41 +360,33 @@ export function PlansView({
               {t("plansPickActive")} ({activeCount})
             </button>
             <span className="grow" />
-            <span className="faint" style={{ fontSize: 12 }}>
+            <span className="faint" style={{ fontSize: "var(--text-xs)" }}>
               {t("plansPickCount", { n: pickedCount })}
             </span>
-            <button
-              type="button"
-              className="btn ghost icon sm"
-              aria-label={t("bulkClear")}
-              title={`${t("bulkClear")} (Esc)`}
-              onClick={clearSelection}
-            >
-              <X size={14} />
-            </button>
-          </div>
-        ) : null}
-      </div>
+          <button
+            type="button"
+            className="btn ghost icon sm"
+            aria-label={t("bulkClear")}
+            title={`${t("bulkClear")} (Esc)`}
+            onClick={clearSelection}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
 
-      {/* Inline Fast Add */}
-      <div className="row section" style={{ gap: 8 }}>
-        <input
-          className="input grow"
+      {/* The app's one add-box, seeded to make a plan rather than a task. A
+          plan carries no date, so the seed clears the one the box defaults to. */}
+      <div className="section">
+        <Composer
           placeholder={t("plansQuickAdd")}
-          value={inlineTitle}
-          onChange={(e) => setInlineTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleQuickAdd();
+          submitLabel={t("plansQuickAddButton")}
+          seed={{ tags: ["plan"], dueDate: null, allDay: true, priority: "MEDIUM" }}
+          onCreated={(taskId) => {
+            const created = useStore.getState().db.tasks.find((task) => task.id === taskId);
+            if (created) onOpen(toInstance(created, null, null, now));
           }}
         />
-        <button
-          type="button"
-          className="btn"
-          disabled={!inlineTitle.trim()}
-          onClick={handleQuickAdd}
-        >
-          <Plus size={14} /> {t("plansQuickAddButton")}
-        </button>
       </div>
 
       {/* Starter Templates if no plans */}
@@ -417,7 +395,7 @@ export function PlansView({
           <div className="section-head" style={{ marginBottom: 12 }}>
             <Lightbulb size={14} />
             <h2>{t("plansStarterHeading")}</h2>
-            <span className="faint" style={{ fontSize: 12 }}>
+            <span className="faint" style={{ fontSize: "var(--text-xs)" }}>
               {t("plansStarterHint")}
             </span>
           </div>
@@ -848,20 +826,20 @@ function PlanCard({
         )}
         {isPlanToday && (
           <span
-            className="plan-meta-pill is-today"
+            className="meta-pill is-today"
             title={t("plansAddedToToday")}
           >
             <Sun size={11} /> {t("today")}
           </span>
         )}
         {category && (
-          <span className="plan-meta-pill">
+          <span className="meta-pill">
             <i className="dot" style={{ background: category.color }} />
             {category.name}
           </span>
         )}
         {plan.priority !== "NONE" && (
-          <span className={cn("plan-meta-pill is-priority", plan.priority)}>
+          <span className={cn("meta-pill", plan.priority === "HIGH" && "is-high")}>
             {t(`priority${plan.priority}`)}
           </span>
         )}
@@ -869,7 +847,7 @@ function PlanCard({
             one thing that must never be the part that gets truncated. */}
         {plan.deadline && (
           <span
-            className={cn("plan-meta-pill", planOverdue && "is-overdue")}
+            className={cn("meta-pill", planOverdue && "is-overdue")}
             title={t("deadlineOn", { date: plan.deadline })}
           >
             <Flag size={11} aria-hidden /> {plan.deadline}
@@ -902,7 +880,7 @@ function PlanCard({
         {expanded && (
           <div className="plan-subtasks-body">
             {subtasks.length === 0 ? (
-              <div className="faint" style={{ fontSize: 12, padding: "4px 0" }}>
+              <div className="faint" style={{ fontSize: "var(--text-xs)", padding: "4px 0" }}>
                 {t("plansNoSteps")}
               </div>
             ) : (

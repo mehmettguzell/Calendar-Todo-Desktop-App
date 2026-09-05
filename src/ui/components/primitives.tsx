@@ -17,7 +17,7 @@ export function Field({
     <div className="field">
       <label>{label}</label>
       {children}
-      {hint ? <span className="faint" style={{ fontSize: 11 }}>{hint}</span> : null}
+      {hint ? <span className="faint" style={{ fontSize: "var(--text-2xs)" }}>{hint}</span> : null}
     </div>
   );
 }
@@ -187,6 +187,7 @@ export function ConfirmButton({
   disabled?: boolean;
   title?: string;
 }) {
+  const { t } = useI18n();
   const [armed, setArmed] = useState(false);
 
   useEffect(() => {
@@ -224,18 +225,38 @@ export function ConfirmButton({
         {confirm}
       </button>
       <button type="button" className="btn sm" onClick={() => setArmed(false)}>
-        Cancel
+        {t("cancel")}
       </button>
     </span>
   );
 }
 
-export function Empty({ icon, title, hint }: { icon: ReactNode; title: string; hint?: string }) {
+/**
+ * What a list says when it has nothing in it.
+ *
+ * An empty screen is the first screen a new user sees, and the one a finished
+ * day ends on — the two moments the app most needs to be inviting rather than
+ * blank. So it takes an `action`: the way out of the empty state stands right
+ * under the sentence describing it, instead of being somewhere else on screen
+ * for the reader to go and find.
+ */
+export function Empty({
+  icon,
+  title,
+  hint,
+  action,
+}: {
+  icon: ReactNode;
+  title: string;
+  hint?: string;
+  action?: ReactNode;
+}) {
   return (
     <div className="empty">
-      {icon}
-      <div style={{ fontWeight: 600, color: "var(--text-muted)" }}>{title}</div>
-      {hint ? <div style={{ fontSize: 12.5 }}>{hint}</div> : null}
+      <span className="empty-icon">{icon}</span>
+      <div className="empty-title">{title}</div>
+      {hint ? <div className="empty-hint">{hint}</div> : null}
+      {action ? <div className="empty-action">{action}</div> : null}
     </div>
   );
 }

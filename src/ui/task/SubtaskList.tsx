@@ -126,7 +126,7 @@ export function SubtaskList({
       }}
     >
       {subtasks.length > 0 ? (
-        <div className="row faint" style={{ fontSize: 11.5 }}>
+        <div className="row faint" style={{ fontSize: "var(--text-2xs)" }}>
           <span className="progress" style={{ width: 80 }}>
             <i style={{ width: `${(done / subtasks.length) * 100}%` }} />
           </span>

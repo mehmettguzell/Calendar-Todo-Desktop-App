@@ -69,7 +69,7 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
           <Sparkles size={20} className="level-up-sparkle" />
           <div className="grow">
             <strong>Tebrikler! Seviye Atladın! 🎉</strong>
-            <div style={{ fontSize: 12 }}>
+            <div style={{ fontSize: "var(--text-xs)" }}>
               {t("levelUpBody", {
                 level: levelInfo.level,
                 title: t(levelInfo.titleKey as TranslationKey),
@@ -103,10 +103,10 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
                 </span>
               </div>
               <div>
-                <h3 style={{ fontSize: 18, fontWeight: 700 }}>
+                <h3 style={{ fontSize: "var(--text-xl)", fontWeight: 700 }}>
                   {t(levelInfo.titleKey as TranslationKey)}
                 </h3>
-                <p className="faint" style={{ fontSize: 13, marginTop: 2 }}>
+                <p className="faint" style={{ fontSize: "var(--text-sm)", marginTop: 2 }}>
                   {t("levelTotalXp", {
                     xp: levelInfo.totalXp.toLocaleString(localeTag()),
                   })}
@@ -127,7 +127,7 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
                   style={{ width: `${levelInfo.progressPercent}%` }}
                 />
               </div>
-              <div className="faint" style={{ fontSize: 12, marginTop: 6 }}>
+              <div className="faint" style={{ fontSize: "var(--text-xs)", marginTop: 6 }}>
                 {levelInfo.nextLevelXp === Infinity
                   ? t("levelMaxed")
                   : t("levelXpToNext", {
@@ -161,7 +161,7 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
               <div className="card-head">
                 <span>{t("levelHowToEarn")}</span>
               </div>
-              <div className="col" style={{ gap: 6, fontSize: 13 }}>
+              <div className="col" style={{ gap: 6, fontSize: "var(--text-sm)" }}>
                 <div className="row">
                   <Zap size={14} style={{ color: "var(--accent)" }} />
                   <span className="grow">{t("levelXpPerTask")}</span>
@@ -190,7 +190,7 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
                       className={`row level-tier-row ${isCurrent ? "is-current" : ""} ${
                         isUnlocked ? "is-unlocked" : "is-locked"
                       }`}
-                      style={{ fontSize: 12.5, padding: "4px 8px", borderRadius: 4 }}
+                      style={{ fontSize: "var(--text-xs)", padding: "4px 8px", borderRadius: 4 }}
                     >
                       <span style={{ fontWeight: 600, minWidth: 46 }}>
                         {t("levelShort")}
@@ -199,7 +199,7 @@ export function LevelBadge({ levelInfo, streaks }: LevelBadgeProps) {
                       <span className="grow truncate">
                         {t(tier.titleKey as TranslationKey)}
                       </span>
-                      <span className="faint mono" style={{ fontSize: 11 }}>
+                      <span className="faint mono" style={{ fontSize: "var(--text-2xs)" }}>
                         {tier.minXp} XP
                       </span>
                     </div>

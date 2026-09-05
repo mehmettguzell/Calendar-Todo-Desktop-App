@@ -3,6 +3,29 @@
     Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
 
+  /*
+   * The type scale.
+   *
+   * The stylesheets had grown eighteen distinct font sizes over 226
+   * declarations — 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13, 13.5, 14, 14.5, 15,
+   * 16, 17, 18, 20, 22, 24. Sizes half a pixel apart do not read as two ranks,
+   * they read as one blurry one, and every new component had to guess which of
+   * the three near-identical "small" sizes it belonged to.
+   *
+   * Nine steps, each far enough from the next to mean something. Anything new
+   * picks one of these; a size that is not on the scale is a decision that
+   * needs a reason.
+   */
+  --text-3xs: 10px;
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+
   --radius-sm: 6px;
   --radius: 10px;
   --radius-lg: 14px;

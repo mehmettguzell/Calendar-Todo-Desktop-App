@@ -52,9 +52,9 @@ export function MiniMonth({
   }, [weekStartsOn, language]);
 
   return (
-    <div className="col" style={{ gap: 6 }}>
+    <div className="col mini-month" style={{ gap: 6 }}>
       <div className="row" style={{ padding: "0 8px" }}>
-        <span className="grow" style={{ fontSize: 12.5, fontWeight: 600 }}>
+        <span className="grow" style={{ fontSize: "var(--text-xs)", fontWeight: 600 }}>
           {anchorDate.toLocaleDateString(localeTag(), { month: "long", year: "numeric" })}
         </span>
         <button

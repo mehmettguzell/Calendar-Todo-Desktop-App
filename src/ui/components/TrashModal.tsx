@@ -113,7 +113,7 @@ export function TrashModal({ onClose }: { onClose: () => void }) {
                     </div>
                     <div
                       className="row items-center"
-                      style={{ gap: 8, fontSize: 11.5, color: "var(--muted)" }}
+                      style={{ gap: 8, fontSize: "var(--text-2xs)", color: "var(--muted)" }}
                     >
                       <span>
                         {daysLeft}{" "}

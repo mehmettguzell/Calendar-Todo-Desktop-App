@@ -184,7 +184,7 @@ export function RecurrenceEditor({
             </Field>
           ) : null}
 
-          <p className="faint" style={{ margin: 0, fontSize: 12 }}>
+          <p className="faint" style={{ margin: 0, fontSize: "var(--text-xs)" }}>
             {describeRecurrence(rule, t, weekdays, anchor ?? null)}
           </p>
         </>

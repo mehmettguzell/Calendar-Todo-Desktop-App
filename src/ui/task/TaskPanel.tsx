@@ -8,11 +8,13 @@ import {
 } from "react";
 import {
   AlarmClock,
+  CalendarMinus,
   ChevronRight,
   CornerDownRight,
   Copy,
   Maximize2,
   Minimize2,
+  MoreHorizontal,
   Plus,
   StickyNote,
   Target,
@@ -156,6 +158,7 @@ export function TaskPanel({
   const [tagInput, setTagInput] = useState(task.tags.join(", "));
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [planMenuOpen, setPlanMenuOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
 
   // Re-seed local text state when a different task is opened.
   useEffect(() => {
@@ -204,7 +207,7 @@ export function TaskPanel({
       <div className="panel-head">
         <StatusBadge status={instance.status} />
         {instance.isRecurring && instance.date ? (
-          <span className="faint mono" style={{ fontSize: 11 }}>
+          <span className="faint mono" style={{ fontSize: "var(--text-2xs)" }}>
             {t("occurrenceLabel")} {instance.date}
           </span>
         ) : null}
@@ -302,9 +305,13 @@ export function TaskPanel({
               ? t("menuReopen")
               : t("menuComplete")}
           </button>
+          {/* Ghost, not filled. Three buttons at the same weight is three
+              buttons with no answer to "which one did I come here for" —
+              finishing the task is the answer, and it is the only one wearing
+              the accent. */}
           <button
             type="button"
-            className="btn"
+            className={cn("btn ghost", isFocused && "active")}
             onClick={() => {
               if (isFocused) {
                 stopFocus();
@@ -318,7 +325,7 @@ export function TaskPanel({
           </button>
           <button
             type="button"
-            className="btn"
+            className="btn ghost"
             onClick={() => setSnoozeOpen((v) => !v)}
           >
             <AlarmClock size={14} /> {t("snooze")}
@@ -577,7 +584,7 @@ export function TaskPanel({
                   })
                 }
               />
-              <span className="faint" style={{ fontSize: 12 }}>
+              <span className="faint" style={{ fontSize: "var(--text-xs)" }}>
                 {t("minutesShort")}
               </span>
               {estimateDelta ? (
@@ -714,56 +721,87 @@ export function TaskPanel({
             ) : null}
           </div>
 
-          {parentTask && (task.dueDate || instance.date) ? (
+          {/* Four buttons stood along the bottom of a 400px panel, three of
+              them for things done to a task perhaps once in its life. They are
+              one press away now, in the same "…" the rows and the plan cards
+              use, so the foot of the panel says the one thing worth saying at a
+              glance: which plan this belongs to. */}
+          <div style={{ position: "relative" }}>
             <button
               type="button"
               className="btn ghost sm"
-              title={t("removeFromToday")}
-              onClick={() => {
-                updateTask(task.id, { dueDate: null });
-                onClose();
-              }}
+              aria-haspopup="menu"
+              aria-expanded={moreMenuOpen}
+              aria-label={t("rowMoreActions")}
+              title={t("rowMoreActions")}
+              onClick={() => setMoreMenuOpen((v) => !v)}
             >
-              {t("removeFromTodayShort")}
+              <MoreHorizontal size={15} />
             </button>
-          ) : null}
+            {moreMenuOpen ? (
+              <div className="popover-up">
+                <Popover onClose={() => setMoreMenuOpen(false)} align="right">
+                  {parentTask && (task.dueDate || instance.date) ? (
+                    <button
+                      type="button"
+                      className="popover-item"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        updateTask(task.id, { dueDate: null });
+                        onClose();
+                      }}
+                    >
+                      <CalendarMinus size={14} />
+                      {t("removeFromTodayShort")}
+                    </button>
+                  ) : null}
 
-          {/* The mirror of the note panel's "turn into a task". Disabled rather
-              than hidden when the task has subtasks, so the answer to "why can
-              I not do this here" is on the button itself. */}
-          <button
-            type="button"
-            className="btn ghost sm"
-            disabled={subtasks.length > 0}
-            title={
-              subtasks.length > 0 ? t("taskToNoteBlocked") : t("taskToNoteHint")
-            }
-            onClick={() => {
-              if (convertToNote(task.id)) onClose();
-            }}
-          >
-            <StickyNote size={13} /> {t("taskToNote")}
-          </button>
+                  {/* The mirror of the note panel's "turn into a task".
+                      Disabled rather than hidden when the task has subtasks, so
+                      the answer to "why can I not do this here" is on the
+                      control itself. */}
+                  <button
+                    type="button"
+                    className="popover-item"
+                    disabled={subtasks.length > 0}
+                    title={
+                      subtasks.length > 0
+                        ? t("taskToNoteBlocked")
+                        : t("taskToNoteHint")
+                    }
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      if (convertToNote(task.id)) onClose();
+                    }}
+                  >
+                    <StickyNote size={14} /> {t("taskToNote")}
+                  </button>
+
+                  {/* Named for what it does — moving to the trash — rather
+                      than for where the task ends up, so it does not read as a
+                      link to the trash view. */}
+                  <button
+                    type="button"
+                    className="popover-item danger"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      if (requestDelete(task.id)) onClose();
+                    }}
+                  >
+                    <Trash2 size={14} /> {t("menuDelete")}
+                  </button>
+                </Popover>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="panel-foot-meta">
-          <span className="faint" style={{ fontSize: 11 }}>
+          <span className="faint" style={{ fontSize: "var(--text-2xs)" }}>
             {t("createdOn", {
               date: new Date(task.createdAt).toLocaleDateString(localeTag()),
             })}
           </span>
-          {/* Named for what it does — moving to the trash — rather than for
-              where the task ends up, so it does not read as a link to the
-              trash view. */}
-          <button
-            type="button"
-            className="btn danger-quiet sm"
-            onClick={() => {
-              if (requestDelete(task.id)) onClose();
-            }}
-          >
-            <Trash2 size={13} /> {t("menuDelete")}
-          </button>
         </div>
       </div>
     </aside>

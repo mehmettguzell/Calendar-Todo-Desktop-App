@@ -112,7 +112,7 @@ export function Ledger({
     <section className="card budget-ledger">
       <div className="section-head">
         <h3>{t("budgetMovements")}</h3>
-        <span className="faint" style={{ fontSize: 12 }}>
+        <span className="faint" style={{ fontSize: "var(--text-xs)" }}>
           {t("ledgerCount", { n: filtered.length })}
         </span>
       </div>
@@ -120,9 +120,10 @@ export function Ledger({
       <p className="faint ledger-hint">{t("budgetMovementsHint")}</p>
 
       <div className="ledger-controls">
-        <div className="segmented sm">
+        <div className="segmented-tabs is-sm">
           <button
             type="button"
+            className="segmented-tab"
             aria-pressed={flow === "ALL"}
             onClick={() => setFlow("ALL")}
           >
@@ -425,7 +426,7 @@ function EntryEditor({
 
   return (
     <form className="ledger-editor" onSubmit={submit}>
-      <div className="segmented sm">
+      <div className="segmented-tabs is-sm">
         {MONEY_FLOWS.map((option) => (
           <button
             key={option}

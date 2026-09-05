@@ -157,7 +157,7 @@ export function BudgetView() {
 
         <span className="grow" />
 
-        <div className="segmented">
+        <div className="segmented-tabs">
           {PERIODS.map((p) => (
             <button
               key={p.id}
@@ -226,7 +226,7 @@ export function BudgetView() {
         <section className="card budget-breakdown">
           <div className="section-head">
             <h3>{t("budgetWhereItWent")}</h3>
-            <div className="segmented sm">
+            <div className="segmented-tabs is-sm">
               {MONEY_FLOWS.map((flow) => (
                 <button
                   key={flow}
@@ -418,7 +418,7 @@ function QuickEntry({ defaultDate }: { defaultDate: string }) {
 
   return (
     <form className="budget-entry section" onSubmit={submit}>
-      <div className="segmented sm">
+      <div className="segmented-tabs is-sm">
         {MONEY_FLOWS.map((f) => (
           <button
             key={f}

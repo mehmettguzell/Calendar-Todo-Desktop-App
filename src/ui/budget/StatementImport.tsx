@@ -233,13 +233,13 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
       <Modal title={t("importTitle")} onClose={onClose} width={420}>
         <div className="col" style={{ gap: 10, alignItems: "center", padding: 12 }}>
           <Check size={32} style={{ color: "var(--success)" }} />
-          <strong style={{ fontSize: 16 }}>{t("importDone", { n: done.created })}</strong>
+          <strong style={{ fontSize: "var(--text-lg)" }}>{t("importDone", { n: done.created })}</strong>
           {done.merged > 0 ? (
-            <strong style={{ fontSize: 13 }}>
+            <strong style={{ fontSize: "var(--text-sm)" }}>
               {t("importDoneMerged", { n: done.merged })}
             </strong>
           ) : null}
-          <p className="faint" style={{ margin: 0, textAlign: "center", fontSize: 12.5 }}>
+          <p className="faint" style={{ margin: 0, textAlign: "center", fontSize: "var(--text-xs)" }}>
             {t("importDoneHint")}
           </p>
           <button type="button" className="btn primary" onClick={onClose}>
@@ -257,7 +257,7 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
       width={880}
       footer={
         <>
-          <span className="grow faint" style={{ fontSize: 12 }}>
+          <span className="grow faint" style={{ fontSize: "var(--text-xs)" }}>
             {plan ? t("importSelected", { n: selectedCount }) : t("importPickFile")}
           </span>
           <button type="button" className="btn" onClick={onClose}>
@@ -293,7 +293,7 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
           >
             <Upload size={26} />
             <strong>{t("importDropTitle")}</strong>
-            <span className="faint" style={{ fontSize: 12.5, textAlign: "center" }}>
+            <span className="faint" style={{ fontSize: "var(--text-xs)", textAlign: "center" }}>
               {t("importDropHint")}
             </span>
             <input
@@ -365,7 +365,7 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
             {/* Two ways to read one file, side by side rather than in a
                 settings panel: which one is right depends on this file and
                 this month, not on a preference set once. */}
-            <div className="segmented sm">
+            <div className="segmented-tabs is-sm">
               {(["rows", "daily"] as ImportMode[]).map((option) => (
                 <button
                   key={option}
@@ -380,7 +380,7 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
             </div>
 
             {/* The one guess worth making reversible in one click. */}
-            <div className="segmented sm">
+            <div className="segmented-tabs is-sm">
               {(["card", "account"] as StatementSource[]).map((source) => (
                 <button
                   key={source}
@@ -419,7 +419,7 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
                 <option key={card} value={card} />
               ))}
             </datalist>
-            <span className="faint" style={{ fontSize: 11 }}>
+            <span className="faint" style={{ fontSize: "var(--text-2xs)" }}>
               {t("importAccountHint")}
             </span>
           </label>
@@ -557,7 +557,7 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
           </div>
 
           {plan.counts.similar > 0 ? (
-            <p className="faint" style={{ margin: 0, fontSize: 12 }}>
+            <p className="faint" style={{ margin: 0, fontSize: "var(--text-xs)" }}>
               {t("importMergeHint")}
             </p>
           ) : null}
@@ -565,13 +565,13 @@ export function StatementImport({ onClose }: { onClose: () => void }) {
           {/* Said separately from the hint above, because it asks for something:
               these rows do nothing unless the user ticks them. */}
           {plan.counts.near > 0 ? (
-            <p className="faint" style={{ margin: 0, fontSize: 12 }}>
+            <p className="faint" style={{ margin: 0, fontSize: "var(--text-xs)" }}>
               {t("importNearHint", { n: plan.counts.near })}
             </p>
           ) : null}
 
           {plan.unknownMerchants.length > 0 ? (
-            <p className="faint" style={{ margin: 0, fontSize: 12 }}>
+            <p className="faint" style={{ margin: 0, fontSize: "var(--text-xs)" }}>
               {t("importUnknownHint", { n: plan.unknownMerchants.length })}
             </p>
           ) : null}

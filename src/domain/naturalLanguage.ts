@@ -485,27 +485,63 @@ function startOfNextWeek(now: Date, weekStartsOn: 0 | 1): LocalDate {
   return addDaysLocal(toLocalDate(now), toStart);
 }
 
-/** A one-line summary of what the parser understood, for the live preview. */
-export function describeParse(parsed: ParsedQuickAdd): string[] {
+/**
+ * What the parser understood, said back the way a person would say it.
+ *
+ * This is the whole reason typing a sentence is safe: a guess you can read
+ * before you commit is a guess worth trusting. Which means it has to be
+ * readable — the preview used to answer "yarın" with `2026-08-26` and a repeat
+ * rule with the hard-coded Turkish word "günlük", so the one surface whose job
+ * is to prove the app understood you was speaking in ISO dates and, in the
+ * English build, in Turkish.
+ *
+ * The formatting pieces are passed in rather than imported, because this file
+ * is domain code and knows nothing about the dictionary. Called without them
+ * it still works, in raw form — which is what a test asserting on shapes
+ * rather than on words wants.
+ */
+export function describeParse(
+  parsed: ParsedQuickAdd,
+  format?: {
+    /** Turns a date into "Yarın" / "Sal, 26 Ağu". */
+    day: (date: LocalDate) => string;
+    /** Turns a recurrence into "her hafta". */
+    repeat: (rule: Recurrence) => string;
+    /** The word for a deadline, e.g. "son: 20 Eyl". */
+    deadline: (date: string) => string;
+  },
+): string[] {
+  const day = format?.day ?? ((date: LocalDate) => date);
   const chips: string[] = [];
+
   if (parsed.dueDate) {
     chips.push(
-      parsed.endDate ? `${parsed.dueDate} → ${parsed.endDate}` : parsed.dueDate,
+      parsed.endDate
+        ? `${day(parsed.dueDate)} → ${day(parsed.endDate)}`
+        : day(parsed.dueDate),
     );
   }
-  if (parsed.deadline) chips.push("→ " + parsed.deadline);
-  if (parsed.startTime) {
-    chips.push(parsed.endTime ? `${parsed.startTime}–${parsed.endTime}` : parsed.startTime);
+  if (parsed.deadline) {
+    const shown = day(parsed.deadline);
+    chips.push(format ? format.deadline(shown) : "→ " + shown);
   }
-  if (parsed.recurrence) chips.push(recurrenceChip(parsed.recurrence));
-  if (parsed.priority !== "NONE") chips.push(`!${parsed.priority.toLowerCase()}`);
+  if (parsed.startTime) {
+    chips.push(
+      parsed.endTime
+        ? `${parsed.startTime}–${parsed.endTime}`
+        : parsed.startTime,
+    );
+  }
+  if (parsed.recurrence) {
+    chips.push(
+      format ? format.repeat(parsed.recurrence) : parsed.recurrence.freq,
+    );
+  }
+  if (parsed.priority !== "NONE") {
+    chips.push(`!${parsed.priority.toLowerCase()}`);
+  }
   if (parsed.categoryName) chips.push(`#${parsed.categoryName}`);
   for (const tag of parsed.tags) chips.push(`@${tag}`);
-  if (parsed.estimateMinutes) chips.push(`~${parsed.estimateMinutes}dk`);
+  if (parsed.estimateMinutes) chips.push(`~${parsed.estimateMinutes}'`);
   return chips;
-}
-
-function recurrenceChip(rule: Recurrence): string {
-  const base = { DAILY: "günlük", WEEKLY: "haftalık", MONTHLY: "aylık", YEARLY: "yıllık" };
-  return base[rule.freq];
 }

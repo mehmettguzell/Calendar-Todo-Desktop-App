@@ -42,6 +42,9 @@ export type ViewId =
   | "focus"
   | "budget";
 
+/** How many category chips the sidebar shows before the rest fold away. */
+const CATEGORY_PREVIEW_COUNT = 5;
+
 const MAIN_NAV: { id: ViewId; labelKey: TranslationKey; icon: typeof Sun }[] = [
   { id: "today", labelKey: "navToday", icon: Sun },
   { id: "tasks", labelKey: "navTasks", icon: ListChecks },
@@ -87,6 +90,7 @@ export function Sidebar({
   const trashedTasks = useTrashedTasks();
   const groups = useTodoGroups(filters);
   const [addingCategory, setAddingCategory] = useState(false);
+  const [showAllCategories, setShowAllCategories] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
   const { t } = useI18n();
@@ -101,6 +105,27 @@ export function Sidebar({
     }
     return map;
   }, [liveTasks]);
+
+  /**
+   * Used categories first, then the rest, and only the first five unless the
+   * list is asked to open. A filter that is *on* is always in the visible part
+   * — hiding the reason the task list looks short would be worse than a long
+   * sidebar.
+   */
+  const orderedCategories = useMemo(() => {
+    const inUse = (c: Category) =>
+      (categoryCounts[c.id] ?? 0) > 0 || filters.categoryIds.includes(c.id);
+    return [
+      ...categories.filter(inUse),
+      ...categories.filter((c) => !inUse(c)),
+    ];
+  }, [categories, categoryCounts, filters.categoryIds]);
+
+  const visibleCategories = showAllCategories
+    ? orderedCategories
+    : orderedCategories.slice(0, CATEGORY_PREVIEW_COUNT);
+  const hiddenCategoryCount =
+    orderedCategories.length - visibleCategories.length;
 
   // A dot in the mini month for any day holding at least one task.
   const monthInstances = useInstancesInRange(
@@ -229,8 +254,20 @@ export function Sidebar({
             <Plus size={13} />
           </button>
         </div>
+        {/*
+          Nine seeded categories is a wall in a column this narrow, and most of
+          them are empty on the first day. Nothing is deleted — deleting a
+          category is the user's call and it is permanent — but the list stops
+          at five and says how many more there are.
+
+          Which five: the ones being used, in their own order, then the rest.
+          A category with tasks in it is the one you are looking for; an empty
+          one is a suggestion, and suggestions can wait behind a press. The
+          split is computed from a count that only changes when tasks do, so
+          the list does not reshuffle while it is being read.
+        */}
         <div className="chip-list">
-          {categories.map((category) => (
+          {visibleCategories.map((category) => (
             <div key={category.id} className="category-chip-row">
               <button
                 type="button"
@@ -260,6 +297,17 @@ export function Sidebar({
               </button>
             </div>
           ))}
+          {hiddenCategoryCount > 0 || showAllCategories ? (
+            <button
+              type="button"
+              className="btn ghost sm category-more"
+              onClick={() => setShowAllCategories((v) => !v)}
+            >
+              {showAllCategories
+                ? t("showLess")
+                : t("moreCount", { n: hiddenCategoryCount })}
+            </button>
+          ) : null}
           {filters.categoryIds.length > 0 ? (
             <button
               type="button"

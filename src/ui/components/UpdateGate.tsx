@@ -109,8 +109,8 @@ export function UpdateGate() {
     <div className="update-toast" role="status">
       <ArrowUpCircle size={16} className="update-toast-icon" aria-hidden />
       <div className="col" style={{ gap: 2, minWidth: 0 }}>
-        <strong style={{ fontSize: 13 }}>{t("updateAvailableTitle")}</strong>
-        <span className="faint" style={{ fontSize: 12 }}>
+        <strong style={{ fontSize: "var(--text-sm)" }}>{t("updateAvailableTitle")}</strong>
+        <span className="faint" style={{ fontSize: "var(--text-xs)" }}>
           {phase.kind === "failed"
             ? t("updateFailed")
             : t("updateAvailableBody", { version: verdict.version })}

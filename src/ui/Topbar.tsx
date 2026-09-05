@@ -5,10 +5,13 @@ import {
   ChevronLeft,
   ChevronRight,
   CloudOff,
+  Eye,
+  EyeOff,
   Plus,
   RefreshCw,
   Search,
 } from "lucide-react";
+import { cn } from "@/lib/cn";
 import { formatErrorMessage, type SyncFailureKind } from "@/lib/errors";
 import { localeTag } from "@/domain/datetime";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
@@ -18,7 +21,7 @@ import { syncDifferences } from "@/state/syncEngine";
 import { useSyncStore, type SkippedRow, type SyncPhase } from "@/state/syncStore";
 import type { CalendarMode } from "./views/CalendarView";
 import type { ViewId } from "./Sidebar";
-import { Switch } from "./components/primitives";
+import { Segmented } from "./components/Segmented";
 
 const MODES: { id: CalendarMode; labelKey: TranslationKey }[] = [
   { id: "month", labelKey: "calMonth" },
@@ -107,13 +110,6 @@ function SyncButton() {
         onClick={handleSync}
         disabled={syncing}
         title={status.tooltip}
-        style={{
-          gap: 6,
-          fontWeight: 500,
-          border: "1px solid var(--border)",
-          padding: "5px 11px",
-          borderRadius: "var(--radius-md)",
-        }}
       >
         <span
           className="sync-dot"
@@ -144,7 +140,7 @@ function SyncButton() {
             border: "1px solid var(--border, #333)",
             borderRadius: 8,
             padding: "8px 12px",
-            fontSize: 12,
+            fontSize: "var(--text-xs)",
             maxWidth: 340,
             boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
             display: "flex",
@@ -286,18 +282,13 @@ export function Topbar({
           <button type="button" className="btn" onClick={onToday}>
             {t("today")}
           </button>
-          <div className="segmented">
-            {MODES.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                aria-pressed={mode === m.id}
-                onClick={() => onMode(m.id)}
-              >
-                {t(m.labelKey)}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            size="sm"
+            ariaLabel={t("calendarModeAria")}
+            value={mode}
+            onChange={onMode}
+            segments={MODES.map((m) => ({ id: m.id, label: t(m.labelKey) }))}
+          />
         </>
       ) : null}
 
@@ -313,11 +304,22 @@ export function Topbar({
         />
       </label>
 
-      <Switch
-        checked={filters.showCompleted}
-        label={t("done")}
-        onChange={(showCompleted) => onFilters({ ...filters, showCompleted })}
-      />
+      {/* "Show finished tasks" was a labelled switch standing at the same
+          weight as the primary button beside it, for something you toggle once
+          a week. It is the same setting, as an eye you press — on when it is
+          on, and it says which it is on hover. */}
+      <button
+        type="button"
+        className={cn("btn ghost icon", filters.showCompleted && "active")}
+        aria-pressed={filters.showCompleted}
+        title={filters.showCompleted ? t("hideCompleted") : t("showCompleted")}
+        aria-label={filters.showCompleted ? t("hideCompleted") : t("showCompleted")}
+        onClick={() =>
+          onFilters({ ...filters, showCompleted: !filters.showCompleted })
+        }
+      >
+        {filters.showCompleted ? <Eye size={16} /> : <EyeOff size={16} />}
+      </button>
 
       <SyncButton />
 

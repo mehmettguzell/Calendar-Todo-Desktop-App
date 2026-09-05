@@ -11,25 +11,40 @@
   margin-bottom: var(--space-5);
 }
 
+/* The label above a list.
+   A rule under every heading drew a ladder down the page — four sections meant
+   four horizontal lines competing with the rows they introduced. Space does
+   the same separating for free, and a small uppercase label is unmistakably a
+   heading rather than one more task title. */
 .section-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
-  margin-bottom: var(--space-2);
-  padding-bottom: 5px;
-  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+  padding: 0 2px;
+  color: var(--text-muted);
 }
 
 .section-head h2 {
-  font-size: 13px;
-  letter-spacing: 0.02em;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: inherit;
 }
+
 .section-head .count {
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: var(--text-2xs);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.section-head.alert h2 {
+
+.section-head.alert {
+  color: var(--danger);
+}
+
+.section-head.alert .count {
   color: var(--danger);
 }
 
@@ -42,8 +57,12 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
-  padding: 8px var(--space-2);
-  border-radius: var(--radius-sm);
+  /* Taller than it needs to be, on purpose: a list of tasks is read down the
+     left edge, and rows packed to their text height turn that edge into a
+     wall. The extra four pixels is the difference between scanning and
+     squinting, and it is also what makes the row a comfortable click target. */
+  padding: 10px var(--space-2);
+  border-radius: var(--radius);
   transition: background 100ms ease;
   /* Anchors the drop marker drawn in the gaps around this row. */
   position: relative;
@@ -172,9 +191,21 @@
   flex: 1 1 auto;
 }
 
+/* A finished row steps back rather than being crossed out in place: the whole
+   row fades, so a day's completed work reads as a quiet band under the open
+   work instead of a column of struck-through sentences. */
+.task-row.done {
+  opacity: 0.6;
+}
+
+.task-row.done:hover {
+  opacity: 1;
+}
+
 .task-row.done .task-title > .label {
-  color: var(--text-faint);
+  color: var(--text-muted);
   text-decoration: line-through;
+  text-decoration-thickness: 1px;
 }
 
 .task-meta {
@@ -184,30 +215,17 @@
   flex-wrap: wrap;
   margin-top: 2px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .task-meta .sep {
   color: var(--border-strong);
 }
+/* Layout only. Whether these are on screen is `.hover-actions` in ui.css —
+   the same rule the plan cards and the sidebar's category rows follow, so
+   "controls appear on approach" has one definition and not four. */
 .task-actions {
-  display: flex;
-  align-items: center;
   gap: 2px;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-.task-row:hover .task-actions,
-.task-row:focus-within .task-actions {
-  opacity: 1;
-}
-
-.subtask-strip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-faint);
-  font-size: 12px;
 }
 
 .progress {
@@ -401,7 +419,7 @@
   background: none;
   outline: none;
   font-family: inherit;
-  font-size: 18px;
+  font-size: var(--text-xl);
   font-weight: 620;
   line-height: 1.3;
   letter-spacing: -0.02em;
@@ -454,7 +472,7 @@
   padding: 7px 9px;
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
 }
@@ -462,6 +480,28 @@
 .popover-item:hover,
 .popover-item:focus-visible {
   background: var(--surface-hover);
+}
+
+/* The one row in a menu you cannot take back. Coloured only on approach, so a
+   menu is not a red thing sitting open on the screen. */
+.popover-item.danger {
+  color: var(--danger);
+}
+
+.popover-item.danger:hover,
+.popover-item.danger:focus-visible {
+  background: var(--danger-soft);
+}
+
+/* Disabled rather than hidden, so "why can I not do this here" is answered on
+   the control itself — through its `title`. */
+.popover-item:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.popover-item:disabled:hover {
+  background: none;
 }
 
 .popover-item .truncate {
@@ -498,7 +538,7 @@
 
 .panel-section-title {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -513,7 +553,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--text-xs);
   text-align: right;
 }
 
@@ -540,7 +580,7 @@
   justify-content: space-between;
   margin-bottom: var(--space-2);
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -617,7 +657,7 @@
 .timeline-item {
   display: flex;
   gap: var(--space-3);
-  font-size: 12.5px;
+  font-size: var(--text-xs);
 }
 
 .timeline-item .rail {
@@ -653,7 +693,7 @@
 .timeline-item time {
   display: block;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 
 /* -------------------------------------------------------------- misc */
@@ -672,14 +712,14 @@
 }
 
 .stat .value {
-  font-size: 22px;
+  font-size: var(--text-2xl);
   font-weight: 650;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 .stat .label {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .mini {
@@ -691,7 +731,7 @@
 
 .mini .head {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--text-3xs);
   font-weight: 650;
   text-align: center;
 }
@@ -703,7 +743,7 @@
   height: 24px;
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -736,6 +776,13 @@
 }
 
 /* -------------------------------------------------- Today View Hero Card */
+
+/* Without the week's chart beside it, the card is one column: a hero card that
+   keeps a 1.25fr slot for something that is not there leaves a hole where a
+   new account most needs the screen to look finished. */
+.today-hero-card.is-solo {
+  grid-template-columns: minmax(0, 1fr);
+}
 
 .today-hero-card {
   display: grid;
@@ -773,7 +820,7 @@
    loses nothing but the box — the mood still reaches the reader as colour. */
 .today-hero-headline {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--text-lg);
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.3;
@@ -789,12 +836,12 @@
   color: var(--warning);
 }
 .today-hero-headline.celebrate {
-  color: #d97706;
+  color: var(--warning);
 }
 
 .today-hero-subtitle {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   line-height: 1.4;
 }
@@ -804,7 +851,7 @@
   align-items: center;
   gap: 6px;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
@@ -861,7 +908,7 @@
 }
 
 .progress-ring-pct {
-  font-size: 20px;
+  font-size: var(--text-2xl);
   font-weight: 800;
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
@@ -873,7 +920,7 @@
 }
 
 .progress-ring-sub {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   color: var(--text-faint);
   margin-top: 2px;
   font-weight: 600;
@@ -951,7 +998,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 650;
   color: var(--text-muted);
 }
@@ -971,7 +1018,7 @@
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   cursor: pointer;
   transition: all 120ms ease;
 }
@@ -1040,7 +1087,7 @@
 }
 
 .weekly-bar-val {
-  font-size: 9.5px;
+  font-size: var(--text-3xs);
   font-weight: 700;
   color: #fff;
   line-height: 1;
@@ -1050,7 +1097,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   color: var(--text-faint);
   font-weight: 500;
 }
@@ -1126,7 +1173,7 @@
 }
 
 .heatmap-stat-val {
-  font-size: 20px;
+  font-size: var(--text-2xl);
   font-weight: 800;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -1134,13 +1181,13 @@
 }
 
 .heatmap-stat-unit {
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 500;
   color: var(--text-muted);
 }
 
 .heatmap-stat-lbl {
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   margin-top: 2px;
 }
@@ -1157,7 +1204,7 @@
   grid-template-rows: repeat(7, 14px);
   gap: 3px;
   margin-top: 18px; /* space for month labels */
-  font-size: 9.5px;
+  font-size: var(--text-3xs);
   color: var(--text-faint);
   line-height: 14px;
 }
@@ -1194,7 +1241,7 @@
   position: absolute;
   left: 0;
   top: 0;
-  font-size: 10px;
+  font-size: var(--text-3xs);
   font-weight: 600;
   color: var(--text-faint);
   white-space: nowrap;
@@ -1291,7 +1338,7 @@
   gap: 12px;
   padding-top: 4px;
   border-top: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .heatmap-hover-info {
@@ -1303,92 +1350,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
-}
-
-/* ================================================================== */
-/* PLANS VIEW STYLES                                                 */
-/* ================================================================== */
-
-/* Two stacked rows — name and actions, then the tabs — instead of a header
-   that wrapped a gradient tile, a title, a sentence, three tabs and three
-   buttons onto whatever lines the window width allowed. */
-.plans-header {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.plans-top-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.plans-main-title {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  margin: 0;
-}
-
-.plans-filter-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-}
-
-.plan-tab-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--text-muted);
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    color 120ms ease;
-}
-
-/* The number rides inside the tab rather than in the label, so the words stay
-   the same width as the counts change and the row does not twitch. */
-.plan-tab-count {
-  min-width: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--surface-3, var(--surface));
-  border: 1px solid var(--border);
-  font-size: 10.5px;
-  font-weight: 700;
-  line-height: 16px;
-  text-align: center;
-}
-
-.plan-tab-btn.active .plan-tab-count {
-  border-color: transparent;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.plan-tab-btn:hover {
-  color: var(--text);
-}
-
-.plan-tab-btn.active {
-  background: var(--surface);
-  color: var(--accent);
-  font-weight: 650;
-  box-shadow: var(--shadow-sm);
+  font-size: var(--text-2xs);
 }
 
 /* Plan Starters Grid */
@@ -1420,19 +1382,19 @@
 }
 
 .plan-starter-title {
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 650;
   color: var(--text);
 }
 
 .plan-starter-desc {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   line-height: 1.35;
 }
 
 .plan-starter-sub-count {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   color: var(--accent);
   margin-top: 4px;
@@ -1493,16 +1455,17 @@
   border-radius: var(--radius-sm);
 }
 
-/* The quick ways into a selection, on their own line under the filter tabs so
-   the header keeps its shape when nobody is selecting. */
+/* The quick ways into a selection. Its own strip below the header, present
+   only while selecting, so the header keeps its shape when nobody is. */
 .plans-pick-bar {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
 }
 
 .plan-card.selected {
@@ -1587,7 +1550,7 @@
      which plan this is. */
   flex: 1;
   line-height: 1.3;
-  font-size: 15px;
+  font-size: var(--text-lg);
   font-weight: 650;
   letter-spacing: -0.01em;
   margin: 0;
@@ -1606,7 +1569,7 @@
 }
 
 .plan-card-desc {
-  font-size: 12.5px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   margin: 0;
   line-height: 1.35;
@@ -1621,51 +1584,8 @@
   cursor: pointer;
 }
 
-/* One pill, worn four ways.
-   The meta row used to mix five shapes — a rounded category chip, a square
-   uppercase priority tag, a status pill, a bordered deadline and a today pill
-   — each with its own radius, weight and case. Five shapes read as five kinds
-   of thing; they are all the same kind of thing, which is "a fact about this
-   plan". Colour is what separates them now, and only where colour means
-   something: overdue is red, today is amber, the rest are quiet. */
-.plan-meta-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.plan-meta-pill.is-today {
-  border-color: transparent;
-  background: rgba(245, 158, 11, 0.14);
-  color: #b45309;
-}
-
-.plan-meta-pill.is-overdue {
-  border-color: transparent;
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-/* Only HIGH earns a colour. A priority tag on every card, in three colours,
-   is a traffic light nobody can read; the one that means "do this first" is
-   worth seeing from across the page. */
-.plan-meta-pill.is-priority.HIGH {
-  border-color: transparent;
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-/* The stage chip: the card's one control, and the fact the tabs sort by.
-   Sized like the pills beside it so the row still reads as one line of facts,
-   but it is a button and says so on hover. */
+/* The plan card wears the app's pill (see `ui.css`), with one addition of its
+   own: the stage chip, which is the only pill on any card that is a button. */
 .plan-stage-chip {
   display: inline-flex;
   align-items: center;
@@ -1674,7 +1594,7 @@
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface-2);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 650;
   color: var(--text-muted);
   cursor: pointer;
@@ -1747,7 +1667,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 650;
   color: var(--text-faint);
   transition: color 120ms ease;
@@ -1763,7 +1683,6 @@
   margin-top: 6px;
 }
 
-
 /* Rows read as a list, not as a stack of boxes inside the card box. The
    divider carries the separation that a filled background used to. Matches
    the .budget-row pattern. */
@@ -1773,7 +1692,7 @@
   gap: 8px;
   padding: 7px 2px;
   border-bottom: 1px solid var(--border);
-  font-size: 12.5px;
+  font-size: var(--text-xs);
   transition: background 120ms ease;
   /* Anchors the drop marker drawn in the gap above or below this row. */
   position: relative;
@@ -1842,7 +1761,7 @@
 .plan-subtask-more {
   align-self: flex-start;
   padding: 6px 2px;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   color: var(--text-muted);
   transition: color 120ms ease;
@@ -1854,7 +1773,7 @@
 
 .plan-card-count {
   flex: none;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   color: var(--text-muted);
 }
@@ -1872,12 +1791,12 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
+  background: var(--warning-soft);
+  color: var(--warning);
   flex: none;
 }
 
@@ -1891,8 +1810,8 @@
   flex: none;
   padding: 4px;
   border-radius: var(--radius-sm);
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.12);
+  color: var(--warning);
+  background: var(--warning-soft);
   transition:
     background 120ms ease,
     color 120ms ease;
@@ -1900,21 +1819,22 @@
 
 .btn.ghost.plan-subtask-today-btn:hover,
 .btn.ghost.plan-subtask-today-btn:focus-visible {
-  background: rgba(245, 158, 11, 0.26);
-  color: #d97706;
+  background: var(--warning);
+  color: var(--accent-text);
 }
 
 /* Already on today: filled, so "put it there" and "take it off" do not look
    like the same button. */
 .btn.ghost.plan-subtask-today-btn.active {
-  background: #f59e0b;
-  color: #fff;
+  background: var(--warning);
+  color: var(--accent-text);
 }
 
 .btn.ghost.plan-subtask-today-btn.active:hover,
 .btn.ghost.plan-subtask-today-btn.active:focus-visible {
-  background: #d97706;
-  color: #fff;
+  background: var(--warning);
+  color: var(--accent-text);
+  filter: brightness(0.92);
 }
 
 /* ---- Plan deadlines -------------------------------------------------
@@ -1944,7 +1864,7 @@
   gap: 4px;
   cursor: pointer;
   user-select: none;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 650;
   color: var(--text-faint);
   transition: color 120ms ease;
@@ -1954,7 +1874,7 @@
 }
 
 .plan-deadlines-count {
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
@@ -1963,7 +1883,7 @@
 .plan-deadlines-add {
   flex: none;
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   color: var(--text-muted);
 }
@@ -1977,7 +1897,7 @@
   gap: 8px;
   padding: 7px 2px;
   border-bottom: 1px solid var(--border);
-  font-size: 12.5px;
+  font-size: var(--text-xs);
 }
 .plan-deadline-item:last-child {
   border-bottom: none;
@@ -2035,7 +1955,7 @@
   border: 1px dashed var(--border);
   border-radius: 4px;
   background: none;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
@@ -2058,7 +1978,7 @@
 
 .plan-deadline-missed {
   flex: none;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   color: var(--danger);
 }
@@ -2093,44 +2013,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-
-
 .plan-subtask-add-row {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-top: 8px;
-}
-
-/* ================================================================== */
-/* TASKS VIEW STYLES                                                 */
-/* ================================================================== */
-
-.task-summary-banner {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: var(--space-3);
-}
-
-.task-summary-stat {
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.task-summary-val {
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-}
-
-.task-summary-lbl {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  margin-top: 2px;
 }
 
 /* Tasks Quick Add Card */
@@ -2152,7 +2039,7 @@
 }
 
 .tasks-quick-input {
-  font-size: 14.5px;
+  font-size: var(--text-md);
 }
 
 .tasks-quick-options-row {
@@ -2168,134 +2055,6 @@
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.tasks-quick-group-lbl {
-  font-size: 11px;
-  color: var(--text-faint);
-  font-weight: 600;
-  margin-right: 2px;
-}
-
-.tasks-quick-pill {
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--text-muted);
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-
-.tasks-quick-pill:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.tasks-quick-pill.active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 650;
-}
-
-.tasks-quick-pill.prio-high.active {
-  background: var(--danger-soft);
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.tasks-quick-pill.prio-med.active {
-  background: var(--warning-soft);
-  border-color: var(--warning);
-  color: var(--warning);
-}
-
-/* Tasks Controls Bar */
-.tasks-controls-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.tasks-filter-pills {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.filter-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-
-.filter-pill:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.filter-pill.active {
-  background: var(--text);
-  border-color: var(--text);
-  color: var(--surface);
-  font-weight: 600;
-}
-
-.filter-pill.danger.active {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #fff;
-}
-
-.tasks-view-switcher {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-}
-
-.tasks-view-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
-  border: none;
-  border-radius: 4px;
-  background: none;
-  color: var(--text-muted);
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-
-.tasks-view-btn:hover {
-  color: var(--text);
-}
-
-.tasks-view-btn.active {
-  background: var(--surface);
-  color: var(--accent);
-  font-weight: 650;
-  box-shadow: var(--shadow-sm);
 }
 
 /* Kanban Board Layout */
@@ -2326,7 +2085,7 @@
 }
 
 .kanban-col-title {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 700;
   margin: 0;
   flex: 1;
@@ -2341,7 +2100,7 @@
 .kanban-empty-slot {
   text-align: center;
   padding: 24px 8px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-faint);
 }
 
@@ -2385,7 +2144,7 @@
   border-radius: 999px;
   background: var(--warning-soft);
   color: #d97706;
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 800;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -2398,7 +2157,7 @@
 }
 
 .today-highlight-title {
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: 650;
   color: var(--text);
 }
@@ -2409,36 +2168,9 @@
 }
 
 .today-highlight-desc {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   margin-top: 2px;
-}
-
-/* Today Fast Add Bar */
-.today-fast-add-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.today-fast-input {
-  border: none;
-  background: none;
-  font-size: 13.5px;
-}
-
-.today-fast-input:focus {
-  box-shadow: none;
-}
-
-.prio-high-active {
-  background: var(--danger-soft) !important;
-  color: var(--danger) !important;
-  font-weight: 700;
 }
 
 /* ==================================================================
@@ -2456,7 +2188,7 @@
 
 .budget-range {
   margin: 0;
-  font-size: 17px;
+  font-size: var(--text-xl);
   font-weight: 650;
   letter-spacing: -0.01em;
 }
@@ -2518,7 +2250,7 @@
 
 .budget-stat-label {
   grid-area: label;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-muted);
 }
@@ -2526,7 +2258,7 @@
 .budget-stat-value {
   grid-area: value;
   margin-top: 6px;
-  font-size: 22px;
+  font-size: var(--text-2xl);
   font-weight: 700;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -2535,7 +2267,7 @@
 
 .budget-stat-hint {
   grid-area: hint;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   color: var(--text-faint);
 }
 
@@ -2547,7 +2279,7 @@
    Deliberately quieter than the totals underneath it — none of these numbers
    is money that has moved. */
 .wishlist-total {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
@@ -2569,7 +2301,7 @@
 
 .wishlist-empty {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .wishlist-rows {
@@ -2599,7 +2331,7 @@
   flex: 1 1 auto;
 }
 .wishlist-row-title {
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 /* The link is a destination, not the row: it stays small and never competes
    with the name of the thing. */
@@ -2607,7 +2339,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: var(--text-2xs);
   color: var(--text-faint);
   text-decoration: none;
   max-width: 180px;
@@ -2618,7 +2350,7 @@
 }
 
 .wishlist-row-price {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -2657,7 +2389,7 @@
 
 .budget-entry-error {
   flex-basis: 100%;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--danger);
 }
 
@@ -2696,7 +2428,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .budget-bar-track {
@@ -2714,7 +2446,7 @@
 }
 
 .budget-bar-value {
-  font-size: 12.5px;
+  font-size: var(--text-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -2723,7 +2455,7 @@
 
 .budget-generated-note {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
@@ -2755,7 +2487,7 @@
   background: transparent;
   color: var(--text-muted);
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   text-align: right;
   font-variant-numeric: tabular-nums;
   opacity: 0;
@@ -2811,7 +2543,7 @@
   border-radius: var(--radius-sm);
   background: var(--danger-soft);
   color: var(--danger);
-  font-size: 12.5px;
+  font-size: var(--text-xs);
 }
 
 .import-summary {
@@ -2829,7 +2561,7 @@
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
 }
 
 .import-chip.warn {
@@ -2846,7 +2578,7 @@
 .import-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: var(--text-xs);
 }
 
 .import-table th {
@@ -2857,7 +2589,7 @@
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 650;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -2889,7 +2621,7 @@
   display: block;
   max-width: 320px;
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
 }
 .import-flag {
   display: inline-block;
@@ -2898,7 +2630,7 @@
   border-radius: 999px;
   background: var(--warning-soft, var(--surface-hover));
   color: var(--warning);
-  font-size: 10px;
+  font-size: var(--text-3xs);
 }
 .import-flag.kind {
   background: var(--surface-hover);
@@ -2921,7 +2653,7 @@
   gap: 10px;
 }
 .spend-total {
-  font-size: 22px;
+  font-size: var(--text-2xl);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -2932,7 +2664,7 @@
   gap: 3px;
   padding: 2px 7px;
   border-radius: 999px;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   font-weight: 650;
 }
 /* Spending more is the bad direction, so the usual green/red is inverted. */
@@ -2946,7 +2678,7 @@
 }
 .spend-delta.sm {
   padding: 0 5px;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
 }
 
 .spend-search {
@@ -2998,10 +2730,10 @@
 }
 .spend-name {
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .spend-count {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -3021,13 +2753,13 @@
   background: var(--accent);
 }
 .spend-value {
-  font-size: 12.5px;
+  font-size: var(--text-xs);
   font-weight: 600;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 .spend-share {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   text-align: right;
 }
 
@@ -3048,16 +2780,16 @@
   align-items: center;
   gap: 8px;
   padding: 3px 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .spend-average {
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   white-space: nowrap;
 }
 .spend-refund {
   color: var(--success);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   white-space: nowrap;
 }
 
@@ -3095,7 +2827,7 @@
 }
 
 .spend-capture .spend-amount {
-  font-size: 24px;
+  font-size: var(--text-2xl);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   text-align: center;
@@ -3107,7 +2839,7 @@
   padding: 7px 10px;
   border-radius: var(--radius-sm);
   background: var(--accent-soft);
-  font-size: 12.5px;
+  font-size: var(--text-xs);
 }
 
 .spend-done {
@@ -3120,7 +2852,7 @@
 }
 
 .spend-done strong {
-  font-size: 24px;
+  font-size: var(--text-2xl);
   font-variant-numeric: tabular-nums;
 }
 .spend-done svg {
@@ -3130,7 +2862,7 @@
 .spend-provisional-note {
   max-width: 260px;
   color: var(--text-faint);
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   line-height: 1.45;
 }
 
@@ -3141,7 +2873,7 @@
   border: 1px dashed var(--border);
   border-radius: 999px;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--text-3xs);
   white-space: nowrap;
 }
 
@@ -3157,7 +2889,7 @@
 }
 
 .spend-day-total strong {
-  font-size: 20px;
+  font-size: var(--text-2xl);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3175,7 +2907,7 @@
   gap: 8px;
   padding: 6px 2px;
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .spend-day-row:last-child {
@@ -3237,22 +2969,22 @@
   flex: 1 1 auto;
 }
 .statement-what strong {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 550;
 }
 .statement-what .faint {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
 }
 
 .statement-count {
   flex: none;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
 }
 
 .statement-amount {
   flex: none;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
@@ -3275,7 +3007,7 @@
 
 .statement-done {
   flex: none;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
 }
 
 .statement-row.is-reverted .statement-what strong,
@@ -3291,7 +3023,7 @@
   border: 1px dashed var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 /* Reconciliation in the import preview -------------------------------- */
@@ -3313,18 +3045,17 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   cursor: pointer;
 }
 
 .import-match-why {
   display: block;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--text-3xs);
 }
 
 /* Mail settings ------------------------------------------------------- */
-
 
 .settings-rule {
   border: none;
@@ -3350,15 +3081,6 @@
   opacity: 0;
   pointer-events: none;
 }
-
-/* The day a task must be finished by, in a list row. Dashed like its calendar
-   marker so the two read as the same fact in two places. */
-.task-deadline {
-  padding: 0 5px;
-  border: 1px dashed var(--border);
-  border-radius: 999px;
-  font-variant-numeric: tabular-nums;
-}
 .task-deadline.is-overdue { border-color: var(--danger); color: var(--danger); }
 
 /* ==================================================================
@@ -3376,7 +3098,7 @@
 .fixed-hint,
 .ledger-hint {
   margin: -2px 0 0;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   line-height: 1.5;
 }
 
@@ -3394,12 +3116,12 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
 .fixed-total b {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text);
@@ -3465,7 +3187,7 @@
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .fixed-row-text {
@@ -3475,17 +3197,17 @@
 }
 
 .fixed-row-name {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 550;
 }
 
 .fixed-row-when {
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   color: var(--text-faint);
 }
 
 .fixed-row-amount {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
@@ -3502,7 +3224,7 @@
   gap: 4px;
   padding: 2px 7px;
   border-radius: 999px;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -3544,7 +3266,7 @@
 }
 
 .fixed-field > span {
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--text-faint);
@@ -3556,7 +3278,7 @@
   align-items: center;
   gap: 6px;
   flex-basis: 100%;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -3631,7 +3353,7 @@
 
 .ledger-day-head h4 {
   margin: 0;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   font-weight: 650;
   letter-spacing: 0.01em;
   color: var(--text-muted);
@@ -3645,7 +3367,7 @@
 }
 
 .ledger-day-total {
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
@@ -3693,12 +3415,12 @@
    way round — which is how this list used to read — gives a month of shopping
    forty rows that all say "Groceries". */
 .ledger-row-title {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 550;
 }
 
 .ledger-row-detail {
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   color: var(--text-faint);
 }
 
@@ -3713,7 +3435,7 @@
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--text-3xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -3738,7 +3460,7 @@
 }
 
 .ledger-row-amount {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
@@ -3787,7 +3509,7 @@
    entry, not another thing to fill in. */
 .ledger-edit-hint {
   flex: 1 0 100%;
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 
 /* The limit editor sits beside the category head rather than inside it: a

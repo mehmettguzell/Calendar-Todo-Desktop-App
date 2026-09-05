@@ -368,7 +368,7 @@ function FixedEditor({
 
   return (
     <form className="fixed-editor" onSubmit={submit}>
-      <div className="segmented sm">
+      <div className="segmented-tabs is-sm">
         {MONEY_FLOWS.map((option) => (
           <button
             key={option}

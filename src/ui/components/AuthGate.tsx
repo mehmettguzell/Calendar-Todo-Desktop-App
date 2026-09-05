@@ -129,7 +129,7 @@ export function AuthGate() {
                   <button
                     type="button"
                     className="link-btn"
-                    style={{ fontSize: 11.5 }}
+                    style={{ fontSize: "var(--text-2xs)" }}
                     onClick={() => setMode("forgot")}
                   >
                     Şifremi unuttum
@@ -179,7 +179,7 @@ export function AuthGate() {
                 <strong>{t("authTrialTitle")}</strong>
                 <p
                   className="faint"
-                  style={{ fontSize: 11.5, margin: "2px 0 0 0" }}
+                  style={{ fontSize: "var(--text-2xs)", margin: "2px 0 0 0" }}
                 >
                   {t("authTrialBody")}
                 </p>
@@ -273,7 +273,7 @@ export function AuthGate() {
         {/* 3. FORGOT MODE */}
         {mode === "forgot" && (
           <div className="col" style={{ gap: 14 }}>
-            <p className="faint" style={{ fontSize: 13 }}>
+            <p className="faint" style={{ fontSize: "var(--text-sm)" }}>
               Kayıtlı e-posta adresinizi girin. Şifrenizi sıfırlayabileceğiniz
               bir bağlantı göndereceğiz.
             </p>

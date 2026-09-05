@@ -22,6 +22,7 @@ import { SettingsModal } from "@/ui/SettingsModal";
 import { Sidebar, type ViewId } from "@/ui/Sidebar";
 import { Topbar } from "@/ui/Topbar";
 import { ReminderAlerts } from "@/ui/components/ReminderAlerts";
+import { focusComposer } from "@/ui/task/Composer";
 import { QuickAdd } from "@/ui/task/QuickAdd";
 import { TaskPanel } from "@/ui/task/TaskPanel";
 import { NotePanel } from "@/ui/task/NotePanel";
@@ -243,7 +244,18 @@ export function App() {
   useApplyTheme(settings.theme);
   useApplyLanguage(language);
   useShortcuts({
-    onNew: () => setQuickAdd({ date: anchor, time: null }),
+    /*
+     * Ctrl+N goes to the box that is already on screen.
+     *
+     * Three of the seven views carry a composer, and on those the modal is a
+     * heavier answer to a question the page has already answered — it covers
+     * the list you were looking at to ask for one line of text. Where there is
+     * no composer (the calendar, the budget) the modal is still the way in,
+     * and `focusComposer` says which case this is by whether it found one.
+     */
+    onNew: () => {
+      if (!focusComposer()) setQuickAdd({ date: anchor, time: null });
+    },
     onToday: () => {
       setAnchor(toLocalDate(new Date()));
       setView("today");
@@ -291,7 +303,7 @@ export function App() {
     return (
       <div className="loading">
         <span className="spinner" />
-        Loading your tasks…
+        {t("loadingTasks")}
       </div>
     );
   }
@@ -319,7 +331,7 @@ export function App() {
     return (
       <div className="loading">
         <span className="spinner" />
-        Loading your tasks
+        {t("loadingTasks")}
       </div>
     );
   }

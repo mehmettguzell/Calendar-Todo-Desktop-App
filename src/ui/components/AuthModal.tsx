@@ -187,7 +187,7 @@ export function AuthModal() {
                   <button
                     type="button"
                     className="link-btn"
-                    style={{ fontSize: 11.5 }}
+                    style={{ fontSize: "var(--text-2xs)" }}
                     onClick={() => setView("forgot_password")}
                   >
                     Şifremi unuttum
@@ -238,7 +238,7 @@ export function AuthModal() {
                 <strong>{t("authTrialTitle")}</strong>
                 <p
                   className="faint"
-                  style={{ fontSize: 12, margin: "2px 0 0 0" }}
+                  style={{ fontSize: "var(--text-xs)", margin: "2px 0 0 0" }}
                 >
                   Tüm cihazlarınızda (Masaüstü & Mobil) anlık senkronizasyon ve
                   ilk 7 güne özel %40 indirim hakkı.
@@ -333,7 +333,7 @@ export function AuthModal() {
         {/* 3. FORGOT PASSWORD VIEW */}
         {view === "forgot_password" && (
           <div className="col" style={{ gap: 14 }}>
-            <p className="faint" style={{ fontSize: 13 }}>
+            <p className="faint" style={{ fontSize: "var(--text-sm)" }}>
               Kayıtlı e-posta adresinizi girin. Şifrenizi sıfırlayabileceğiniz
               güvenli bir bağlantı göndereceğiz.
             </p>
@@ -382,7 +382,7 @@ export function AuthModal() {
 
         {view === "new_password" && (
           <div className="col" style={{ gap: 14 }}>
-            <p className="faint" style={{ fontSize: 13, lineHeight: 1.5 }}>
+            <p className="faint" style={{ fontSize: "var(--text-sm)", lineHeight: 1.5 }}>
               E-postanıza gelen 6 haneli kodu girin ve yeni şifrenizi belirleyin.
               Kod gelmediyse spam klasörünü kontrol edin.
             </p>
@@ -446,7 +446,7 @@ export function AuthModal() {
               </div>
 
               {localError ? (
-                <p style={{ color: "var(--danger)", fontSize: 12.5, margin: 0 }}>
+                <p style={{ color: "var(--danger)", fontSize: "var(--text-xs)", margin: 0 }}>
                   {localError}
                 </p>
               ) : null}
@@ -514,7 +514,7 @@ export function AuthModal() {
               >
                 <span
                   className="row"
-                  style={{ gap: 4, fontWeight: 650, fontSize: 13 }}
+                  style={{ gap: 4, fontWeight: 650, fontSize: "var(--text-sm)" }}
                 >
                   <Crown size={14} style={{ color: "#f59e0b" }} />
                   {t(getSubscriptionStatusLabel(trial).badgeKey as TranslationKey, getSubscriptionStatusLabel(trial).params)}
@@ -529,7 +529,7 @@ export function AuthModal() {
                   </button>
                 )}
               </div>
-              <p className="faint" style={{ fontSize: 12, margin: 0 }}>
+              <p className="faint" style={{ fontSize: "var(--text-xs)", margin: 0 }}>
                 {t(getSubscriptionStatusLabel(trial).descriptionKey as TranslationKey, getSubscriptionStatusLabel(trial).params)}
               </p>
             </div>

@@ -14,7 +14,7 @@ export function HistoryTimeline({ entries }: { entries: HistoryEntry[] }) {
 
   if (entries.length === 0) {
     return (
-      <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+      <p className="faint" style={{ margin: 0, fontSize: "var(--text-xs)" }}>
         {t("historyEmpty")}
       </p>
     );

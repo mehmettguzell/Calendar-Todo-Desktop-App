@@ -252,7 +252,7 @@ export function NotePanel({
         <textarea
           ref={titleRef}
           className="panel-title-input"
-          style={{ fontSize: 22, fontWeight: 700, padding: "12px 16px 0" }}
+          style={{ fontSize: "var(--text-2xl)", fontWeight: 700, padding: "12px 16px 0" }}
           rows={1}
           value={title}
           placeholder={t("notesTitlePlaceholder")}
@@ -293,7 +293,7 @@ export function NotePanel({
             disabled={reading}
             onClick={() => prefixLine("# ")}
           >
-            <span style={{ fontSize: 13, fontWeight: 700 }}>H</span>
+            <span style={{ fontSize: "var(--text-sm)", fontWeight: 700 }}>H</span>
           </button>
           <span className="grow" />
           <button

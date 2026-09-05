@@ -1,0 +1,369 @@
+/* ==========================================================================
+   The shared shapes.
+
+   Everything in here is used by more than one screen. A rule that belongs to
+   one view stays in that view's section of views.css; a rule that decides what
+   "a page header" or "a tab" looks like belongs here, because the whole point
+   is that there is exactly one answer to each of those.
+   ========================================================================== */
+
+/* -------------------------------------------------------- page header ---- */
+
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.page-header-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.page-header-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.page-header-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* The titleless shape: filter on the left, actions on the right, one line. */
+.page-header.is-toolbar {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* -------------------------------------------------------------- tabs ----- */
+
+/* A tray the active tab sits *in*, rather than an underline or a border per
+   button: at this size a tray reads as one control with one thing chosen,
+   which is what a filter is.
+
+   This is the app's only tab strip, and `.segmented` is gone: there is one
+   set of rules, whether the strip comes from the `<Segmented>` component or is
+   written out by hand where the buttons need their own disabled state. Handmade
+   ones mark the chosen button with `aria-pressed`, the component with
+   `aria-selected`, and both are styled here so neither can drift. */
+.segmented-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.segmented-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* Written as a descendant rule as well as a class, so a strip built by hand
+   needs no class on each button — only the one on the tray. */
+.segmented-tab,
+.segmented-tabs > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.segmented-tabs.is-sm .segmented-tab,
+.segmented-tabs.is-sm > button {
+  padding: 4px 9px;
+  font-size: var(--text-xs);
+}
+
+.segmented-tab:hover,
+.segmented-tabs > button:hover {
+  color: var(--text);
+}
+
+.segmented-tab.active,
+.segmented-tabs > button[aria-pressed="true"],
+.segmented-tabs > button[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 650;
+  box-shadow: var(--shadow-sm);
+}
+
+.segmented-tab:disabled,
+.segmented-tabs > button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The number rides inside the tab rather than in the label, so the words keep
+   their width as the counts change and the row does not twitch. */
+/* The page's own ground, not a surface: the count reads as a well set into the
+   tray in both themes. `--surface` is lighter than the tray in light mode and
+   darker in dark mode, which made the same rule mean two different things. */
+.segmented-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.segmented-tab.active .segmented-count,
+.segmented-tab[aria-selected="true"] .segmented-count {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.segmented-count.is-danger {
+  border-color: transparent;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* --------------------------------------------------------- meta pills ---- */
+
+/* One pill, worn in several colours, wherever a row or a card states a fact
+   about a task: its category, its priority, the day it is due.
+
+   Before this there were nine shapes doing that job across the app — rounded
+   chips, square uppercase tags, dashed outlines, coloured pills — and a reader
+   had to learn each one to find out it meant the same kind of thing every time.
+   Colour is spent only where it changes what you would do: late is red, today
+   is amber, high priority is red, everything else is quiet. */
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.meta-pill.is-today {
+  border-color: transparent;
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.meta-pill.is-overdue,
+.meta-pill.is-high {
+  border-color: transparent;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.meta-pill.is-done {
+  border-color: transparent;
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.meta-pill.is-accent {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.meta-pill .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex: none;
+}
+
+/* ------------------------------------------------------ hover actions ---- */
+
+/* Row controls that appear when the pointer (or the keyboard) arrives.
+
+   A list of forty rows carrying three buttons each is 120 buttons on screen,
+   and none of them is the thing being read. They are all still one press away
+   — and still reachable by keyboard, which is why `:focus-within` is here and
+   why the container keeps its width whether or not the buttons are showing:
+   nothing may shift under the pointer on hover. */
+.hover-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.hover-actions:focus-within,
+.row-hover:hover .hover-actions,
+.row-hover:focus-within .hover-actions,
+.hover-actions.is-open {
+  opacity: 1;
+}
+
+/* Coarse pointers have no hover at all, so the controls simply stay. */
+@media (hover: none) {
+  .hover-actions {
+    opacity: 1;
+  }
+}
+
+/* ----------------------------------------------------------- composer ---- */
+
+/* The one place a task is written, wherever it appears.
+
+   It is a card rather than a bare input because it grows: the parsed chips
+   land under the line, and "Detaylar" unfolds the full form beneath them
+   without the box moving out from under the cursor. */
+.composer {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.composer-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 8px 8px 12px;
+}
+
+.composer-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  font-size: var(--text-md);
+  line-height: 22px;
+  color: var(--text);
+}
+
+.composer-input::placeholder {
+  color: var(--text-faint);
+}
+
+.composer-details-btn {
+  flex: none;
+  gap: 4px;
+  color: var(--text-faint);
+}
+
+.composer:focus-within .composer-details-btn,
+.composer-details-btn:hover,
+.composer-details-btn.active {
+  color: var(--text-muted);
+}
+
+/* The examples, under the line, while the cursor is in it and it is empty. */
+.composer-teach {
+  padding: 0 12px 9px;
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* What the line was understood to mean, before it is saved. The parse is only
+   safe to trust because this is on screen: a wrong guess is visible before the
+   task exists, not after. */
+.composer-chips {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  padding: 0 12px 9px;
+}
+
+.composer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+
+.composer-chip.is-quiet {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.composer-details {
+  border-top: 1px solid var(--border);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ------------------------------------------------------------- motion ---- */
+
+/*
+   The shapes above all move on the same three signals — a hover, a focus, an
+   open — and they all move the same small amount, over the same 120ms. Someone
+   who has asked their system for less motion gets the states without the
+   travel: everything still changes, nothing slides.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .segmented-tab,
+  .segmented-tabs > button,
+  .hover-actions,
+  .composer,
+  .meta-pill {
+    transition: none;
+  }
+}

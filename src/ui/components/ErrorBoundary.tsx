@@ -75,13 +75,13 @@ export class ErrorBoundary extends Component<Props, State> {
               <AlertTriangle size={24} />
             </div>
 
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+            <h2 style={{ margin: 0, fontSize: "var(--text-xl)", fontWeight: 700 }}>
               Bir şeyler ters gitti
             </h2>
             <p
               style={{
                 margin: 0,
-                fontSize: 13,
+                fontSize: "var(--text-sm)",
                 color: "var(--muted, #8b8d98)",
                 lineHeight: 1.5,
               }}
@@ -102,7 +102,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 color: "#fff",
                 border: "none",
                 fontWeight: 600,
-                fontSize: 13,
+                fontSize: "var(--text-sm)",
                 cursor: "pointer",
                 marginTop: 8,
               }}

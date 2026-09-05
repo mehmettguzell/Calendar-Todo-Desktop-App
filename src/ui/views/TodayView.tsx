@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { formatTracked, toLocalDate } from "@/domain/datetime";
 import { getMotivationalMessage } from "@/domain/gamification";
-import type { Priority, Task, TaskInstance } from "@/domain/types";
+import type { Task, TaskInstance } from "@/domain/types";
 import { fireConfetti } from "@/lib/confetti";
 import { cn } from "@/lib/cn";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
@@ -30,6 +30,7 @@ import { Empty } from "@/ui/components/primitives";
 import { ProgressRing } from "@/ui/components/ProgressRing";
 import { WeeklyBarChart } from "@/ui/components/WeeklyBarChart";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
+import { Composer, focusComposer } from "@/ui/task/Composer";
 import { TaskList } from "@/ui/task/TaskList";
 
 /**
@@ -49,14 +50,11 @@ export function TodayView({
   const today = toLocalDate(now);
   const groups = useTodoGroups(filters);
   const sessions = useFocusSessions();
-  const createTask = useStore((s) => s.createTask);
   const rollOverTo = useStore((s) => s.rollOverTo);
   const { t } = useI18n();
   const { streaks } = useGamificationStats();
   const weeklyStats = useWeeklyStatsHook(7);
 
-  const [quickTitle, setQuickTitle] = useState("");
-  const [quickPriority, setQuickPriority] = useState<Priority>("NONE");
   const [showCompletedSection, setShowCompletedSection] = useState(true);
   const [rolled, setRolled] = useState(0);
 
@@ -127,6 +125,12 @@ export function TodayView({
     [sorted],
   );
 
+  const hasWeekHistory = useMemo(
+    () =>
+      weeklyStats.some((day) => day.tasksDone > 0 || day.focusMinutes > 0),
+    [weeklyStats],
+  );
+
   // Dynamic motivational message
   const motivation = useMemo(
     () =>
@@ -152,23 +156,10 @@ export function TodayView({
     prevDoneRef.current = done;
   }, [done, sorted.length]);
 
-  const handleQuickAddToday = () => {
-    const trimmed = quickTitle.trim();
-    if (!trimmed) return;
-    createTask({
-      title: trimmed,
-      dueDate: today,
-      allDay: true,
-      priority: quickPriority,
-    });
-    setQuickTitle("");
-    setQuickPriority("NONE");
-  };
-
   return (
     <div className="page">
       {/* Today Motivation & Progress Hero Header */}
-      <div className="today-hero-card section">
+      <div className={cn("today-hero-card section", !hasWeekHistory && "is-solo")}>
         <div className="today-hero-left">
           <ProgressRing
             completed={done}
@@ -240,45 +231,21 @@ export function TodayView({
           </div>
         </div>
 
-        <div className="today-hero-right">
-          <WeeklyBarChart stats={weeklyStats} />
-        </div>
+        {/* A chart of seven empty days is the first thing a new account would
+            see, and it says nothing except that there is nothing. It arrives
+            with the first finished task and stays from then on. */}
+        {hasWeekHistory ? (
+          <div className="today-hero-right">
+            <WeeklyBarChart stats={weeklyStats} />
+          </div>
+        ) : null}
       </div>
 
-      {/* Inline Fast Add for Today */}
-      <div className="today-fast-add-bar section">
-        <input
-          className="input grow today-fast-input"
-          placeholder={t("todayFastAdd")}
-          value={quickTitle}
-          onChange={(e) => setQuickTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleQuickAddToday();
-          }}
-        />
-        <div className="row" style={{ gap: 4 }}>
-          <button
-            type="button"
-            className={cn(
-              "btn sm ghost",
-              quickPriority === "HIGH" && "active prio-high-active",
-            )}
-            title={t("todayHighPriority")}
-            onClick={() =>
-              setQuickPriority(quickPriority === "HIGH" ? "NONE" : "HIGH")
-            }
-          >
-            🔥 {t("todayHighPriorityShort")}
-          </button>
-          <button
-            type="button"
-            className="btn sm primary"
-            disabled={!quickTitle.trim()}
-            onClick={handleQuickAddToday}
-          >
-            <Plus size={13} /> {t("quickAddButton")}
-          </button>
-        </div>
+      {/* The same box as every other "add a task" in the app. The high-priority
+          toggle that used to sit beside it is not gone — "!yüksek" in the line
+          says it, and so does the priority field under Detaylar. */}
+      <div className="section">
+        <Composer defaultDate={today} placeholder={t("todayFastAdd")} />
       </div>
 
       {/* Overdue Section */}
@@ -305,7 +272,7 @@ export function TodayView({
                 <CalendarCheck size={13} /> {t("rollOver")}
               </button>
             ) : rolled > 0 ? (
-              <span className="faint" style={{ fontSize: 12 }}>
+              <span className="faint" style={{ fontSize: "var(--text-xs)" }}>
                 {rolled} {t("rollOverDone")}
               </span>
             ) : null
@@ -350,6 +317,15 @@ export function TodayView({
             icon={<CalendarCheck size={28} />}
             title={t("todayEmptyTitle")}
             hint={t("todayEmptyHint")}
+            action={
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => focusComposer()}
+              >
+                <Plus size={14} /> {t("emptyAddFirstTask")}
+              </button>
+            }
           />
         ) : (
           <TaskList

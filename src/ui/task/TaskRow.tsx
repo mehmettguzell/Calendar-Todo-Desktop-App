@@ -5,6 +5,7 @@ import {
   Clock,
   Flag,
   GripVertical,
+  MoreHorizontal,
   Play,
   Repeat,
   Square,
@@ -25,7 +26,7 @@ import {
 import { useSelectionStore } from "@/state/selectionStore";
 import { useNow, useStore } from "@/state/store";
 import { useUndoStore } from "@/state/undoStore";
-import { Checkbox, StatusBadge } from "@/ui/components/primitives";
+import { Checkbox, Popover, StatusBadge } from "@/ui/components/primitives";
 import type { RowReorder } from "./useListReorder";
 import { SnoozeMenu } from "./SnoozeMenu";
 import { useRequestDelete } from "./useRequestDelete";
@@ -88,6 +89,7 @@ export function TaskRow({
   const tracked = useTrackedSeconds(task.id);
   const now = useNow();
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const selectionActive = useSelectionStore((s) => s.active);
   const picked = useSelectionStore((s) => s.ids.includes(task.id));
@@ -135,6 +137,7 @@ export function TaskRow({
     <div
       className={cn(
         "task-row",
+        "row-hover",
         done && "done",
         selected && "selected",
         picking && "picking",
@@ -193,46 +196,46 @@ export function TaskRow({
           ) : null}
         </div>
 
+        {/* One pill shape for every fact about the task.
+            This line used to mix eight of them — a flagged deadline, a bare
+            clock row, a monospace time, an "all day" tag, a coloured dot, an
+            accent-coloured parent link, a progress strip, a timer and one tag
+            per label — each with its own size, weight and colour. They all
+            answer the same question ("what else is true of this?"), so they
+            look the same now, and colour is spent only where it changes what
+            you would do next. */}
         <div className="task-meta">
-          {/* Only when there is one, and always in front of the schedule: the
-              day a task must be done by is what a list is scanned for. */}
+          {/* Always in front of the schedule: the day a task must be done by
+              is what a list is scanned for. */}
           {task.deadline && !task.recurrence ? (
             <span
-              className={cn("row", "task-deadline", instance.status === "OVERDUE" && "is-overdue")}
-              style={{ gap: 4 }}
+              className={cn(
+                "meta-pill",
+                instance.status === "OVERDUE" && "is-overdue",
+              )}
               title={t("deadlineOn", { date: task.deadline })}
             >
-              <Flag size={12} />
+              <Flag size={11} />
               {task.deadline}
             </span>
           ) : null}
-          {showDate ? (
-            <span className="row" style={{ gap: 4 }}>
-              <Clock size={12} />
-              {describeWhen(instance.date, time ? task.startTime : null, now)}
+          {showDate || time ? (
+            <span className="meta-pill">
+              <Clock size={11} />
+              {showDate
+                ? describeWhen(instance.date, time ? task.startTime : null, now)
+                : null}
+              {time ? <span className="mono">{time}</span> : null}
             </span>
           ) : null}
-          {time ? <span className="mono">{time}</span> : null}
-          {task.allDay && instance.date ? (
-            <span className="tag">{t("allDay")}</span>
-          ) : null}
           {category ? (
-            <span className="row" style={{ gap: 5 }}>
+            <span className="meta-pill" title={category.name}>
               <i className="dot" style={{ background: category.color }} />
               {category.name}
             </span>
           ) : null}
           {parentTask ? (
-            <span
-              className="row"
-              style={{
-                gap: 4,
-                color: "var(--accent)",
-                fontSize: 11.5,
-                fontWeight: 500,
-              }}
-              title={parentTask.title}
-            >
+            <span className="meta-pill is-accent" title={parentTask.title}>
               <Target size={11} />
               <span className="truncate" style={{ maxWidth: 140 }}>
                 {parentTask.title}
@@ -240,8 +243,8 @@ export function TaskRow({
             </span>
           ) : null}
           {subtasks.length > 0 ? (
-            <span className="subtask-strip">
-              <span className="progress">
+            <span className="meta-pill">
+              <span className="progress" style={{ width: 34 }}>
                 <i
                   style={{
                     width: `${(doneSubtasks / subtasks.length) * 100}%`,
@@ -252,20 +255,32 @@ export function TaskRow({
             </span>
           ) : null}
           {tracked > 0 ? (
-            <span className="row" style={{ gap: 4 }}>
-              <Timer size={12} />
+            <span className="meta-pill">
+              <Timer size={11} />
               {formatTracked(tracked)}
             </span>
           ) : null}
           {task.tags.map((tag) => (
-            <span key={tag} className="tag">
+            <span key={tag} className="meta-pill">
               #{tag}
             </span>
           ))}
         </div>
       </button>
 
-      <div className="task-actions" style={{ position: "relative" }}>
+      {/* Three buttons on every row is 120 buttons in a list of forty, none of
+          them the thing being read. They arrive with the pointer instead — and
+          with the keyboard, through focus-within — and the two pressed least
+          often moved one step further, behind the "…". The container keeps its
+          width either way, so nothing shifts under the cursor on hover.
+
+          The timer stays out in front: starting one is the only action here
+          that is about *this minute*, and hunting for it in a menu is the
+          difference between tracking time and not bothering. */}
+      <div
+        className={cn("task-actions hover-actions", menuOpen && "is-open")}
+        style={{ position: "relative" }}
+      >
         {/* The handle sits with the other row controls rather than in front of
             the title: a list nobody is dragging has to look exactly as it did
             before it could be dragged, and the left edge is where that shows. */}
@@ -283,7 +298,7 @@ export function TaskRow({
         ) : null}
         <button
           type="button"
-          className="btn ghost icon"
+          className={cn("btn ghost icon sm", isFocused && "active")}
           title={isFocused ? t("formStopTimer") : t("formStartTimer")}
           onClick={(e) => {
             e.stopPropagation();
@@ -294,43 +309,69 @@ export function TaskRow({
         </button>
         <button
           type="button"
-          className="btn ghost icon"
-          title={t("snooze")}
+          className="btn ghost icon sm"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          aria-label={t("rowMoreActions")}
+          title={t("rowMoreActions")}
           onClick={(e) => {
             e.stopPropagation();
-            setSnoozeOpen((v) => !v);
+            setMenuOpen((v) => !v);
           }}
         >
-          <AlarmClock size={14} />
+          <MoreHorizontal size={15} />
         </button>
-        {/*
-          A subtask is not deleted from here — it is taken off the schedule and
-          left in its plan. It does that and then offers it back, rather than
-          asking first: clearing a step off today is the most repeated act in
-          this list, and a modal in front of a reversible move is a toll paid on
-          every one of them. The undo toast carries what the question used to —
-          it names which of the two things just happened to the row that
-          vanished, and hands it back in one click if it was the wrong one.
-        */}
-        <button
-          type="button"
-          className="btn ghost icon"
-          title={task.parentId ? t("removeFromSchedule") : t("menuDelete")}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!task.parentId) {
-              requestDelete(task.id);
-              return;
-            }
-            const previousDate = task.dueDate;
-            updateTask(task.id, { dueDate: null });
-            pushUndo("undoneRemovedFromSchedule", () =>
-              updateTask(task.id, { dueDate: previousDate }),
-            );
-          }}
-        >
-          {task.parentId ? <CalendarMinus size={14} /> : <Trash2 size={14} />}
-        </button>
+        {menuOpen ? (
+          <Popover align="right" onClose={() => setMenuOpen(false)}>
+            <button
+              type="button"
+              className="popover-item"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(false);
+                setSnoozeOpen(true);
+              }}
+            >
+              <AlarmClock size={14} /> {t("snooze")}
+            </button>
+            {/*
+              A subtask is not deleted from here — it is taken off the schedule
+              and left in its plan. It does that and then offers it back, rather
+              than asking first: clearing a step off today is the most repeated
+              act in this list, and a modal in front of a reversible move is a
+              toll paid on every one of them. The undo toast carries what the
+              question used to — it names which of the two things just happened
+              to the row that vanished, and hands it back in one click.
+            */}
+            <button
+              type="button"
+              className="popover-item danger"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(false);
+                if (!task.parentId) {
+                  requestDelete(task.id);
+                  return;
+                }
+                const previousDate = task.dueDate;
+                updateTask(task.id, { dueDate: null });
+                pushUndo("undoneRemovedFromSchedule", () =>
+                  updateTask(task.id, { dueDate: previousDate }),
+                );
+              }}
+            >
+              {task.parentId ? (
+                <>
+                  <CalendarMinus size={14} /> {t("removeFromSchedule")}
+                </>
+              ) : (
+                <>
+                  <Trash2 size={14} /> {t("menuDelete")}
+                </>
+              )}
+            </button>
+          </Popover>
+        ) : null}
         {snoozeOpen ? (
           <div style={{ position: "absolute", top: "100%", right: 0 }}>
             <SnoozeMenu

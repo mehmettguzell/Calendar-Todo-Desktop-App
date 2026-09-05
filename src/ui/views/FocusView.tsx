@@ -62,22 +62,21 @@ export function FocusView({
           <Timer size={18} />
           <div className="grow">
             <div style={{ fontWeight: 600 }}>{runningTask.title}</div>
-            <div className="muted" style={{ fontSize: 12 }}>
-              Started{" "}
-              {fromInstant(runningFocus.startedAt).toLocaleTimeString(
-                localeTag(),
-                {
-                  timeStyle: "short",
-                },
-              )}
+            <div className="muted" style={{ fontSize: "var(--text-xs)" }}>
+              {t("focusStartedAt", {
+                time: fromInstant(runningFocus.startedAt).toLocaleTimeString(
+                  localeTag(),
+                  { timeStyle: "short" },
+                ),
+              })}
             </div>
           </div>
           <span className="timer mono">{formatDuration(elapsed)}</span>
           <button type="button" className="btn ghost" onClick={cancelFocus}>
-            Cancel
+            {t("focusCancel")}
           </button>
           <button type="button" className="btn" onClick={stopFocus}>
-            <Square size={14} /> Stop
+            <Square size={14} /> {t("focusStop")}
           </button>
         </div>
       ) : null}
@@ -128,16 +127,12 @@ export function FocusView({
               type="button"
               className="btn ghost sm"
               onClick={() => {
-                if (
-                  confirm(
-                    "Are you sure you want to clear all focus history? This cannot be undone.",
-                  )
-                ) {
+                if (confirm(t("focusClearHistoryConfirm"))) {
                   clearFocusSessions();
                 }
               }}
             >
-              Clear History
+              {t("focusClearHistory")}
             </button>
           ) : null}
         </div>
@@ -145,11 +140,11 @@ export function FocusView({
           {sessions.slice(0, 25).map((session) => {
             const task = tasks.find((t) => t.id === session.taskId);
             return (
-              <div key={session.id} className="row" style={{ fontSize: 13 }}>
+              <div key={session.id} className="row" style={{ fontSize: "var(--text-sm)" }}>
                 <span className="grow truncate">
                   {task?.title ?? t("deletedTask")}
                 </span>
-                <span className="faint" style={{ fontSize: 12 }}>
+                <span className="faint" style={{ fontSize: "var(--text-xs)" }}>
                   {fromInstant(session.startedAt).toLocaleString(localeTag(), {
                     dateStyle: "short",
                     timeStyle: "short",

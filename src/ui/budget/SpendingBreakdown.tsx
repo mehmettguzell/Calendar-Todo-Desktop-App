@@ -79,14 +79,14 @@ export function SpendingBreakdown({
       <div className="spend-head">
         <div>
           <div className="spend-total mono">{formatMoney(report.totalMinor, currency)}</div>
-          <div className="faint" style={{ fontSize: 12 }}>
+          <div className="faint" style={{ fontSize: "var(--text-xs)" }}>
             {t("spendPerDay", { amount: formatMoney(report.perDayMinor, currency) })}
           </div>
           {/* The bars on the left count gross, because a limit is about what
               you charged. This total is net. Saying so is cheaper than making
               someone wonder why one category shows two numbers. */}
           {report.refundMinor > 0 ? (
-            <div className="faint" style={{ fontSize: 11.5 }}>
+            <div className="faint" style={{ fontSize: "var(--text-2xs)" }}>
               {t("spendNetNote", {
                 gross: formatMoney(report.grossMinor, currency),
                 refund: formatMoney(report.refundMinor, currency),

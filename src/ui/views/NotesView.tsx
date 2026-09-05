@@ -13,6 +13,7 @@ import type { Task, TaskInstance } from "@/domain/types";
 import { useStore, useNow } from "@/state/store";
 import { useLiveTasks } from "@/state/selectors";
 import { Empty } from "@/ui/components/primitives";
+import { PageHeader } from "@/ui/components/PageHeader";
 import { toInstance } from "@/domain/task";
 import {
   NOTE_TAG,
@@ -125,49 +126,53 @@ export function NotesView({
 
   return (
     <div className="page wide">
-      <div className="section-head" style={{ marginBottom: 16 }}>
-        <StickyNote size={16} />
-        <h2>{t("notesTitle")}</h2>
-        <span className="count grow">{notes.length}</span>
-        <button type="button" className="btn primary" onClick={() => add("")}>
-          <Plus size={14} /> {t("notesNew")}
-        </button>
-      </div>
-
-      {notes.length > 0 ? (
-        <div className="notes-bar">
-          <div className="notes-search">
-            <Search size={14} />
-            <input
-              className="input"
-              value={query}
-              placeholder={t("notesSearch")}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-          <select
-            className="select"
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortId)}
-            aria-label={t("notesSort")}
-          >
-            {SORTS.map((s) => (
-              <option key={s.id} value={s.id}>
-                {t(s.labelKey)}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
+      {/* The same toolbar shape as every other page: what is shown on the
+          left, what you can do on the right. The heading that used to sit
+          above it repeated the topbar word for word. */}
+      <PageHeader
+        className="section"
+        tabs={
+          notes.length > 0 ? (
+            <>
+              <div className="notes-search">
+                <Search size={14} />
+                <input
+                  className="input"
+                  value={query}
+                  placeholder={t("notesSearch")}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
+              <select
+                className="select notes-sort"
+                value={sort}
+                onChange={(e) => setSort(e.target.value as SortId)}
+                aria-label={t("notesSort")}
+              >
+                {SORTS.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {t(s.labelKey)}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : null
+        }
+        actions={
+          <button type="button" className="btn primary" onClick={() => add("")}>
+            <Plus size={14} /> {t("notesNew")}
+          </button>
+        }
+      />
 
       {labels.length > 0 ? (
-        <div className="notes-label-row">
+        <div className="notes-label-row section">
           <button
             type="button"
             className={cn("label-pill", label === null && "on")}
             onClick={() => setLabel(null)}
           >
-            All
+            {t("notesAllLabels")}
           </button>
           {labels.map((l) => (
             <button

@@ -2,14 +2,13 @@ import { useMemo, useState } from "react";
 import {
   CheckCircle2,
   CircleAlert,
+  Plus,
   Flame,
   FolderKanban,
   Layers,
   List,
   ListChecks,
   MousePointerClick,
-  Plus,
-  Trash2,
 } from "lucide-react";
 import { toLocalDate } from "@/domain/datetime";
 import { insertAt } from "@/domain/manualOrder";
@@ -22,14 +21,15 @@ import {
   useCategories,
   useLiveTasks,
   useTodoGroups,
-  useTrashedTasks,
   type Filters,
   type TodoGroup,
 } from "@/state/selectors";
 import { useSelectionStore } from "@/state/selectionStore";
 import { useNow, useStore } from "@/state/store";
 import { Empty } from "@/ui/components/primitives";
-import { TrashModal } from "@/ui/components/TrashModal";
+import { PageHeader } from "@/ui/components/PageHeader";
+import { Segmented } from "@/ui/components/Segmented";
+import { Composer, focusComposer } from "@/ui/task/Composer";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
 import { TaskList } from "@/ui/task/TaskList";
 
@@ -45,8 +45,6 @@ export function TasksView({
   onOpen: (instance: TaskInstance) => void;
 }) {
   const tasks = useLiveTasks();
-  const trashedTasks = useTrashedTasks();
-  const createTask = useStore((s) => s.createTask);
   const categories = useCategories();
   const now = useNow();
   const today = toLocalDate(now);
@@ -58,8 +56,6 @@ export function TasksView({
   const clearSelection = useSelectionStore((s) => s.clear);
 
   const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [quickTitle, setQuickTitle] = useState("");
-  const [trashOpen, setTrashOpen] = useState(false);
   const [filterPill, setFilterPill] = useState<
     "all" | "high" | "overdue" | "completed"
   >("all");
@@ -120,188 +116,92 @@ export function TasksView({
     return { total, open, high, overdue, done };
   }, [mainTasks, today]);
 
-  const handleQuickAdd = () => {
-    const trimmed = quickTitle.trim();
-    if (!trimmed) return;
-
-    const newTask = createTask({
-      title: trimmed,
-      priority: "NONE",
-      dueDate: today,
-      allDay: true,
-    });
-
-    setQuickTitle("");
-    onOpen(toInstance(newTask, today, null, now));
-  };
-
   return (
     <div className="page wide">
-      {/* Task Summary Banner */}
-      <div className="task-summary-banner section">
-        <div className="task-summary-stat">
-          <div className="task-summary-val">{stats.open}</div>
-          <div className="task-summary-lbl">{t("tasksOpen")}</div>
-        </div>
-        <div className="task-summary-stat">
-          <div
-            className="task-summary-val"
-            style={{ color: stats.high > 0 ? "var(--danger)" : undefined }}
-          >
-            {stats.high}
-          </div>
-          <div className="task-summary-lbl">{t("tasksHighPriority")}</div>
-        </div>
-        <div className="task-summary-stat">
-          <div
-            className="task-summary-val"
-            style={{ color: stats.overdue > 0 ? "var(--warning)" : undefined }}
-          >
-            {stats.overdue}
-          </div>
-          <div className="task-summary-lbl">{t("tasksOverdue")}</div>
-        </div>
-        <div className="task-summary-stat">
-          <div className="task-summary-val" style={{ color: "var(--success)" }}>
-            {stats.done}
-          </div>
-          <div className="task-summary-lbl">{t("tasksCompleted")}</div>
-        </div>
+      {/*
+        The four-figure banner and the filter pills under it were the same four
+        numbers, twice — and the two could disagree, because one counted
+        `mainTasks` and the other counted whatever the pill filtered to. One
+        strip now, where the number and the thing it counts are the same
+        control: pressing the number shows you what it counted.
+
+        Grouping (list / priority / category) is a second, quieter strip. It
+        answers a different question — *how* these are arranged, not *which* of
+        them — and putting the two rows side by side in one bar is what made
+        "which of these is the filter?" a question anyone had to ask.
+      */}
+      <PageHeader
+        actions={
+          <>
+            {/* The one visible door into selecting. Everything else about the
+                feature stays out of the way until it is opened — a Ctrl-click
+                on any row does the same for anyone who already knows. */}
+            <button
+              type="button"
+              className={cn("btn ghost sm", selecting && "active")}
+              aria-pressed={selecting}
+              title={t("bulkSelectHint")}
+              onClick={() => (selecting ? clearSelection() : beginSelecting())}
+            >
+              <MousePointerClick size={13} />
+              {t("bulkSelect")}
+            </button>
+            <Segmented
+              size="sm"
+              ariaLabel={t("tasksGroupBy")}
+              value={viewMode}
+              onChange={setViewMode}
+              segments={[
+                { id: "list", label: t("viewList"), icon: <List size={14} /> },
+                {
+                  id: "priority",
+                  label: t("viewPriority"),
+                  icon: <FolderKanban size={14} />,
+                },
+                {
+                  id: "category",
+                  label: t("viewCategory"),
+                  icon: <Layers size={14} />,
+                },
+              ]}
+            />
+          </>
+        }
+        tabs={
+          <Segmented
+            ariaLabel={t("tasksFilterAria")}
+            value={filterPill}
+            onChange={setFilterPill}
+            segments={[
+              { id: "all", label: t("allTasks"), count: stats.open },
+              {
+                id: "high",
+                label: t("highPriority"),
+                icon: <Flame size={12} />,
+                count: stats.high,
+              },
+              {
+                id: "overdue",
+                label: t("overdue"),
+                icon: <CircleAlert size={12} />,
+                count: stats.overdue,
+                tone: "danger",
+                hidden: stats.overdue === 0,
+              },
+              {
+                id: "completed",
+                label: t("completed"),
+                icon: <CheckCircle2 size={12} />,
+                count: stats.done,
+              },
+            ]}
+          />
+        }
+      />
+
+      <div className="section">
+        <Composer placeholder={t("quickAddPlaceholder")} />
       </div>
-
-      {/* Quick Add Bar */}
-      <div className="row section" style={{ gap: 8 }}>
-        <input
-          className="input grow"
-          placeholder={t("quickAddPlaceholder")}
-          value={quickTitle}
-          onChange={(e) => setQuickTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleQuickAdd();
-          }}
-        />
-        <button
-          type="button"
-          className="btn primary"
-          disabled={!quickTitle.trim()}
-          onClick={handleQuickAdd}
-        >
-          <Plus size={14} /> {t("add")}
-        </button>
-      </div>
-
-      {/* View Switcher & Filter Pills */}
-      <div className="tasks-controls-bar section">
-        <div className="tasks-filter-pills">
-          <button
-            type="button"
-            className={cn("filter-pill", filterPill === "all" && "active")}
-            onClick={() => setFilterPill("all")}
-          >
-            {t("allTasks")}
-          </button>
-          <button
-            type="button"
-            className={cn("filter-pill", filterPill === "high" && "active")}
-            onClick={() => setFilterPill("high")}
-          >
-            <Flame size={12} /> {t("highPriority")} ({stats.high})
-          </button>
-          {stats.overdue > 0 && (
-            <button
-              type="button"
-              className={cn(
-                "filter-pill danger",
-                filterPill === "overdue" && "active",
-              )}
-              onClick={() => setFilterPill("overdue")}
-            >
-              <CircleAlert size={12} /> {t("overdue")} ({stats.overdue})
-            </button>
-          )}
-          <button
-            type="button"
-            className={cn(
-              "filter-pill",
-              filterPill === "completed" && "active",
-            )}
-            onClick={() => setFilterPill("completed")}
-          >
-            <CheckCircle2 size={12} /> {t("completed")} ({stats.done})
-          </button>
-        </div>
-
-        <div className="row items-center" style={{ gap: 8 }}>
-          <div className="tasks-view-switcher">
-            <button
-              type="button"
-              className={cn("tasks-view-btn", viewMode === "list" && "active")}
-              title={t("tasksViewListTitle")}
-              onClick={() => setViewMode("list")}
-            >
-              <List size={15} /> {t("viewList")}
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "tasks-view-btn",
-                viewMode === "priority" && "active",
-              )}
-              title={t("tasksViewPriorityTitle")}
-              onClick={() => setViewMode("priority")}
-            >
-              <FolderKanban size={15} /> {t("viewPriority")}
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "tasks-view-btn",
-                viewMode === "category" && "active",
-              )}
-              title={t("tasksViewCategoryTitle")}
-              onClick={() => setViewMode("category")}
-            >
-              <Layers size={15} /> {t("viewCategory")}
-            </button>
-          </div>
-
-          {/* The one visible door into selecting. Everything else about the
-              feature stays out of the way until it is opened — a Ctrl-click on
-              any row does the same thing for anyone who already knows. */}
-          <button
-            type="button"
-            className={cn("btn ghost sm", selecting && "active")}
-            style={{ gap: 6, padding: "5px 10px", fontSize: 12 }}
-            aria-pressed={selecting}
-            title={t("bulkSelectHint")}
-            onClick={() => (selecting ? clearSelection() : beginSelecting())}
-          >
-            <MousePointerClick size={13} />
-            {t("bulkSelect")}
-          </button>
-
-          <button
-            type="button"
-            className="btn ghost sm"
-            style={{ gap: 6, padding: "5px 10px", fontSize: 12 }}
-            title={t("trash")}
-            onClick={() => setTrashOpen(true)}
-          >
-            <Trash2 size={13} />
-            {t("trash")}
-            {trashedTasks.length > 0 && (
-              <span
-                className="nav-count is-alert"
-                style={{ fontSize: 10, padding: "1px 5px", height: "auto" }}
-              >
-                {trashedTasks.length}
-              </span>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {trashOpen && <TrashModal onClose={() => setTrashOpen(false)} />}
 
       {/* Main View Contents */}
       {viewMode === "list" ? (
@@ -387,6 +287,15 @@ function ListView({
         icon={<ListChecks size={28} />}
         title={t("tasksEmptyTitle")}
         hint={t("tasksEmptyHint")}
+        action={
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => focusComposer()}
+          >
+            <Plus size={14} /> {t("emptyAddFirstTask")}
+          </button>
+        }
       />
     );
   }

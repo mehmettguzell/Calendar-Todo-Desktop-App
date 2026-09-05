@@ -80,7 +80,7 @@ export function DaySpendPrompt({ onClose }: { onClose: () => void }) {
       width={480}
       footer={
         <>
-          <span className="grow faint" style={{ fontSize: 12 }}>
+          <span className="grow faint" style={{ fontSize: "var(--text-xs)" }}>
             {day.provisionalCount > 0
               ? t("spendDayPending", { n: day.provisionalCount })
               : null}
@@ -92,7 +92,7 @@ export function DaySpendPrompt({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="col" style={{ gap: 12 }}>
-        <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+        <p className="faint" style={{ margin: 0, fontSize: "var(--text-xs)" }}>
           {t("spendDayHint")}
         </p>
 
