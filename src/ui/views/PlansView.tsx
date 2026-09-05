@@ -933,9 +933,8 @@ function PlanCard({
                             allDay: true,
                           });
                         }}
-                        style={isSubToday ? { color: "#f59e0b" } : undefined}
                       >
-                        <Sun size={12} />
+                        <Sun size={14} />
                       </button>
                     </div>
                   );

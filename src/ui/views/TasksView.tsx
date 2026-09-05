@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { toLocalDate } from "@/domain/datetime";
 import { insertAt } from "@/domain/manualOrder";
-import { toInstance } from "@/domain/task";
+import { enclosingPlan, toInstance } from "@/domain/task";
 import type { Priority, Task, TaskInstance } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
@@ -76,8 +76,8 @@ export function TasksView({
       tasks.filter((t) => {
         if (t.tags.includes("note")) return false;
         if (t.parentId) {
-          const parent = parentCache.get(t.parentId);
-          return parent?.tags.includes("plan") && t.dueDate !== null;
+          // A step at any depth of a plan, once it has been given a day.
+          return t.dueDate !== null && enclosingPlan(t, parentCache) !== null;
         }
         if (t.tags.includes("plan")) {
           return t.dueDate !== null;

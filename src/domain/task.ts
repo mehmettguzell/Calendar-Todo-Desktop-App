@@ -202,6 +202,38 @@ export function descendantIds(tasks: Task[], rootId: string): Set<string> {
 }
 
 /**
+ * The plan `task` sits under, however deep it sits.
+ *
+ * A step of a plan is a task with the plan as its parent, but a step can have
+ * steps of its own, and those are just as much part of the plan — the views
+ * that surface a plan's scheduled work asked only about the direct parent, so
+ * a second-level step could be given a date that then appeared nowhere.
+ *
+ * The task itself is not consulted: a plan is not inside itself, and the views
+ * that show plans have their own branch for them. Returns null for anything
+ * that is not under a plan at all.
+ *
+ * `byId` is the caller's own id index, which every call site already builds.
+ */
+export function enclosingPlan(
+  task: Task,
+  byId: Map<string, Task>,
+): Task | null {
+  // A parent chain is built by `setParent`, which refuses cycles; the guard is
+  // for a corrupted or half-synced document, where looping forever would take
+  // the whole window with it.
+  const seen = new Set<string>([task.id]);
+  let current = task.parentId === null ? null : byId.get(task.parentId);
+  while (current) {
+    if (seen.has(current.id)) return null;
+    seen.add(current.id);
+    if (current.tags.includes("plan")) return current;
+    current = current.parentId === null ? null : byId.get(current.parentId);
+  }
+  return null;
+}
+
+/**
  * The plans `task` could be filed under.
  *
  * A plan is a top-level task tagged `plan`. One below `task` is ruled out for

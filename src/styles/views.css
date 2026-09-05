@@ -1889,21 +1889,40 @@
   flex: none;
 }
 
-.plan-subtask-today-btn {
-  opacity: 0.45;
-  transition:
-    opacity 120ms ease,
-    transform 120ms ease;
+/* Always drawn, never a hover secret.
+   It sat at 45% of a muted grey, which on a 12px glyph is close enough to the
+   row's own background that the control could not be found without knowing it
+   was there. It is the most-used thing on a step row, so it carries the same
+   amber the "Bugün" tag does and is legible before the pointer arrives.
+   Shared with the task panel's subtask rows, which offer the same control. */
+.btn.ghost.plan-subtask-today-btn {
   flex: none;
-}
-
-.plan-subtask-item:hover .plan-subtask-today-btn {
-  opacity: 1;
-}
-
-.plan-subtask-today-btn.active {
-  opacity: 1;
+  padding: 4px;
+  border-radius: var(--radius-sm);
   color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.btn.ghost.plan-subtask-today-btn:hover,
+.btn.ghost.plan-subtask-today-btn:focus-visible {
+  background: rgba(245, 158, 11, 0.26);
+  color: #d97706;
+}
+
+/* Already on today: filled, so "put it there" and "take it off" do not look
+   like the same button. */
+.btn.ghost.plan-subtask-today-btn.active {
+  background: #f59e0b;
+  color: #fff;
+}
+
+.btn.ghost.plan-subtask-today-btn.active:hover,
+.btn.ghost.plan-subtask-today-btn.active:focus-visible {
+  background: #d97706;
+  color: #fff;
 }
 
 /* ---- Plan deadlines -------------------------------------------------

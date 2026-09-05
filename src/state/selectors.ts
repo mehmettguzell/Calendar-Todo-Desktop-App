@@ -2,7 +2,12 @@ import { useMemo } from "react";
 import { addDaysLocal, localeTag, toLocalDate } from "@/domain/datetime";
 import { namedDeadlineKey, occurrenceId } from "@/domain/ids";
 import { arrangePinned, pinOf } from "@/domain/manualOrder";
-import { instancesInRange, representativeInstance, toInstance } from "@/domain/task";
+import {
+  enclosingPlan,
+  instancesInRange,
+  representativeInstance,
+  toInstance,
+} from "@/domain/task";
 import { sortDeadlines, type Deadline } from "@/domain/deadline";
 import type {
   Category,
@@ -108,12 +113,11 @@ export function useInstancesInRange(
 
     for (const task of tasks) {
       if (task.parentId) {
-        const parent = parentCache.get(task.parentId);
-        if (parent && !parent.tags.includes("plan")) {
-          // Regular subtasks are hidden from the calendar, they only render inside their parent.
-          // Plan subtasks (habits) are allowed to show up on the calendar.
-          continue;
-        }
+        // Regular subtasks are hidden from the calendar, they only render
+        // inside their parent. A plan's steps are allowed to show up on it —
+        // including a step's own steps, which are as much part of the plan as
+        // the ones directly beneath it.
+        if (!enclosingPlan(task, parentCache)) continue;
       }
 
       if (!matchesFilters(task, filters)) continue;
@@ -315,10 +319,9 @@ export function useTodoGroups(filters: Filters): TodoGroup[] {
       if (task.tags.includes("note")) continue; // notes render in their own view
 
       if (task.parentId) {
-        const parent = parentCache.get(task.parentId);
-        const isPlanSubtask = parent && parent.tags.includes("plan");
-        // Only show subtasks in todo groups if they are scheduled plan/habit subtasks
-        if (!isPlanSubtask || !task.dueDate) {
+        // Only scheduled steps of a plan reach the todo groups, at whatever
+        // depth they sit: an ordinary subtask belongs inside its task.
+        if (!task.dueDate || !enclosingPlan(task, parentCache)) {
           continue;
         }
       } else if (task.tags.includes("plan")) {
