@@ -8,6 +8,7 @@ import {
 import { useAuthStore } from "@/state/authStore";
 import { persist, useStore } from "@/state/store";
 import { isOnline, useSyncStore } from "@/state/syncStore";
+import { UNDO_WINDOW_MS, useUndoStore } from "@/state/undoStore";
 import {
   classifySyncError,
   formatErrorMessage,
@@ -1160,8 +1161,8 @@ function scheduleFlush() {
   const now = Date.now();
   if (queuedSince === null) queuedSince = now;
 
+  const offer = useUndoStore.getState().pending;
   if (flushTimer) clearTimeout(flushTimer);
-  const remainingCap = FLUSH_MAX_WAIT_MS - (now - queuedSince);
   flushTimer = setTimeout(
     () => {
       flushTimer = null;
@@ -1170,8 +1171,50 @@ function scheduleFlush() {
         flushInFlight = null;
       });
     },
-    Math.max(0, Math.min(FLUSH_DELAY_MS, remainingCap)),
+    flushDelayMs({
+      now,
+      queuedSince,
+      undoOfferExpiresAt: offer ? offer.at + UNDO_WINDOW_MS : null,
+    }),
   );
+}
+
+/**
+ * How long the queue waits before it goes out.
+ *
+ * Three rules, in order of who wins:
+ *
+ * 1. **The trailing delay.** Every new change pushes it out again, so a
+ *    request never leaves mid-burst.
+ * 2. **A live undo offer holds the queue.** An undo toast is a statement that
+ *    the change is not final, and it stands for eight seconds — three longer
+ *    than the delay. So the ordinary "change it, look at it, take it back"
+ *    spent two round trips: one to write the edit and one to write it away
+ *    again, for a document that ends exactly where it started. Every other
+ *    device watched the value flicker to something nobody chose. Waiting for
+ *    the offer to lapse collapses the pair into nothing — the reversal puts
+ *    the row back to the fingerprint the cloud already holds, so the flush
+ *    finds nothing to write.
+ * 3. **The ceiling wins over both.** A stream of edits, or a toast replaced by
+ *    the next toast, must not postpone the write forever.
+ *
+ * A pure function of three numbers, because a pacing rule that can only be
+ * exercised by holding a real Supabase connection open for eight seconds is a
+ * rule nobody tests.
+ */
+export function flushDelayMs(input: {
+  now: number;
+  /** When the oldest un-flushed change was queued. */
+  queuedSince: number;
+  /** When the standing undo offer lapses, or null if none stands. */
+  undoOfferExpiresAt: number | null;
+}): number {
+  const { now, queuedSince, undoOfferExpiresAt } = input;
+  const undoHold =
+    undoOfferExpiresAt === null ? 0 : undoOfferExpiresAt - now;
+  const wait = Math.max(FLUSH_DELAY_MS, undoHold);
+  const remainingCap = FLUSH_MAX_WAIT_MS - (now - queuedSince);
+  return Math.max(0, Math.min(wait, remainingCap));
 }
 
 /** Lets callers (e.g. a manual sync) wait for queued writes to land first. */

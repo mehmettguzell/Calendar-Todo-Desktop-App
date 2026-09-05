@@ -767,59 +767,29 @@
   min-width: 0;
 }
 
-.today-motivation-badge-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.today-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 650;
+/* The greeting, as a heading rather than a badge.
+   A pill draws a box around text to say "this is a distinct object"; the
+   greeting is not one, it is the sentence the card opens with. Losing the box
+   loses nothing but the box — the mood still reaches the reader as colour. */
+.today-hero-headline {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
   letter-spacing: -0.01em;
+  line-height: 1.3;
 }
 
-.today-badge.neutral {
-  background: var(--accent-soft);
-  color: var(--accent);
+.today-hero-headline.neutral {
+  color: var(--text);
 }
-
-.today-badge.success {
-  background: var(--success-soft);
+.today-hero-headline.success {
   color: var(--success);
 }
-
-.today-badge.warning {
-  background: var(--warning-soft);
+.today-hero-headline.warning {
   color: var(--warning);
 }
-
-.today-badge.celebrate {
-  background: linear-gradient(
-    135deg,
-    rgba(245, 158, 11, 0.15),
-    rgba(16, 185, 129, 0.15)
-  );
+.today-hero-headline.celebrate {
   color: #d97706;
-  border: 1px solid rgba(245, 158, 11, 0.3);
-}
-
-.today-streak-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--warning-soft);
-  color: var(--warning);
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .today-hero-subtitle {
@@ -845,6 +815,17 @@
 
 .today-hero-stat.danger strong {
   color: var(--danger);
+}
+
+.today-hero-stat.streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--warning);
+}
+
+.today-hero-stat.streak strong {
+  color: var(--warning);
 }
 
 .today-hero-stat-dot {
@@ -1329,29 +1310,20 @@
 /* PLANS VIEW STYLES                                                 */
 /* ================================================================== */
 
+/* Two stacked rows — name and actions, then the tabs — instead of a header
+   that wrapped a gradient tile, a title, a sentence, three tabs and three
+   buttons onto whatever lines the window width allowed. */
 .plans-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-.plans-title-box {
+.plans-top-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-.plans-title-icon {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), #7c3aed);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .plans-main-title {
@@ -1359,18 +1331,6 @@
   font-weight: 700;
   letter-spacing: -0.02em;
   margin: 0;
-}
-
-.plans-subtitle {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin: 2px 0 0 0;
-}
-
-.plans-actions-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .plans-filter-tabs {
@@ -1384,6 +1344,9 @@
 }
 
 .plan-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 5px 12px;
   border: none;
   border-radius: var(--radius-sm);
@@ -1392,7 +1355,29 @@
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+/* The number rides inside the tab rather than in the label, so the words stay
+   the same width as the counts change and the row does not twitch. */
+.plan-tab-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-3, var(--surface));
+  border: 1px solid var(--border);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.plan-tab-btn.active .plan-tab-count {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .plan-tab-btn:hover {
@@ -1596,14 +1581,6 @@
   cursor: pointer;
 }
 
-.plan-icon.active {
-  color: var(--accent);
-}
-
-.plan-icon.completed {
-  color: var(--success);
-}
-
 .plan-card-title {
   /* A plan is known by its name, so the name is never the part that gets cut:
      it wraps and the card grows, rather than ending in an ellipsis that hides
@@ -1621,10 +1598,11 @@
   color: var(--text-muted);
 }
 
-.plan-card-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+/* Anchors the overflow menu, and hides the date input the menu opens. */
+.plan-card-menu-anchor {
+  position: relative;
+  display: inline-flex;
+  flex: none;
 }
 
 .plan-card-desc {
@@ -1643,67 +1621,93 @@
   cursor: pointer;
 }
 
-.plan-category-pill {
+/* One pill, worn four ways.
+   The meta row used to mix five shapes — a rounded category chip, a square
+   uppercase priority tag, a status pill, a bordered deadline and a today pill
+   — each with its own radius, weight and case. Five shapes read as five kinds
+   of thing; they are all the same kind of thing, which is "a fact about this
+   plan". Colour is what separates them now, and only where colour means
+   something: overdue is red, today is amber, the rest are quiet. */
+.plan-meta-pill {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: 999px;
-  background: var(--surface-2);
   border: 1px solid var(--border);
+  background: var(--surface-2);
   font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
-.plan-priority-tag {
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
+.plan-meta-pill.is-today {
+  border-color: transparent;
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
 }
 
-.plan-priority-tag.HIGH {
+.plan-meta-pill.is-overdue {
+  border-color: transparent;
   background: var(--danger-soft);
   color: var(--danger);
 }
 
-.plan-priority-tag.MEDIUM {
-  background: var(--warning-soft);
-  color: var(--warning);
+/* Only HIGH earns a colour. A priority tag on every card, in three colours,
+   is a traffic light nobody can read; the one that means "do this first" is
+   worth seeing from across the page. */
+.plan-meta-pill.is-priority.HIGH {
+  border-color: transparent;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
-.plan-priority-tag.LOW {
+/* The stage chip: the card's one control, and the fact the tabs sort by.
+   Sized like the pills beside it so the row still reads as one line of facts,
+   but it is a button and says so on hover. */
+.plan-stage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.plan-stage-chip.is-not-started:hover,
+.plan-stage-chip.is-not-started:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.plan-stage-chip.is-started {
+  border-color: transparent;
   background: var(--accent-soft);
   color: var(--accent);
 }
 
-.plan-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 700;
+.plan-stage-chip.is-started:hover,
+.plan-stage-chip.is-started:focus-visible {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text-muted);
 }
 
-.plan-status-pill.active {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-
-.plan-status-pill.success {
+.plan-stage-chip.is-completed {
+  border-color: transparent;
   background: var(--success-soft);
   color: var(--success);
-}
-
-/* Plan Progress Section */
-.plan-card-progress-section {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  cursor: default;
 }
 
 .plan-progress-track {
@@ -1715,17 +1719,16 @@
   overflow: hidden;
 }
 
+/* A flat accent fill rather than a blue-to-green gradient: a bar that changes
+   hue as it fills invents a second meaning for a length that already has one. */
 .plan-progress-bar {
   height: 100%;
   border-radius: 999px;
+  background: var(--accent);
   transition: width 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.plan-progress-bar.in-progress {
-  background: linear-gradient(90deg, var(--accent), #10b981);
-}
-
-.plan-progress-bar.completed {
+.plan-card.completed .plan-progress-bar {
   background: var(--success);
 }
 
@@ -1760,17 +1763,6 @@
   margin-top: 6px;
 }
 
-.plan-today-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-weight: 600;
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
-}
 
 /* Rows read as a list, not as a stack of boxes inside the card box. The
    divider carries the separation that a filled background used to. Matches
@@ -3343,25 +3335,10 @@
 /* The deadline a plan has to be finished by, beside its name. A plan carries
    no schedule, so this is the only date it ever shows — and the only reason it
    appears on the calendar at all. */
-.plan-card-deadline {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  padding: 2px 8px;
-  border: 1px dashed var(--border);
-  border-radius: 999px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.plan-card-deadline.is-overdue { border-color: var(--danger); color: var(--danger); }
-
 /* The date input the flag button drives. It is laid over the button rather
    than parked in a corner, so the picker the browser opens is anchored where
    the user clicked; it stays transparent and below the button, which keeps the
    click on the button and the popup in the right place. */
-.plan-deadline-control { position: relative; display: inline-flex; }
 .plan-deadline-input {
   position: absolute;
   inset: 0;

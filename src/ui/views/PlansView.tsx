@@ -2,19 +2,22 @@ import { useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
-  Flag,
   ChevronRight,
+  Circle,
+  CircleDot,
+  Flag,
   GripVertical,
   Lightbulb,
+  MoreHorizontal,
   MousePointerClick,
   Plus,
   Sun,
-  X,
-  Target,
   Timer,
   Trash2,
+  X,
 } from "lucide-react";
 import { toLocalDate } from "@/domain/datetime";
+import { planProgress, planStage, type PlanStage } from "@/domain/plan";
 import { isMissed, type Deadline } from "@/domain/deadline";
 import { arrangePinned, pinOf } from "@/domain/manualOrder";
 import {
@@ -35,13 +38,28 @@ import { useSelectionStore } from "@/state/selectionStore";
 import { useNow, useStore } from "@/state/store";
 import { useListReorder, type RowReorder } from "@/ui/task/useListReorder";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
-import { Checkbox, Field, Modal } from "@/ui/components/primitives";
+import { Checkbox, Field, Modal, Popover } from "@/ui/components/primitives";
 import { cn } from "@/lib/cn";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { useRequestDelete } from "@/ui/task/useRequestDelete";
 import { DeadlineEditor } from "@/ui/task/DeadlineEditor";
 
-type PlanFilter = "ALL" | "ACTIVE" | "COMPLETED";
+/**
+ * The four answers the tabs give.
+ *
+ * "Aktif" used to mean "not finished", which lumped a plan someone is halfway
+ * through with one they wrote down and never opened — the two things a page of
+ * plans most needs to keep apart. `PlanStage` splits them, and `ALL` stays for
+ * when the split is not what you are looking for.
+ */
+type PlanFilter = "ALL" | PlanStage;
+
+const PLAN_TABS: { id: PlanFilter; labelKey: TranslationKey }[] = [
+  { id: "ALL", labelKey: "plansAll" },
+  { id: "STARTED", labelKey: "plansStarted" },
+  { id: "NOT_STARTED", labelKey: "plansNotStarted" },
+  { id: "COMPLETED", labelKey: "plansCompleted" },
+];
 
 /** Rows a plan card shows before the rest fold behind "+N daha". */
 const SUBTASK_PREVIEW_COUNT = 5;
@@ -167,19 +185,40 @@ export function PlansView({
     return map;
   }, [tasks]);
 
-  const visiblePlans = useMemo(() => {
-    return plans.filter((plan) => {
-      const subtasks = subtasksMap.get(plan.id) ?? [];
-      const isCompleted =
-        plan.status === "COMPLETED" ||
-        (subtasks.length > 0 &&
-          subtasks.every((s) => s.status === "COMPLETED"));
+  /**
+   * Every plan with its stage worked out once.
+   *
+   * The tabs need the counts and the grid needs the filtered list, and both
+   * used to derive "is this finished" inline — three copies of one rule that
+   * could drift apart. `planStage` is now the only place that decides.
+   */
+  const staged = useMemo(
+    () =>
+      plans.map((plan) => ({
+        plan,
+        stage: planStage(plan, subtasksMap.get(plan.id) ?? []),
+      })),
+    [plans, subtasksMap],
+  );
 
-      if (filter === "ACTIVE") return !isCompleted;
-      if (filter === "COMPLETED") return isCompleted;
-      return true;
-    });
-  }, [plans, subtasksMap, filter]);
+  const stageCounts = useMemo(() => {
+    const counts: Record<PlanFilter, number> = {
+      ALL: staged.length,
+      NOT_STARTED: 0,
+      STARTED: 0,
+      COMPLETED: 0,
+    };
+    for (const row of staged) counts[row.stage] += 1;
+    return counts;
+  }, [staged]);
+
+  const visiblePlans = useMemo(
+    () =>
+      staged
+        .filter((row) => filter === "ALL" || row.stage === filter)
+        .map((row) => row.plan),
+    [staged, filter],
+  );
 
   const planIds = useMemo(() => visiblePlans.map((p) => p.id), [visiblePlans]);
 
@@ -193,18 +232,16 @@ export function PlansView({
    */
   const pickable = useMemo(() => {
     const rows: { id: string; done: boolean }[] = [];
+    const stageById = new Map(staged.map((row) => [row.plan.id, row.stage]));
     for (const plan of visiblePlans) {
       const steps = subtasksMap.get(plan.id) ?? [];
-      const planDone =
-        plan.status === "COMPLETED" ||
-        (steps.length > 0 && steps.every((s) => s.status === "COMPLETED"));
-      rows.push({ id: plan.id, done: planDone });
+      rows.push({ id: plan.id, done: stageById.get(plan.id) === "COMPLETED" });
       for (const step of steps) {
         rows.push({ id: step.id, done: step.status === "COMPLETED" });
       }
     }
     return rows;
-  }, [visiblePlans, subtasksMap]);
+  }, [visiblePlans, staged, subtasksMap]);
 
   const pickWhere = (keep: (row: { done: boolean }) => boolean) =>
     replaceSelection(pickable.filter(keep).map((row) => row.id));
@@ -264,64 +301,49 @@ export function PlansView({
     <div className="page wide">
       {/* Plans Header & Filter Bar */}
       <div className="plans-header section">
-        <div className="plans-title-box">
-          <div className="plans-title-icon">
-            <Target size={20} />
-          </div>
-          <div>
-            <h2 className="plans-main-title">{t("plansTitle")}</h2>
-            <p className="plans-subtitle">{t("plansSubtitle")}</p>
-          </div>
+        {/* Name, then the one thing you came to press. The icon tile and the
+            explanatory sentence under the title were furniture: they said the
+            same thing the page already says by being the page. */}
+        <div className="plans-top-row">
+          <h2 className="plans-main-title">{t("plansTitle")}</h2>
+          <span className="grow" />
+          <button
+            type="button"
+            className={cn("btn ghost sm", selecting && "active")}
+            aria-pressed={selecting}
+            title={t("plansPickHint")}
+            onClick={() => (selecting ? clearSelection() : beginSelecting())}
+          >
+            <MousePointerClick size={13} />
+            {t("bulkSelect")}
+          </button>
+          <ResetOrderButton tasks={plans} />
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => setNewPlanModal(true)}
+          >
+            <Plus size={14} /> {t("plansNewButton")}
+          </button>
         </div>
 
-        <div className="plans-actions-row">
-          <div className="plans-filter-tabs">
+        {/* Counts on the tabs, so "how much is actually on my plate" is
+            answered without pressing anything. A tab that would show nothing
+            still renders — an empty "Başladıklarım" is itself the answer. */}
+        <div className="plans-filter-tabs" role="tablist">
+          {PLAN_TABS.map((tab) => (
             <button
+              key={tab.id}
               type="button"
-              className={cn("plan-tab-btn", filter === "ALL" && "active")}
-              onClick={() => setFilter("ALL")}
+              role="tab"
+              aria-selected={filter === tab.id}
+              className={cn("plan-tab-btn", filter === tab.id && "active")}
+              onClick={() => setFilter(tab.id)}
             >
-              {t("plansAll")} ({plans.length})
+              {t(tab.labelKey)}
+              <span className="plan-tab-count">{stageCounts[tab.id]}</span>
             </button>
-            <button
-              type="button"
-              className={cn("plan-tab-btn", filter === "ACTIVE" && "active")}
-              onClick={() => setFilter("ACTIVE")}
-            >
-              {t("plansActive")}
-            </button>
-            <button
-              type="button"
-              className={cn("plan-tab-btn", filter === "COMPLETED" && "active")}
-              onClick={() => setFilter("COMPLETED")}
-            >
-              {t("plansCompleted")}
-            </button>
-          </div>
-
-          <div className="row" style={{ gap: 6 }}>
-            {/* The one visible door into selecting; a Ctrl-click on any card or
-                step does the same for anyone who already knows the gesture. */}
-            <button
-              type="button"
-              className={cn("btn ghost sm", selecting && "active")}
-              style={{ gap: 6, padding: "5px 10px", fontSize: 12 }}
-              aria-pressed={selecting}
-              title={t("plansPickHint")}
-              onClick={() => (selecting ? clearSelection() : beginSelecting())}
-            >
-              <MousePointerClick size={13} />
-              {t("bulkSelect")}
-            </button>
-            <ResetOrderButton tasks={plans} />
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => setNewPlanModal(true)}
-            >
-              <Plus size={14} /> {t("plansNewButton")}
-            </button>
-          </div>
+          ))}
         </div>
 
         {/* Only while selecting. What is picked is acted on from the bulk bar
@@ -425,7 +447,7 @@ export function PlansView({
           className="card"
           style={{ padding: "32px 16px", textAlign: "center" }}
         >
-          <p className="faint">Bu filtreye uygun plan bulunamadı.</p>
+          <p className="faint">{t("plansNoneForFilter")}</p>
         </div>
       ) : (
         <div
@@ -489,6 +511,16 @@ export function PlansView({
   );
 }
 
+/**
+ * One plan, as a card.
+ *
+ * The card had grown four always-visible icon buttons, five pills and two
+ * folding sections, which is a lot of furniture around what someone actually
+ * looks at: the name, how far along it is, and what the next step is. So the
+ * rare controls (deadline, focus, delete) moved behind one "…" and the row
+ * that answers "where is this" — the stage chip — became the only thing on the
+ * card you press without opening a menu.
+ */
 function PlanCard({
   plan,
   subtasks,
@@ -511,6 +543,7 @@ function PlanCard({
   const toggleComplete = useStore((s) => s.toggleComplete);
   const createTask = useStore((s) => s.createTask);
   const updateTask = useStore((s) => s.updateTask);
+  const setStatus = useStore((s) => s.setStatus);
   const requestDelete = useRequestDelete();
   const reorderSubtasks = useStore((s) => s.reorderSubtasks);
   const categories = useCategoryIndex();
@@ -522,6 +555,7 @@ function PlanCard({
   const [expanded, setExpanded] = useState(true);
   const [showAllSubtasks, setShowAllSubtasks] = useState(false);
   const [newSubtask, setNewSubtask] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const deadlineRef = useRef<HTMLInputElement>(null);
 
@@ -532,8 +566,7 @@ function PlanCard({
    * outside a user gesture; focusing the input is the honest fallback, since a
    * focused date input can still be typed into.
    */
-  const openDeadlinePicker = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const openDeadlinePicker = () => {
     const input = deadlineRef.current;
     if (!input) return;
     try {
@@ -546,7 +579,10 @@ function PlanCard({
   const today = toLocalDate(now);
   const isPlanToday = plan.dueDate === today;
   // A plan is late by its deadline alone: it has no schedule to be late against.
-  const planOverdue = plan.deadline !== null && plan.deadline !== undefined && plan.deadline < today;
+  const planOverdue =
+    plan.deadline !== null &&
+    plan.deadline !== undefined &&
+    plan.deadline < today;
   const openPlan = () => onOpen(toInstance(plan, null, null, now));
 
   const planPicked = pickedIds.includes(plan.id);
@@ -577,8 +613,7 @@ function PlanCard({
     openPlan();
   };
 
-  const togglePlanToday = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const togglePlanToday = () => {
     updateTask(plan.id, {
       dueDate: isPlanToday ? null : today,
       allDay: true,
@@ -586,17 +621,26 @@ function PlanCard({
   };
 
   const category = plan.categoryId ? categories.get(plan.categoryId) : null;
-  const doneSubtasks = subtasks.filter((s) => s.status === "COMPLETED").length;
-  const totalSubtasks = subtasks.length;
-  const isPlanCompleted =
-    plan.status === "COMPLETED" ||
-    (totalSubtasks > 0 && doneSubtasks === totalSubtasks);
-  const progressPct =
-    totalSubtasks > 0
-      ? Math.round((doneSubtasks / totalSubtasks) * 100)
-      : isPlanCompleted
-        ? 100
-        : 0;
+  const stage = planStage(plan, subtasks);
+  const {
+    done: doneSubtasks,
+    total: totalSubtasks,
+    pct: progressPct,
+  } = planProgress(plan, subtasks);
+  const isPlanCompleted = stage === "COMPLETED";
+
+  /**
+   * Starting a plan is an ordinary status change (spec section 5), so it
+   * carries its own history entry and syncs as one field. A finished plan does
+   * not offer it: the answer to "have you started" is already yes.
+   */
+  const toggleStarted = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setStatus(
+      { taskId: plan.id, occurrenceDate: null },
+      stage === "STARTED" ? "TODO" : "IN_PROGRESS",
+    );
+  };
 
   // Cards stay close in height when long checklists collapse behind a
   // "+N more" row, which beats an inner scrollbar inside a card.
@@ -637,6 +681,12 @@ function PlanCard({
     setNewSubtask("");
   };
 
+  const runFromMenu = (action: () => void) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMenuOpen(false);
+    action();
+  };
+
   return (
     <div
       className={cn(
@@ -649,7 +699,6 @@ function PlanCard({
       )}
       {...planDragHandlers}
     >
-      {/* Plan Card Head */}
       <div className="plan-card-head">
         <div className="plan-card-title-row" onClick={activatePlan}>
           {picking ? (
@@ -681,13 +730,6 @@ function PlanCard({
               <GripVertical size={14} />
             </div>
           )}
-          <Target
-            size={18}
-            className={cn(
-              "plan-icon",
-              isPlanCompleted ? "completed" : "active",
-            )}
-          />
           <h3 className="plan-card-title wrap">{plan.title}</h3>
           {totalSubtasks > 0 && (
             <span className="plan-card-count mono">
@@ -696,90 +738,130 @@ function PlanCard({
           )}
         </div>
 
-        <div className="plan-card-actions">
-          {/* The picker has to be asked for by name. A date input tucked behind
-              an icon does not open when its label is clicked — the browser only
-              focuses it — so `showPicker` is what actually makes the button do
-              something. The input stays in the DOM and unhidden to pointers so
-              that a browser without `showPicker` still has something to fall
-              back to. */}
-          <span
-            className="plan-deadline-control"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              className={cn("btn ghost icon sm", plan.deadline && "active")}
-              title={plan.deadline ? t("deadlineOn", { date: plan.deadline }) : t("formDeadline")}
-              aria-label={t("formDeadline")}
-              onClick={openDeadlinePicker}
-            >
-              <Flag size={14} style={plan.deadline ? { color: "var(--accent)" } : undefined} />
-            </button>
-            <input
-              ref={deadlineRef}
-              type="date"
-              className="plan-deadline-input"
-              tabIndex={-1}
-              value={plan.deadline ?? ""}
-              aria-label={t("formDeadline")}
-              onChange={(e) =>
-                updateTask(plan.id, { deadline: e.target.value || null })
-              }
-            />
-          </span>
-          <button
-            type="button"
-            className={cn("btn ghost icon sm", isPlanToday && "active")}
-            title={isPlanToday ? t("removeFromToday") : t("assignToToday")}
-            onClick={togglePlanToday}
-            style={isPlanToday ? { color: "#f59e0b" } : undefined}
-          >
-            <Sun size={14} />
-          </button>
+        {/* One door for everything that is not pressed every visit. Four icons
+            competing at the top of every card is what made a wall of them hard
+            to read at all. */}
+        <div
+          className="plan-card-menu-anchor"
+          onClick={(e) => e.stopPropagation()}
+        >
           <button
             type="button"
             className="btn ghost icon sm"
-            title={t("plansFocusOn")}
-            onClick={openPlan}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label={t("plansMoreActions")}
+            title={t("plansMoreActions")}
+            onClick={() => setMenuOpen((v) => !v)}
           >
-            <Timer size={14} />
+            <MoreHorizontal size={16} />
           </button>
-          <button
-            type="button"
-            className="btn ghost icon sm"
-            title={t("plansDelete")}
-            onClick={(e) => {
-              e.stopPropagation();
-              requestDelete(plan.id);
-            }}
-          >
-            <Trash2 size={14} />
-          </button>
+          {menuOpen && (
+            <Popover align="right" onClose={() => setMenuOpen(false)}>
+              <button
+                type="button"
+                className="popover-item"
+                onClick={runFromMenu(togglePlanToday)}
+              >
+                <Sun size={14} />
+                {isPlanToday ? t("removeFromToday") : t("assignToToday")}
+              </button>
+              <button
+                type="button"
+                className="popover-item"
+                onClick={runFromMenu(openDeadlinePicker)}
+              >
+                <Flag size={14} />
+                {plan.deadline
+                  ? t("deadlineOn", { date: plan.deadline })
+                  : t("formDeadline")}
+              </button>
+              <button
+                type="button"
+                className="popover-item"
+                onClick={runFromMenu(openPlan)}
+              >
+                <Timer size={14} /> {t("plansFocusOn")}
+              </button>
+              <button
+                type="button"
+                className="popover-item danger"
+                onClick={runFromMenu(() => requestDelete(plan.id))}
+              >
+                <Trash2 size={14} /> {t("plansDelete")}
+              </button>
+            </Popover>
+          )}
+          {/* Stays in the DOM: the menu item only asks the browser to open it,
+              and a browser without `showPicker` needs something to focus. */}
+          <input
+            ref={deadlineRef}
+            type="date"
+            className="plan-deadline-input"
+            tabIndex={-1}
+            value={plan.deadline ?? ""}
+            aria-label={t("formDeadline")}
+            onChange={(e) =>
+              updateTask(plan.id, { deadline: e.target.value || null })
+            }
+          />
         </div>
       </div>
 
-      {/* Plan Description & Meta */}
       {plan.description && (
         <p className="plan-card-desc" onClick={activatePlan}>
           {plan.description}
         </p>
       )}
 
-      <div className="plan-card-meta-row" onClick={activatePlan}>
+      {/* The stage chip leads, because it is the one control on the card and
+          the fact the tabs above sort by. The rest of the row is context, and
+          each pill is drawn only when it has something to say. */}
+      <div className="plan-card-meta-row">
+        {isPlanCompleted ? (
+          <span className="plan-stage-chip is-completed">
+            <CheckCircle2 size={12} /> {t("statusCOMPLETED")}
+          </span>
+        ) : (
+          <button
+            type="button"
+            className={cn(
+              "plan-stage-chip",
+              stage === "STARTED" ? "is-started" : "is-not-started",
+            )}
+            aria-pressed={stage === "STARTED"}
+            title={
+              stage === "STARTED" ? t("planUnstartAction") : t("planStartAction")
+            }
+            onClick={toggleStarted}
+          >
+            {stage === "STARTED" ? (
+              <>
+                <CircleDot size={12} /> {t("planStageSTARTED")}
+              </>
+            ) : (
+              <>
+                <Circle size={12} /> {t("planStageNOT_STARTED")}
+              </>
+            )}
+          </button>
+        )}
         {isPlanToday && (
-          <span className="plan-today-pill" title={t("plansAddedToToday")}>
+          <span
+            className="plan-meta-pill is-today"
+            title={t("plansAddedToToday")}
+          >
             <Sun size={11} /> {t("today")}
           </span>
         )}
         {category && (
-          <span className="plan-category-pill">
+          <span className="plan-meta-pill">
             <i className="dot" style={{ background: category.color }} />
             {category.name}
           </span>
         )}
         {plan.priority !== "NONE" && (
-          <span className={cn("plan-priority-tag", plan.priority)}>
+          <span className={cn("plan-meta-pill is-priority", plan.priority)}>
             {t(`priority${plan.priority}`)}
           </span>
         )}
@@ -787,35 +869,25 @@ function PlanCard({
             one thing that must never be the part that gets truncated. */}
         {plan.deadline && (
           <span
-            className={cn("plan-card-deadline", planOverdue && "is-overdue")}
+            className={cn("plan-meta-pill", planOverdue && "is-overdue")}
             title={t("deadlineOn", { date: plan.deadline })}
           >
             <Flag size={11} aria-hidden /> {plan.deadline}
           </span>
         )}
-        {isPlanCompleted && (
-          <span className="plan-status-pill success">
-            <CheckCircle2 size={11} /> {t("statusCOMPLETED")}
-          </span>
-        )}
       </div>
 
-      {/* Plan Progress */}
-      <div className="plan-card-progress-section">
-        <div className="plan-progress-track">
+      {totalSubtasks > 0 && (
+        <div className="plan-progress-track" aria-hidden>
           <div
-            className={cn(
-              "plan-progress-bar",
-              isPlanCompleted ? "completed" : "in-progress",
-            )}
+            className="plan-progress-bar"
             style={{ width: `${progressPct}%` }}
           />
         </div>
-      </div>
+      )}
 
       <PlanDeadlines taskId={plan.id} today={today} />
 
-      {/* Subtasks Accordion */}
       <div className="plan-subtasks-section">
         <div
           className="plan-subtasks-head"
@@ -823,7 +895,7 @@ function PlanCard({
         >
           <span className="plan-subtasks-toggle-title">
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            Alt Hedefler
+            {t("plansStepsHeading")}
           </span>
         </div>
 
@@ -831,7 +903,7 @@ function PlanCard({
           <div className="plan-subtasks-body">
             {subtasks.length === 0 ? (
               <div className="faint" style={{ fontSize: 12, padding: "4px 0" }}>
-                Henüz alt hedef eklenmemiş.
+                {t("plansNoSteps")}
               </div>
             ) : (
               <div {...subtaskReorder.containerProps}>
@@ -873,9 +945,7 @@ function PlanCard({
                             aria-label={t("bulkSelectAria", {
                               title: sub.title,
                             })}
-                            onChange={() =>
-                              pick(sub.id, { listIds: stepIds })
-                            }
+                            onChange={() => pick(sub.id, { listIds: stepIds })}
                             onClick={(e) => {
                               if (e.shiftKey) {
                                 e.preventDefault();
@@ -899,14 +969,6 @@ function PlanCard({
                       >
                         {sub.title}
                       </span>
-                      {isSubToday && (
-                        <span
-                          className="plan-subtask-today-tag"
-                          title={t("plansAssignedToday")}
-                        >
-                          <Sun size={10} /> Bugün
-                        </span>
-                      )}
                       <div
                         role="button"
                         tabIndex={0}
@@ -954,7 +1016,6 @@ function PlanCard({
               </button>
             )}
 
-            {/* Quick Add Subtask inline */}
             <div className="plan-subtask-add-row">
               <input
                 className="input sm grow"
@@ -971,7 +1032,7 @@ function PlanCard({
                   className="btn sm"
                   onClick={handleAddSubtask}
                 >
-                  Ekle
+                  {t("plansAddStepButton")}
                 </button>
               )}
             </div>

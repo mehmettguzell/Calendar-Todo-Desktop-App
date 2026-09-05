@@ -31,7 +31,11 @@ import { historyEntry } from "@/domain/history";
 import { pinOf } from "@/domain/manualOrder";
 import { createId, occurrenceId } from "@/domain/ids";
 import { copySubtree, type CopyTarget } from "@/domain/copy";
-import { representativeInstance, toInstance } from "@/domain/task";
+import {
+  enclosingPlan,
+  representativeInstance,
+  toInstance,
+} from "@/domain/task";
 import { resolveSnooze, type SnoozePresetId } from "@/domain/snooze";
 import type {
   BudgetCategory,
@@ -68,6 +72,7 @@ import type {
   FocusSession,
   HistoryEntry,
   InstanceRef,
+  Instant,
   LocalDate,
   Occurrence,
   Priority,
@@ -2572,12 +2577,20 @@ function applyStatus(
         status === "COMPLETED" ? null : (existing?.snoozedUntil ?? null),
       updatedAt: at,
     };
+    // A habit's first tick starts the plan it hangs off, exactly as a one-off
+    // step's does — the completion lives on the occurrence, but the plan it
+    // belongs to is no less under way.
+    const startedByHabit =
+      status === "COMPLETED"
+        ? planStartedBy(db, task.id, at)
+        : { tasks: db.tasks, entries: [] };
     return {
       ...db,
+      tasks: startedByHabit.tasks,
       occurrences: existing
         ? db.occurrences.map((o) => (o.id === id ? occurrence : o))
         : [...db.occurrences, occurrence],
-      history: [...db.history, entry],
+      history: [...db.history, entry, ...startedByHabit.entries],
     };
   }
 
@@ -2598,9 +2611,14 @@ function applyStatus(
   // done stays done when its parent turns out to need more work.
   const cascade = status === "COMPLETED" ? openDescendants(db, task.id) : [];
 
+  const started =
+    status === "COMPLETED"
+      ? planStartedBy(db, task.id, at)
+      : { tasks: db.tasks, entries: [] };
+
   return {
     ...db,
-    tasks: db.tasks.map((t) => {
+    tasks: started.tasks.map((t) => {
       if (t.id === task.id) return next;
       return cascade.includes(t.id)
         ? { ...t, status, completedAt, snoozedUntil: null, updatedAt: at }
@@ -2609,6 +2627,7 @@ function applyStatus(
     history: [
       ...db.history,
       entry,
+      ...started.entries,
       ...cascade.map((id) =>
         historyEntry({
           taskId: id,
@@ -2619,6 +2638,50 @@ function applyStatus(
           note: `Completed with "${task.title}"`,
         }),
       ),
+    ],
+  };
+}
+
+/**
+ * Ticking anything inside a plan starts that plan.
+ *
+ * "Başlayacaklarım" is only worth a tab if it is true, and a plan with three
+ * ticked steps sitting in it is not. The alternative — deriving "started" from
+ * the steps when the list is drawn — reads the same on screen and behaves
+ * worse: someone who sets a plan back to not-started would watch it snap
+ * straight back, because the derivation would still be looking at the same
+ * ticked step. So the promotion happens once, here, as a real status change
+ * with its own history entry, and the button that sets it stays authoritative
+ * afterwards.
+ *
+ * Only `TODO` is promoted. A plan already `IN_PROGRESS` has nothing to learn
+ * from this, and a `COMPLETED` one must not be quietly reopened by a step
+ * being ticked underneath it.
+ */
+function planStartedBy(
+  db: Database,
+  taskId: string,
+  at: Instant,
+): { tasks: Task[]; entries: HistoryEntry[] } {
+  const task = db.tasks.find((t) => t.id === taskId);
+  const byId = new Map(db.tasks.map((t) => [t.id, t]));
+  const plan = task ? enclosingPlan(task, byId) : null;
+  if (!plan || plan.status !== "TODO") {
+    return { tasks: db.tasks, entries: [] };
+  }
+  return {
+    tasks: db.tasks.map((t) =>
+      t.id === plan.id ? { ...t, status: "IN_PROGRESS", updatedAt: at } : t,
+    ),
+    entries: [
+      historyEntry({
+        taskId: plan.id,
+        kind: "STATUS_CHANGED",
+        field: "status",
+        from: "TODO",
+        to: "IN_PROGRESS",
+        note: `Started with "${task?.title ?? ""}"`,
+      }),
     ],
   };
 }

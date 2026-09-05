@@ -176,20 +176,18 @@ export function TodayView({
             onCelebrate={() => fireConfetti({ particleCount: 100 })}
           />
 
+          {/* Three lines, not five.
+              The greeting used to arrive as a coloured pill, a second coloured
+              pill for the streak, a sentence and a stat row — four decorated
+              things above the first task, three of them saying some version of
+              "you are doing fine". The greeting is now plain text (its colour
+              still carries the mood), and the streak joined the stats, where
+              every other number about today already lives. */}
           <div className="today-hero-text">
-            <div className="today-motivation-badge-row">
-              <span className={`today-badge ${motivation.badgeType}`}>
-                {motivation.emoji} {t(motivation.titleKey as TranslationKey, motivation.params)}
-              </span>
-              {streaks.currentStreak > 0 && (
-                <span
-                  className="today-streak-badge"
-                  title={t("todayStreakBadge", { n: streaks.currentStreak })}
-                >
-                  <Flame size={12} /> {t("todayStreakShort", { n: streaks.currentStreak })}
-                </span>
-              )}
-            </div>
+            <h2 className={cn("today-hero-headline", motivation.badgeType)}>
+              {motivation.emoji}{" "}
+              {t(motivation.titleKey as TranslationKey, motivation.params)}
+            </h2>
 
             <p className="today-hero-subtitle">
               {t(motivation.subtitleKey as TranslationKey, {
@@ -212,7 +210,8 @@ export function TodayView({
                 <>
                   <span className="today-hero-stat-dot">•</span>
                   <span className="today-hero-stat">
-                    <strong>{formatTracked(focusedToday)}</strong> {t("todayFocusedStat")}
+                    <strong>{formatTracked(focusedToday)}</strong>{" "}
+                    {t("todayFocusedStat")}
                   </span>
                 </>
               )}
@@ -221,6 +220,19 @@ export function TodayView({
                   <span className="today-hero-stat-dot">•</span>
                   <span className="today-hero-stat danger">
                     <strong>{overdue.length}</strong> {t("todayOverdueStat")}
+                  </span>
+                </>
+              )}
+              {streaks.currentStreak > 0 && (
+                <>
+                  <span className="today-hero-stat-dot">•</span>
+                  <span
+                    className="today-hero-stat streak"
+                    title={t("todayStreakBadge", { n: streaks.currentStreak })}
+                  >
+                    <Flame size={11} aria-hidden />
+                    <strong>{streaks.currentStreak}</strong>{" "}
+                    {t("todayStreakUnit")}
                   </span>
                 </>
               )}
@@ -256,7 +268,7 @@ export function TodayView({
               setQuickPriority(quickPriority === "HIGH" ? "NONE" : "HIGH")
             }
           >
-            🔥 Yüksek
+            🔥 {t("todayHighPriorityShort")}
           </button>
           <button
             type="button"
@@ -264,7 +276,7 @@ export function TodayView({
             disabled={!quickTitle.trim()}
             onClick={handleQuickAddToday}
           >
-            <Plus size={13} /> Ekle
+            <Plus size={13} /> {t("quickAddButton")}
           </button>
         </div>
       </div>
