@@ -105,7 +105,7 @@
   flex: none;
   width: 26px;
   height: 26px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--alert-accent);
   background: color-mix(in srgb, var(--alert-accent) 16%, transparent);
 }
@@ -126,9 +126,9 @@
 .alert-close { flex: none; margin: -2px -4px 0 0; opacity: 0.6; }
 .alert-close:hover { opacity: 1; }
 
-.alert-card .alert-title { font-weight: 600; line-height: 1.25; }
+.alert-card .alert-title { font-weight: var(--weight-medium); line-height: 1.25; }
 .alert-card .alert-when { margin-top: 2px; color: var(--text-muted); font-size: var(--text-xs); }
-.alert-card.overdue .alert-when { color: var(--danger); font-weight: 600; }
+.alert-card.overdue .alert-when { color: var(--danger); font-weight: var(--weight-medium); }
 .alert-card .alert-actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
 .alert-card .alert-actions .btn { flex: 1; gap: 4px; justify-content: center; }
 
@@ -163,7 +163,7 @@
   background: var(--accent-soft);
 }
 
-.focus-bar .timer { font-size: var(--text-xl); font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.focus-bar .timer { font-size: var(--text-xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 
 .color-picker { display: flex; flex-wrap: wrap; gap: 6px; }
 
@@ -311,13 +311,13 @@
   width: 17px;
   height: 17px;
   border: 1.5px solid var(--border-strong);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: transparent;
   cursor: pointer;
 }
 
 .palette-check:hover { border-color: var(--accent); color: var(--accent); }
-.palette-check.done { border-color: var(--accent); background: var(--accent); color: #fff; }
+.palette-check.done { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
 
 .palette-empty { padding: 18px 12px; color: var(--text-faint); font-size: var(--text-sm); }
 
@@ -339,7 +339,7 @@
   padding: 1px 5px;
   border: 1px solid var(--border);
   border-bottom-width: 2px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   font-family: inherit;
   font-size: var(--text-3xs);
@@ -382,20 +382,20 @@
   padding: 4px 12px;
   border-radius: 999px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
 }
 
 .undo-action:hover { filter: brightness(1.08); }
 
 .undo-action kbd {
   padding: 0 5px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.2);
   font-family: inherit;
   font-size: var(--text-3xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 
 .undo-close {
@@ -481,7 +481,7 @@
 
 .bulk-count {
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   color: var(--text);
   white-space: nowrap;
 }
@@ -504,7 +504,7 @@
   color: var(--text-muted);
   font: inherit;
   font-size: var(--text-xs);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
   cursor: pointer;
   transition:

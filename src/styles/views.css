@@ -27,7 +27,7 @@
 
 .section-head h2 {
   font-size: var(--text-2xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: inherit;
@@ -36,7 +36,7 @@
 .section-head .count {
   color: var(--text-faint);
   font-size: var(--text-2xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -164,9 +164,12 @@
   color: var(--accent);
 }
 
+/* Rows sit on the page's own ground, so hovering one lifts it to the raised
+   surface — the same move the whole app uses to say "this is on top". */
 .task-row:hover {
-  background: var(--surface-hover);
+  background: var(--surface-2);
 }
+
 .task-row.selected {
   background: var(--accent-soft);
 }
@@ -184,7 +187,10 @@
      them into an unreadable column. */
   flex-wrap: wrap;
   gap: var(--space-2);
-  font-weight: 500;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  color: var(--text);
 }
 
 .task-title > .label {
@@ -208,14 +214,18 @@
   text-decoration-thickness: 1px;
 }
 
+/* The line under the title. Tight to it — 2px was enough to look accidental
+   and not enough to group them — and quiet enough that the eye reads the
+   titles down the list first and only stops here when it has found the row. */
 .task-meta {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 5px;
   flex-wrap: wrap;
-  margin-top: 2px;
-  color: var(--text-muted);
+  margin-top: 3px;
+  color: var(--text-faint);
   font-size: var(--text-xs);
+  line-height: 1.4;
 }
 
 .task-meta .sep {
@@ -254,8 +264,11 @@
   width: var(--panel-w);
   min-width: 0;
   height: 100%;
-  border-left: 1px solid var(--border);
-  background: var(--surface-2);
+  /* A sheet of its own, standing beside the content sheet. The hairline is
+     what keeps the two apart where they meet, since both are the same tone —
+     the one place in the app where a line still earns its keep in the flow. */
+  box-shadow: -1px 0 0 var(--border);
+  background: var(--surface);
   animation: panel-in 260ms ease-out;
 }
 
@@ -420,7 +433,7 @@
   outline: none;
   font-family: inherit;
   font-size: var(--text-xl);
-  font-weight: 620;
+  font-weight: var(--weight-bold);
   line-height: 1.3;
   letter-spacing: -0.02em;
   overflow: hidden;
@@ -441,11 +454,14 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* A block of content inside a page.
+   Separated by tone, not by a line: the app drew 102 hairlines because its two
+   surface tones were five units apart and could not separate anything on their
+   own. They are far enough apart now. */
 .card {
   padding: var(--space-3);
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-2);
 }
 
 /* A popover that has to open upwards, because its trigger sits on the bottom
@@ -539,7 +555,7 @@
 .panel-section-title {
   color: var(--text-faint);
   font-size: var(--text-2xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -581,7 +597,7 @@
   margin-bottom: var(--space-2);
   color: var(--text-faint);
   font-size: var(--text-2xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -705,15 +721,14 @@
 }
 
 .stat {
-  padding: var(--space-3);
-  border: 1px solid var(--border);
+  padding: var(--space-4);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-2);
 }
 
 .stat .value {
   font-size: var(--text-2xl);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
@@ -732,7 +747,7 @@
 .mini .head {
   color: var(--text-faint);
   font-size: var(--text-3xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   text-align: center;
 }
 
@@ -757,11 +772,11 @@
 }
 .mini button.today {
   color: var(--accent);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 .mini button.selected {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
 }
 
 .mini button.has-tasks::after {
@@ -787,12 +802,10 @@
 .today-hero-card {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--border);
+  gap: var(--space-5);
+  padding: var(--space-5);
   border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  background: var(--surface-2);
 }
 
 @media (max-width: 860px) {
@@ -821,7 +834,7 @@
 .today-hero-headline {
   margin: 0;
   font-size: var(--text-lg);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   letter-spacing: -0.01em;
   line-height: 1.3;
 }
@@ -856,7 +869,7 @@
 }
 
 .today-hero-stat strong {
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--text);
 }
 
@@ -909,7 +922,7 @@
 
 .progress-ring-pct {
   font-size: var(--text-2xl);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   color: var(--text);
@@ -923,7 +936,7 @@
   font-size: var(--text-2xs);
   color: var(--text-faint);
   margin-top: 2px;
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 
 .progress-ring-done-btn {
@@ -944,7 +957,7 @@
 }
 
 .progress-ring-icon-trophy {
-  color: #f59e0b;
+  color: var(--warning);
   filter: drop-shadow(0 2px 6px rgba(245, 158, 11, 0.4));
   animation: floatTrophy 2s ease-in-out infinite;
 }
@@ -974,7 +987,6 @@
   gap: 10px;
   height: 100%;
   justify-content: space-between;
-  border-left: 1px solid var(--border);
   padding-left: var(--space-4);
 }
 
@@ -999,7 +1011,7 @@
   align-items: center;
   gap: 6px;
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   color: var(--text-muted);
 }
 
@@ -1014,9 +1026,8 @@
   align-items: center;
   gap: 4px;
   padding: 3px 7px;
-  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--text-muted);
   font-size: var(--text-2xs);
   cursor: pointer;
@@ -1024,7 +1035,7 @@
 }
 
 .btn-toggle:hover {
-  background: var(--surface-hover);
+  background: var(--surface-3);
   color: var(--text);
 }
 
@@ -1032,7 +1043,7 @@
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 
 .weekly-bars-container {
@@ -1052,13 +1063,16 @@
   cursor: default;
 }
 
+/* One step deeper than the card it sits in. The card became an inset in this
+   pass and the track had been written against the old white one, so the seven
+   channels vanished and the bars were left floating on nothing. */
 .weekly-bar-track {
   position: relative;
   flex: 1;
   width: 100%;
   max-width: 22px;
   border-radius: var(--radius-sm);
-  background: var(--surface-2);
+  background: var(--surface-3);
   display: flex;
   align-items: flex-end;
   overflow: hidden;
@@ -1081,15 +1095,16 @@
   background: var(--accent);
 }
 
+/* Today's bar is the one you look for, so it is the only solid accent in the
+   week; the rest are the same colour at a lower strength. */
 .weekly-bar-fill.has-val.today-fill {
-  background: linear-gradient(180deg, var(--accent), #7c3aed);
-  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.35);
+  background: var(--accent);
 }
 
 .weekly-bar-val {
   font-size: var(--text-3xs);
-  font-weight: 700;
-  color: #fff;
+  font-weight: var(--weight-bold);
+  color: var(--accent-text);
   line-height: 1;
 }
 
@@ -1099,12 +1114,12 @@
   gap: 2px;
   font-size: var(--text-2xs);
   color: var(--text-faint);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .weekly-bar-col.is-today .weekly-bar-label {
   color: var(--accent);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .today-dot {
@@ -1118,10 +1133,8 @@
 
 .activity-heatmap-card {
   padding: var(--space-4);
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  background: var(--surface-2);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -1138,9 +1151,8 @@
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface-2);
+  background: var(--surface-3);
 }
 
 .heatmap-stat-icon-box {
@@ -1148,7 +1160,7 @@
   place-items: center;
   width: 38px;
   height: 38px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
 
@@ -1159,7 +1171,7 @@
 
 .heatmap-stat-icon-box.trophy {
   background: rgba(245, 158, 11, 0.15);
-  color: #d97706;
+  color: var(--warning);
 }
 
 .heatmap-stat-icon-box.zap {
@@ -1174,7 +1186,7 @@
 
 .heatmap-stat-val {
   font-size: var(--text-2xl);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
@@ -1182,7 +1194,7 @@
 
 .heatmap-stat-unit {
   font-size: var(--text-xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
 }
 
@@ -1242,7 +1254,7 @@
   left: 0;
   top: 0;
   font-size: var(--text-3xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-faint);
   white-space: nowrap;
 }
@@ -1311,23 +1323,23 @@
   background: #047857;
 }
 
-:root[data-theme="dark"] .heatmap-cell.intensity-0 {
+[data-theme="dark"] .heatmap-cell.intensity-0 {
   background: rgba(255, 255, 255, 0.05);
 }
 
-:root[data-theme="dark"] .heatmap-cell.intensity-1 {
+[data-theme="dark"] .heatmap-cell.intensity-1 {
   background: #064e3b;
 }
 
-:root[data-theme="dark"] .heatmap-cell.intensity-2 {
+[data-theme="dark"] .heatmap-cell.intensity-2 {
   background: #059669;
 }
 
-:root[data-theme="dark"] .heatmap-cell.intensity-3 {
+[data-theme="dark"] .heatmap-cell.intensity-3 {
   background: #10b981;
 }
 
-:root[data-theme="dark"] .heatmap-cell.intensity-4 {
+[data-theme="dark"] .heatmap-cell.intensity-4 {
   background: #34d399;
 }
 
@@ -1361,11 +1373,13 @@
   margin-bottom: var(--space-4);
 }
 
+/* A template you can take. Dashed, because it is an offer rather than a thing
+   you own yet — the one place in the app a dashed edge means something. */
 .plan-starter-card {
   padding: 14px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-2);
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -1378,12 +1392,12 @@
   border-style: solid;
   transform: translateY(-2px);
   box-shadow: var(--shadow);
-  background: var(--surface-hover);
+  background: var(--surface-3);
 }
 
 .plan-starter-title {
   font-size: var(--text-md);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   color: var(--text);
 }
 
@@ -1395,7 +1409,7 @@
 
 .plan-starter-sub-count {
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--accent);
   margin-top: 4px;
 }
@@ -1418,21 +1432,18 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--border);
+  padding: var(--space-4);
   border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  background: var(--surface-2);
   position: relative;
-  transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease,
-    transform 150ms ease;
+  transition: background 150ms ease;
 }
 
+/* No lift on hover. A card that rises when the pointer passes over it is
+   twelve cards flickering as the pointer crosses the grid; a quiet change of
+   ground says the same thing without the movement. */
 .plan-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow);
+  background: var(--surface-3);
 }
 
 /* Picking plans.
@@ -1463,14 +1474,12 @@
   gap: 6px;
   flex-wrap: wrap;
   padding: 8px 10px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
 }
 
 .plan-card.selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 .plan-card.completed {
@@ -1503,6 +1512,9 @@
   right: -10px;
 }
 
+/* Arrives with the pointer, like every other control that is only there for
+   rearranging. A grid of twelve cards was showing twelve drag handles to
+   someone who was reading, not sorting. */
 .plan-card-grip {
   display: flex;
   align-items: center;
@@ -1510,11 +1522,22 @@
   cursor: grab;
   color: var(--text-faint);
   padding: 3px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
+  opacity: 0;
   transition:
     color 120ms ease,
+    opacity 120ms ease,
     background 120ms ease;
+}
+
+.plan-card:hover .plan-card-grip,
+.plan-card-grip:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .plan-card-grip { opacity: 1; }
 }
 
 .plan-card-grip:hover {
@@ -1551,7 +1574,7 @@
   flex: 1;
   line-height: 1.3;
   font-size: var(--text-lg);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   letter-spacing: -0.01em;
   margin: 0;
 }
@@ -1592,10 +1615,9 @@
   gap: 5px;
   padding: 2px 9px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
+  background: var(--surface-3);
   font-size: var(--text-2xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   color: var(--text-muted);
   cursor: pointer;
   transition:
@@ -1634,8 +1656,7 @@
   width: 100%;
   height: 6px;
   border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: var(--surface-3);
   overflow: hidden;
 }
 
@@ -1668,7 +1689,7 @@
   align-items: center;
   gap: 4px;
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   color: var(--text-faint);
   transition: color 120ms ease;
 }
@@ -1686,16 +1707,24 @@
 /* Rows read as a list, not as a stack of boxes inside the card box. The
    divider carries the separation that a filled background used to. Matches
    the .budget-row pattern. */
+/* A step, drawn like a task row: no rule under it, a quiet ground on approach.
+   Five steps in a card used to mean five hairlines in a card, which told the
+   reader only that a list is a list. */
 .plan-subtask-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 2px;
-  border-bottom: 1px solid var(--border);
-  font-size: var(--text-xs);
+  padding: 6px var(--space-2);
+  margin: 0 -6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
   transition: background 120ms ease;
   /* Anchors the drop marker drawn in the gap above or below this row. */
   position: relative;
+}
+
+.plan-subtask-item:hover {
+  background: var(--surface-3);
 }
 
 /* Sits with the row's other hover controls, so a card nobody is rearranging
@@ -1762,7 +1791,7 @@
   align-self: flex-start;
   padding: 6px 2px;
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
   transition: color 120ms ease;
 }
@@ -1774,7 +1803,7 @@
 .plan-card-count {
   flex: none;
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
 }
 
@@ -1792,9 +1821,9 @@
   align-items: center;
   gap: 3px;
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--warning-soft);
   color: var(--warning);
   flex: none;
@@ -1806,12 +1835,15 @@
    was there. It is the most-used thing on a step row, so it carries the same
    amber the "Bugün" tag does and is legible before the pointer arrives.
    Shared with the task panel's subtask rows, which offer the same control. */
+/* Full strength, so it is findable — it spent a long time at 45% opacity in a
+   grey nobody could see — but an icon rather than a tinted block: four steps
+   used to stack four amber squares down the edge of a card. */
 .btn.ghost.plan-subtask-today-btn {
   flex: none;
   padding: 4px;
   border-radius: var(--radius-sm);
   color: var(--warning);
-  background: var(--warning-soft);
+  background: none;
   transition:
     background 120ms ease,
     color 120ms ease;
@@ -1819,8 +1851,8 @@
 
 .btn.ghost.plan-subtask-today-btn:hover,
 .btn.ghost.plan-subtask-today-btn:focus-visible {
-  background: var(--warning);
-  color: var(--accent-text);
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 /* Already on today: filled, so "put it there" and "take it off" do not look
@@ -1848,6 +1880,17 @@
   margin-top: 10px;
 }
 
+/* Nothing in it yet: no rule, no heading, just the offer to start one. */
+.plan-deadlines.is-empty {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.plan-deadlines.is-empty .plan-deadlines-head {
+  justify-content: flex-start;
+}
+
 .plan-deadlines-head {
   display: flex;
   align-items: center;
@@ -1865,7 +1908,7 @@
   cursor: pointer;
   user-select: none;
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   color: var(--text-faint);
   transition: color 120ms ease;
 }
@@ -1875,7 +1918,7 @@
 
 .plan-deadlines-count {
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -1884,7 +1927,7 @@
   flex: none;
   padding: 2px 6px;
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
 }
 .plan-deadlines-add:hover {
@@ -1896,7 +1939,6 @@
   align-items: center;
   gap: 8px;
   padding: 7px 2px;
-  border-bottom: 1px solid var(--border);
   font-size: var(--text-xs);
 }
 .plan-deadline-item:last-child {
@@ -1917,7 +1959,7 @@
   flex: none;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--text-faint);
   cursor: pointer;
@@ -1953,10 +1995,10 @@
   flex: none;
   padding: 1px 6px;
   border: 1px dashed var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: none;
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   cursor: pointer;
@@ -1979,7 +2021,7 @@
 .plan-deadline-missed {
   flex: none;
   font-size: var(--text-2xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--danger);
 }
 
@@ -2023,13 +2065,11 @@
 /* Tasks Quick Add Card */
 .tasks-quick-add-card {
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-2);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: var(--shadow-sm);
 }
 
 .tasks-quick-add-input-row {
@@ -2070,10 +2110,15 @@
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
   min-height: 240px;
+}
+
+/* A row inside a column is already standing on the inset tone, so its hover
+   has to go one step further down the ladder or it would not move at all. */
+.kanban-column .task-row:hover {
+  background: var(--surface-3);
 }
 
 .kanban-column-head {
@@ -2081,12 +2126,11 @@
   align-items: center;
   gap: 6px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
 }
 
 .kanban-col-title {
   font-size: var(--text-sm);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   margin: 0;
   flex: 1;
 }
@@ -2110,14 +2154,9 @@
 
 .today-highlight-card {
   padding: 14px 16px;
-  border: 1.5px solid rgba(245, 158, 11, 0.4);
   border-radius: var(--radius);
-  background: linear-gradient(
-    135deg,
-    rgba(245, 158, 11, 0.08),
-    rgba(59, 130, 246, 0.04)
-  );
-  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.12);
+  background: var(--warning-soft);
+  color: var(--text);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2143,9 +2182,9 @@
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--warning-soft);
-  color: #d97706;
+  color: var(--warning);
   font-size: var(--text-2xs);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
@@ -2158,7 +2197,7 @@
 
 .today-highlight-title {
   font-size: var(--text-lg);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   color: var(--text);
 }
 
@@ -2189,7 +2228,7 @@
 .budget-range {
   margin: 0;
   font-size: var(--text-xl);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   letter-spacing: -0.01em;
 }
 
@@ -2210,25 +2249,24 @@
   align-items: center;
   gap: 2px 8px;
   padding: 14px 16px;
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--surface-2);
 }
 
 .budget-stat.income {
-  --stat-tone: #22c55e;
+  --stat-tone: var(--success);
 }
 .budget-stat.expense {
-  --stat-tone: #ef4444;
+  --stat-tone: var(--danger);
 }
 .budget-stat.investment {
-  --stat-tone: #3b82f6;
+  --stat-tone: var(--accent);
 }
 .budget-stat.positive {
-  --stat-tone: #22c55e;
+  --stat-tone: var(--success);
 }
 .budget-stat.negative {
-  --stat-tone: #ef4444;
+  --stat-tone: var(--danger);
 }
 
 .budget-stat.emphasis {
@@ -2243,7 +2281,7 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--stat-tone);
   background: color-mix(in srgb, var(--stat-tone) 16%, transparent);
 }
@@ -2251,7 +2289,7 @@
 .budget-stat-label {
   grid-area: label;
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
 }
 
@@ -2259,7 +2297,7 @@
   grid-area: value;
   margin-top: 6px;
   font-size: var(--text-2xl);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   color: var(--stat-tone);
@@ -2280,7 +2318,7 @@
    is money that has moved. */
 .wishlist-total {
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2351,7 +2389,7 @@
 
 .wishlist-row-price {
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -2362,7 +2400,6 @@
   gap: var(--space-2);
   flex-wrap: wrap;
   padding: 10px 12px;
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface-2);
 }
@@ -2447,7 +2484,7 @@
 
 .budget-bar-value {
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2465,11 +2502,11 @@
 }
 
 .budget-limit-note {
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   opacity: 0.75;
 }
 .budget-limit-note.close {
-  color: #eab308;
+  color: var(--warning);
   opacity: 1;
 }
 .budget-limit-note.over {
@@ -2590,7 +2627,7 @@
   background: var(--surface-2);
   color: var(--text-faint);
   font-size: var(--text-2xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   text-align: left;
@@ -2615,7 +2652,7 @@
 
 .import-merchant {
   display: block;
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 .import-raw {
   display: block;
@@ -2654,7 +2691,7 @@
 }
 .spend-total {
   font-size: var(--text-2xl);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2665,7 +2702,7 @@
   padding: 2px 7px;
   border-radius: 999px;
   font-size: var(--text-2xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
 }
 /* Spending more is the bad direction, so the usual green/red is inverted. */
 .spend-delta.up {
@@ -2691,7 +2728,7 @@
   flex: 1;
 }
 .spend-search-total {
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2754,7 +2791,7 @@
 }
 .spend-value {
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -2828,7 +2865,7 @@
 
 .spend-capture .spend-amount {
   font-size: var(--text-2xl);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
   text-align: center;
   padding: 10px 12px;
@@ -2970,7 +3007,7 @@
 }
 .statement-what strong {
   font-size: var(--text-sm);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
 }
 .statement-what .faint {
   font-size: var(--text-2xs);
@@ -2985,7 +3022,7 @@
 .statement-amount {
   flex: none;
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3113,7 +3150,6 @@
   align-items: baseline;
   gap: 5px;
   padding: 5px 9px;
-  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   font-size: var(--text-2xs);
@@ -3122,16 +3158,16 @@
 
 .fixed-total b {
   font-size: var(--text-sm);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
 .fixed-total.expense b {
-  color: #ef4444;
+  color: var(--danger);
 }
 .fixed-total.income b {
-  color: #22c55e;
+  color: var(--success);
 }
 
 /* What the period still owes — the number this panel exists to show, so it is
@@ -3186,7 +3222,7 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: var(--text-sm);
 }
 
@@ -3198,7 +3234,7 @@
 
 .fixed-row-name {
   font-size: var(--text-sm);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
 }
 
 .fixed-row-when {
@@ -3208,14 +3244,14 @@
 
 .fixed-row-amount {
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 .fixed-row-amount.income {
-  color: #22c55e;
+  color: var(--success);
 }
 .fixed-row-amount.investment {
-  color: #3b82f6;
+  color: var(--accent);
 }
 
 .fixed-badge {
@@ -3225,7 +3261,7 @@
   padding: 2px 7px;
   border-radius: 999px;
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
 }
 
@@ -3249,7 +3285,6 @@
   gap: var(--space-2);
   padding: 12px;
   margin-bottom: 8px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
 }
@@ -3267,7 +3302,7 @@
 
 .fixed-field > span {
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   letter-spacing: 0.02em;
   color: var(--text-faint);
   text-transform: uppercase;
@@ -3313,7 +3348,6 @@
   flex: 1 1 220px;
   min-width: 180px;
   padding: 0 8px;
-  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--text-faint);
@@ -3354,7 +3388,7 @@
 .ledger-day-head h4 {
   margin: 0;
   font-size: var(--text-2xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.01em;
   color: var(--text-muted);
   white-space: nowrap;
@@ -3368,12 +3402,12 @@
 
 .ledger-day-total {
   font-size: var(--text-2xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }
 .ledger-day-total.income {
-  color: #22c55e;
+  color: var(--success);
 }
 
 .ledger-rows {
@@ -3416,7 +3450,7 @@
    forty rows that all say "Groceries". */
 .ledger-row-title {
   font-size: var(--text-sm);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
 }
 
 .ledger-row-detail {
@@ -3436,7 +3470,7 @@
   background: var(--surface-2);
   color: var(--text-faint);
   font-size: var(--text-3xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
 }
 
@@ -3461,14 +3495,14 @@
 
 .ledger-row-amount {
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 .ledger-row-amount.income {
-  color: #22c55e;
+  color: var(--success);
 }
 .ledger-row-amount.investment {
-  color: #3b82f6;
+  color: var(--accent);
 }
 
 .ledger-editor {
@@ -3478,7 +3512,6 @@
   gap: var(--space-2);
   padding: 10px;
   margin: 2px 0 8px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
 }
@@ -3533,15 +3566,15 @@
 }
 
 .fixed-total.investment b {
-  color: #3b82f6;
+  color: var(--accent);
 }
 
 /* When the number beside a bar is measuring a ceiling rather than a share, it
    carries the ceiling's colour so the two never disagree. */
 .spend-share.close {
-  color: #eab308;
+  color: var(--warning);
 }
 .spend-share.over {
   color: var(--danger);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
 }

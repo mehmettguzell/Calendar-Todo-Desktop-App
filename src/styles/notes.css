@@ -45,35 +45,35 @@
   --note-wash: #ddf3e5;
 }
 
-:root[data-theme="dark"] .note-paper[data-color="amber"] {
+[data-theme="dark"] .note-paper[data-color="amber"] {
   --note-bg: #2a2114;
   --note-edge: #d99a3f;
   --note-ink: #e5b871;
   --note-wash: #35291a;
 }
 
-:root[data-theme="dark"] .note-paper[data-color="rose"] {
+[data-theme="dark"] .note-paper[data-color="rose"] {
   --note-bg: #2c1a1e;
   --note-edge: #e0687e;
   --note-ink: #eb93a3;
   --note-wash: #382026;
 }
 
-:root[data-theme="dark"] .note-paper[data-color="violet"] {
+[data-theme="dark"] .note-paper[data-color="violet"] {
   --note-bg: #201d33;
   --note-edge: #9384f2;
   --note-ink: #b0a5f7;
   --note-wash: #292342;
 }
 
-:root[data-theme="dark"] .note-paper[data-color="sky"] {
+[data-theme="dark"] .note-paper[data-color="sky"] {
   --note-bg: #16222f;
   --note-edge: #5b9ee6;
   --note-ink: #8dc0f0;
   --note-wash: #1c2b3b;
 }
 
-:root[data-theme="dark"] .note-paper[data-color="emerald"] {
+[data-theme="dark"] .note-paper[data-color="emerald"] {
   --note-bg: #142519;
   --note-edge: #3fb377;
   --note-ink: #7cd3a3;
@@ -112,12 +112,11 @@
 
 .label-pill {
   padding: 3px 10px;
-  border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--text-muted);
   font-size: var(--text-2xs);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
   transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 }
 
@@ -172,12 +171,12 @@
 
 .note-card .note-title {
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
-.note-card .note-title.untitled { color: var(--text-faint); font-weight: 550; }
+.note-card .note-title.untitled { color: var(--text-faint); font-weight: var(--weight-medium); }
 
 .note-preview {
   display: flex;
@@ -192,7 +191,7 @@
   mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
 }
 
-.note-preview .l-heading { color: var(--text); font-weight: 650; }
+.note-preview .l-heading { color: var(--text); font-weight: var(--weight-bold); }
 .note-preview .l-blank { height: 6px; }
 .note-preview .l-divider { height: 1px; margin: 5px 0; background: var(--border); }
 .note-preview .l-item { display: flex; gap: 6px; overflow-wrap: anywhere; }
@@ -216,7 +215,7 @@
   background: var(--note-wash);
   color: var(--note-ink);
   font-size: var(--text-3xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 
 .note-pin {
@@ -257,7 +256,7 @@
   border-radius: 999px;
   color: var(--text-muted);
   font-size: var(--text-xs);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
   transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
 }
 
@@ -322,7 +321,7 @@
 
 .note-read .r-blank { height: 10px; }
 .note-read .r-divider { height: 1px; margin: 10px 0; background: var(--border); }
-.note-read .r-heading { margin-top: 6px; font-size: var(--text-lg); font-weight: 680; }
+.note-read .r-heading { margin-top: 6px; font-size: var(--text-lg); font-weight: var(--weight-bold); }
 .note-read .r-line { display: flex; gap: 8px; overflow-wrap: anywhere; }
 .note-read .r-line .marker { flex: none; padding-top: 3px; color: var(--note-ink); }
 

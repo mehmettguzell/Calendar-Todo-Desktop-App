@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "shots": "node docs/ui-redesign/shoot.mjs"
   },
   "dependencies": {
     "@supabase/server": "^1.4.1",

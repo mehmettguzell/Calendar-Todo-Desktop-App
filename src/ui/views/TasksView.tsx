@@ -330,13 +330,15 @@ function ListView({
 const PRIORITY_COLUMNS: {
   id: Priority;
   labelKey: TranslationKey;
-  icon: string;
   className: string;
 }[] = [
-  { id: "HIGH", labelKey: "kanbanHigh", icon: "🔴", className: "high" },
-  { id: "MEDIUM", labelKey: "kanbanMedium", icon: "🟡", className: "medium" },
-  { id: "LOW", labelKey: "kanbanLow", icon: "🔵", className: "low" },
-  { id: "NONE", labelKey: "kanbanNone", icon: "⚪", className: "none" },
+  // A dot from the palette rather than an emoji: 🔴🟡🔵⚪ renders in whatever
+  // four colours the operating system happens to ship, none of which are this
+  // app's, and none of which change with the theme.
+  { id: "HIGH", labelKey: "kanbanHigh", className: "high" },
+  { id: "MEDIUM", labelKey: "kanbanMedium", className: "medium" },
+  { id: "LOW", labelKey: "kanbanLow", className: "low" },
+  { id: "NONE", labelKey: "kanbanNone", className: "none" },
 ];
 
 function PriorityKanbanView({
@@ -367,7 +369,7 @@ function PriorityKanbanView({
         return (
           <div key={col.id} className={cn("kanban-column", col.className)}>
             <div className="kanban-column-head">
-              <span className="kanban-col-icon">{col.icon}</span>
+              <i className={cn("prio-dot", col.id)} aria-hidden />
               <h3 className="kanban-col-title">{t(col.labelKey)}</h3>
               <span className="count">{instances.length}</span>
               <ResetOrderButton

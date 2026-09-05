@@ -1,39 +1,60 @@
+/*
+ * Three weights of button, and the difference between them is fill, not outline.
+ *
+ * The default used to carry a hairline border and sit on `--surface`, which on
+ * a white page is an outline drawn around nothing — and put a second bordered
+ * rectangle beside every primary button. It is a tinted block now: visible
+ * against both grounds, and unmistakably quieter than the accent beside it.
+ */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   padding: 6px var(--space-3);
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--text);
   font-size: var(--text-sm);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
-  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease;
 }
 
-.btn:hover { background: var(--surface-hover); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:hover { background: var(--surface-3); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:disabled:hover { background: var(--surface-2); }
 
+/* The one loud control. There should be at most one on a screen. */
 .btn.primary {
-  border-color: transparent;
   background: var(--accent);
   color: var(--accent-text);
 }
-.btn.primary:hover { filter: brightness(1.07); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.primary:disabled:hover { filter: none; }
 
-.btn.ghost { border-color: transparent; background: none; color: var(--text-muted); }
-.btn.ghost:hover { background: var(--surface-hover); color: var(--text); }
+.btn.ghost { background: none; color: var(--text-muted); }
+.btn.ghost:hover { background: var(--surface-2); color: var(--text); }
+.btn.ghost:disabled:hover { background: none; }
 
-.btn.danger { border-color: transparent; background: var(--danger-soft); color: var(--danger); }
+/* A ghost that is currently on. */
+.btn.ghost.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.btn.danger { background: var(--danger-soft); color: var(--danger); }
+.btn.danger:hover { background: var(--danger); color: var(--accent-text); }
 
 /* A destructive action that is easy to find but hard to hit by accident: it
    sits quiet until the pointer is actually on it, then says plainly what it
    is. Reserved for the one-per-surface delete; `danger` stays for the button
    inside a confirmation, where shouting is the point. */
-.btn.danger-quiet { border-color: transparent; background: none; color: var(--text-muted); }
+.btn.danger-quiet { background: none; color: var(--text-muted); }
 .btn.danger-quiet:hover { background: var(--danger-soft); color: var(--danger); }
 .btn.danger-quiet:focus-visible { background: var(--danger-soft); color: var(--danger); }
 .btn.icon { padding: 6px; }
@@ -44,7 +65,7 @@
 .field > label {
   color: var(--text-muted);
   font-size: var(--text-2xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -58,6 +79,9 @@
   border-radius: var(--radius-sm);
   background: var(--surface);
   outline: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
@@ -100,8 +124,10 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: var(--shadow-sm);
+  /* The knob is the sheet the app is printed on, not literal white: on a dark
+     theme a white puck on a blue track is the brightest thing on the screen,
+     for a control nobody is looking at. */
+  background: var(--surface);
   transition: transform 140ms ease;
 }
 
@@ -115,7 +141,7 @@
   padding: 1px 7px;
   border-radius: 999px;
   font-size: var(--text-2xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.01em;
   white-space: nowrap;
 }
@@ -132,29 +158,59 @@
   background: var(--surface-hover);
   color: var(--text-muted);
   font-size: var(--text-2xs);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
 }
 
+/* A bar down the left edge of a row, for priority.
+
+   Only the two that mean "sooner than the rest" draw one. LOW used to paint a
+   grey bar on every low-priority row — a mark on almost every row is not a
+   mark, it is a margin, and it made the two that matter harder to pick out. */
 .prio { width: 3px; align-self: stretch; flex: none; border-radius: 999px; background: transparent; }
-.prio.LOW { background: var(--text-faint); }
 .prio.MEDIUM { background: var(--warning); }
 .prio.HIGH { background: var(--danger); }
 
+/*
+ * The most-pressed control in the app.
+ *
+ * Slightly larger than it was and with a visible ring at rest: a circle drawn
+ * in the same grey as the page's own lines is a circle people aim at twice.
+ * The fill lands on the accent rather than green — one colour means "this app
+ * did something", and a second one for the single most common action is a
+ * palette that has stopped meaning anything.
+ */
 .check {
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 19px;
+  height: 19px;
   flex: none;
   border: 1.5px solid var(--border-strong);
   border-radius: 50%;
+  background: none;
   color: transparent;
-  transition: all 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
 }
 
-.check:hover { border-color: var(--accent); }
-.check.done { border-color: var(--success); background: var(--success); color: #fff; }
-.check.square { border-radius: 5px; }
+.check:hover {
+  border-color: var(--accent);
+  transform: scale(1.08);
+}
+
+.check.done {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.check.square { border-radius: var(--radius-sm); }
+
+@media (prefers-reduced-motion: reduce) {
+  .check:hover { transform: none; }
+}
 
 .popover {
   position: absolute;
@@ -214,9 +270,9 @@
   padding: 0 4px;
   border-radius: 999px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
   font-size: var(--text-3xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   line-height: 16px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -245,7 +301,7 @@
   border-radius: 999px;
   background: var(--accent-soft, color-mix(in srgb, var(--accent) 15%, transparent));
   color: var(--accent);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
 }
 
@@ -258,10 +314,10 @@
 .estimate-delta {
   padding: 2px 8px;
   border-radius: 999px;
-  background: color-mix(in srgb, #22c55e 16%, transparent);
-  color: #22c55e;
+  background: var(--success-soft);
+  color: var(--success);
   font-size: var(--text-2xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -294,7 +350,7 @@
   align-items: center;
   gap: 7px;
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   color: var(--warning);
 }
 
@@ -325,7 +381,7 @@
 .settings-heading {
   margin: 0;
   font-size: var(--text-xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -337,11 +393,11 @@
   padding: 3px 10px;
   border: 1px solid var(--border);
   border-bottom-width: 2px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   font-family: inherit;
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text);
 }
 
@@ -391,9 +447,9 @@
 .weekday-chip.on {
   border-color: transparent;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
 }
 /* The only remaining day is not a choice, so it does not offer itself as one. */
 .weekday-chip.locked { cursor: default; opacity: 0.9; }
-.weekday-chip-dow { font-size: var(--text-3xs); font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
-.weekday-chip-dom { font-size: var(--text-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
+.weekday-chip-dow { font-size: var(--text-3xs); font-weight: var(--weight-bold); letter-spacing: 0.04em; text-transform: uppercase; }
+.weekday-chip-dom { font-size: var(--text-sm); font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }

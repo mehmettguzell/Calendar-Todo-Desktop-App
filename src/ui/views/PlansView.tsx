@@ -833,21 +833,24 @@ function PlanCard({
           </span>
         )}
         {category && (
-          <span className="meta-pill">
+          <span className="meta-item">
             <i className="dot" style={{ background: category.color }} />
             {category.name}
           </span>
         )}
-        {plan.priority !== "NONE" && (
-          <span className={cn("meta-pill", plan.priority === "HIGH" && "is-high")}>
-            {t(`priority${plan.priority}`)}
-          </span>
-        )}
+        {/* Only HIGH is worth a colour. A priority tag on every card, in three
+            shades, is a traffic light nobody can read; the one that means "do
+            this first" should be visible from across the page. */}
+        {plan.priority === "HIGH" ? (
+          <span className="meta-pill is-overdue">{t("priorityHIGH")}</span>
+        ) : plan.priority !== "NONE" ? (
+          <span className="meta-item">{t(`priority${plan.priority}`)}</span>
+        ) : null}
         {/* On the pill line rather than beside the name: a plan's title is the
             one thing that must never be the part that gets truncated. */}
         {plan.deadline && (
           <span
-            className={cn("meta-pill", planOverdue && "is-overdue")}
+            className={cn("meta-item", planOverdue && "is-overdue")}
             title={t("deadlineOn", { date: plan.deadline })}
           >
             <Flag size={11} aria-hidden /> {plan.deadline}
@@ -1064,21 +1067,26 @@ function PlanDeadlines({ taskId, today }: { taskId: string; today: string }) {
     setDate("");
   };
 
+  const empty = deadlines.length === 0 && !adding;
+
   return (
-    <div className="plan-deadlines">
+    <div className={cn("plan-deadlines", empty && "is-empty")}>
       <div className="plan-deadlines-head">
-        <span
-          className="plan-deadlines-title"
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          {t("planDeadlinesHeading")}
-          {deadlines.length > 0 && (
+        {/* A heading over nothing is a heading nobody needs. Most plans keep no
+            checkpoints at all, and on those the section is one quiet line
+            offering to start one — not a title, a caret and a count of zero. */}
+        {empty ? null : (
+          <span
+            className="plan-deadlines-title"
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {t("planDeadlinesHeading")}
             <span className="plan-deadlines-count mono">
               {met}/{deadlines.length}
             </span>
-          )}
-        </span>
+          </span>
+        )}
         <button
           type="button"
           className="btn ghost plan-deadlines-add"

@@ -27,7 +27,7 @@
   min-width: 0;
   margin: 0;
   font-size: var(--text-xl);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   letter-spacing: -0.02em;
 }
 
@@ -69,9 +69,11 @@
   align-items: center;
   gap: 2px;
   padding: 3px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface-2);
+  /* One step deeper than an inset block, not the same step: the strip also
+     appears *inside* cards, and a tray the same tone as its card is not a
+     tray — the weekly chart's metric switch disappeared exactly that way. */
+  background: var(--surface-3);
   max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
@@ -95,7 +97,7 @@
   background: none;
   color: var(--text-muted);
   font-size: var(--text-xs);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
   cursor: pointer;
   transition:
@@ -119,8 +121,7 @@
 .segmented-tabs > button[aria-selected="true"] {
   background: var(--surface);
   color: var(--text);
-  font-weight: 650;
-  box-shadow: var(--shadow-sm);
+  font-weight: var(--weight-bold);
 }
 
 .segmented-tab:disabled,
@@ -138,82 +139,108 @@
   min-width: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--surface);
   color: var(--text-muted);
   font-size: var(--text-2xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   line-height: 15px;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
 .segmented-tab.active .segmented-count,
-.segmented-tab[aria-selected="true"] .segmented-count {
-  border-color: transparent;
+.segmented-tabs > button[aria-pressed="true"] .segmented-count,
+.segmented-tabs > button[aria-selected="true"] .segmented-count {
   background: var(--accent-soft);
   color: var(--accent);
 }
 
 .segmented-count.is-danger {
-  border-color: transparent;
   background: var(--danger-soft);
   color: var(--danger);
 }
 
-/* --------------------------------------------------------- meta pills ---- */
+/* ---------------------------------------------------------- meta line ---- */
 
-/* One pill, worn in several colours, wherever a row or a card states a fact
-   about a task: its category, its priority, the day it is due.
+/*
+   One fact about a task — its day, its category, the plan it belongs to.
 
-   Before this there were nine shapes doing that job across the app — rounded
-   chips, square uppercase tags, dashed outlines, coloured pills — and a reader
-   had to learn each one to find out it meant the same kind of thing every time.
-   Colour is spent only where it changes what you would do: late is red, today
-   is amber, high priority is red, everything else is quiet. */
-.meta-pill {
+   These are text, not chrome. An earlier pass unified nine different shapes
+   into one bordered pill, which was the right idea carried one step too far:
+   five outlined chips under a title are no quieter than the nine shapes they
+   replaced, and a border says "this is a distinct object" about something that
+   is really just the end of a sentence.
+
+   So the line reads as a sentence — faint, small, separated by middots that
+   the stylesheet draws so no component has to remember them.
+*/
+.meta-item {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text-muted);
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  line-height: 1.5;
+  gap: 4px;
+  color: var(--text-faint);
   white-space: nowrap;
 }
 
+.meta-item + .meta-item::before {
+  content: "·";
+  margin-right: 4px;
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+
+.meta-item.is-overdue {
+  color: var(--danger);
+}
+
+.meta-item .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex: none;
+}
+
+/*
+   The exception that earns a shape: something already missed.
+
+   One signal, in one colour, is legible from across a list of forty rows. Two
+   signals is a legend nobody read.
+*/
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.meta-pill.is-overdue {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
 .meta-pill.is-today {
-  border-color: transparent;
   background: var(--warning-soft);
   color: var(--warning);
 }
 
-.meta-pill.is-overdue,
-.meta-pill.is-high {
-  border-color: transparent;
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
 .meta-pill.is-done {
-  border-color: transparent;
   background: var(--success-soft);
   color: var(--success);
 }
 
 .meta-pill.is-accent {
-  border-color: transparent;
   background: var(--accent-soft);
   color: var(--accent);
 }
 
 .meta-pill .dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
   flex: none;
 }
@@ -257,18 +284,22 @@
    It is a card rather than a bare input because it grows: the parsed chips
    land under the line, and "Detaylar" unfolds the full form beneath them
    without the box moving out from under the cursor. */
+/* Raised, like every other block on the page — and ringed only while it is
+   being written in. A box that carries an accent ring at rest is a box that is
+   always shouting; this one answers when it is spoken to. */
 .composer {
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-2);
   transition:
-    border-color 140ms ease,
+    background 140ms ease,
     box-shadow 140ms ease;
 }
 
 .composer:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 4px var(--accent-soft);
 }
 
 .composer-line {
@@ -333,7 +364,7 @@
   background: var(--accent-soft);
   color: var(--accent);
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 
 .composer-chip.is-quiet {
@@ -344,7 +375,7 @@
 
 .composer-details {
   border-top: 1px solid var(--border);
-  padding: var(--space-3);
+  padding: var(--space-3) 12px;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);

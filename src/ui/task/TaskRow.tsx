@@ -2,7 +2,6 @@ import { useState, type MouseEvent } from "react";
 import {
   AlarmClock,
   CalendarMinus,
-  Clock,
   Flag,
   GripVertical,
   MoreHorizontal,
@@ -122,6 +121,7 @@ export function TaskRow({
   const done = instance.storedStatus === "COMPLETED";
   const doneSubtasks = subtasks.filter((s) => s.status === "COMPLETED").length;
   const isFocused = runningFocus?.taskId === task.id;
+  const isLate = instance.status === "OVERDUE";
 
   const time =
     !task.allDay && task.startTime
@@ -181,7 +181,10 @@ export function TaskRow({
       >
         <div className="task-title">
           <span className="label wrap">{task.title}</span>
-          {instance.status === "OVERDUE" || instance.status === "SNOOZED" ? (
+          {/* Snoozed is a state you cannot see any other way, so it keeps its
+              badge. Overdue lost one: the date below is already red, and a red
+              badge beside a red date is the same alarm rung twice. */}
+          {instance.status === "SNOOZED" ? (
             <StatusBadge status={instance.status} />
           ) : null}
           {task.recurrence ? (
@@ -196,72 +199,79 @@ export function TaskRow({
           ) : null}
         </div>
 
-        {/* One pill shape for every fact about the task.
-            This line used to mix eight of them — a flagged deadline, a bare
-            clock row, a monospace time, an "all day" tag, a coloured dot, an
-            accent-coloured parent link, a progress strip, a timer and one tag
-            per label — each with its own size, weight and colour. They all
-            answer the same question ("what else is true of this?"), so they
-            look the same now, and colour is spent only where it changes what
-            you would do next. */}
+        {/* Meta is text, not chrome.
+            This line carried up to eight bordered pills — a rounded outline
+            around every fact a task happens to have. One shape was right; the
+            border was not. Five outlined chips under a title are no quieter
+            than the eight different shapes they replaced, and none of them is
+            the thing being read.
+
+            So it reads as a sentence, separated by middots, in the faint
+            colour. The only fact that gets a shape of its own is the one that
+            changes what you would do next: a deadline already missed. */}
         <div className="task-meta">
-          {/* Always in front of the schedule: the day a task must be done by
-              is what a list is scanned for. */}
-          {task.deadline && !task.recurrence ? (
-            <span
-              className={cn(
-                "meta-pill",
-                instance.status === "OVERDUE" && "is-overdue",
-              )}
-              title={t("deadlineOn", { date: task.deadline })}
-            >
-              <Flag size={11} />
-              {task.deadline}
-            </span>
-          ) : null}
           {showDate || time ? (
-            <span className="meta-pill">
-              <Clock size={11} />
+            <span className={cn("meta-item", isLate && "is-overdue")}>
               {showDate
                 ? describeWhen(instance.date, time ? task.startTime : null, now)
                 : null}
-              {time ? <span className="mono">{time}</span> : null}
+              {time && !showDate ? time : null}
             </span>
           ) : null}
+
+          {/* Always in front of the rest: the day a task must be done by is
+              what a list is scanned for. */}
+          {task.deadline && !task.recurrence ? (
+            isLate ? (
+              <span
+                className="meta-pill is-overdue"
+                title={t("deadlineOn", { date: task.deadline })}
+              >
+                <Flag size={11} aria-hidden />
+                {task.deadline}
+              </span>
+            ) : (
+              <span
+                className="meta-item"
+                title={t("deadlineOn", { date: task.deadline })}
+              >
+                <Flag size={11} aria-hidden />
+                {task.deadline}
+              </span>
+            )
+          ) : null}
+
           {category ? (
-            <span className="meta-pill" title={category.name}>
+            <span className="meta-item">
               <i className="dot" style={{ background: category.color }} />
               {category.name}
             </span>
           ) : null}
+
           {parentTask ? (
-            <span className="meta-pill is-accent" title={parentTask.title}>
-              <Target size={11} />
-              <span className="truncate" style={{ maxWidth: 140 }}>
+            <span className="meta-item" title={parentTask.title}>
+              <Target size={11} aria-hidden />
+              <span className="truncate" style={{ maxWidth: 150 }}>
                 {parentTask.title}
               </span>
             </span>
           ) : null}
+
           {subtasks.length > 0 ? (
-            <span className="meta-pill">
-              <span className="progress" style={{ width: 34 }}>
-                <i
-                  style={{
-                    width: `${(doneSubtasks / subtasks.length) * 100}%`,
-                  }}
-                />
-              </span>
+            <span className="meta-item mono">
               {doneSubtasks}/{subtasks.length}
             </span>
           ) : null}
+
           {tracked > 0 ? (
-            <span className="meta-pill">
-              <Timer size={11} />
+            <span className="meta-item">
+              <Timer size={11} aria-hidden />
               {formatTracked(tracked)}
             </span>
           ) : null}
+
           {task.tags.map((tag) => (
-            <span key={tag} className="meta-pill">
+            <span key={tag} className="meta-item">
               #{tag}
             </span>
           ))}

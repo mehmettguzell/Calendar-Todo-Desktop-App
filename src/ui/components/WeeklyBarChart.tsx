@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { BarChart2, CheckCircle2, Timer } from "lucide-react";
+import { CheckCircle2, Timer } from "lucide-react";
 import type { WeeklyDayStat } from "@/domain/gamification";
 import { useI18n } from "@/lib/i18n";
-import { formatTracked } from "@/domain/datetime";
+import { Segmented } from "./Segmented";
 
 export interface WeeklyBarChartProps {
   stats: WeeklyDayStat[];
@@ -16,34 +16,30 @@ export function WeeklyBarChart({ stats }: WeeklyBarChartProps) {
   const maxFocus = Math.max(1, ...stats.map((s) => s.focusMinutes));
 
   const totalTasksInWeek = stats.reduce((sum, s) => sum + s.tasksDone, 0);
-  const totalFocusSecInWeek = stats.reduce(
-    (sum, s) => sum + s.focusMinutes * 60,
-    0,
-  );
 
   return (
     <div className="weekly-chart-card">
       <div className="weekly-chart-head">
-        <div className="weekly-chart-title">
-          <BarChart2 size={15} />
-          <span>{t("weeklyActivityTitle")}</span>
-        </div>
-        <div className="weekly-chart-toggles">
-          <button
-            type="button"
-            className={`btn-toggle sm ${metric === "tasks" ? "active" : ""}`}
-            onClick={() => setMetric("tasks")}
-          >
-            <CheckCircle2 size={12} /> Görevler ({totalTasksInWeek})
-          </button>
-          <button
-            type="button"
-            className={`btn-toggle sm ${metric === "focus" ? "active" : ""}`}
-            onClick={() => setMetric("focus")}
-          >
-            <Timer size={12} /> {t("navFocus")} ({formatTracked(totalFocusSecInWeek)})
-          </button>
-        </div>
+        <span className="weekly-chart-title">{t("weeklyActivityTitle")}</span>
+        <Segmented
+          size="sm"
+          ariaLabel={t("weeklyActivityTitle")}
+          value={metric}
+          onChange={setMetric}
+          segments={[
+            {
+              id: "tasks",
+              label: t("weeklyMetricTasks"),
+              icon: <CheckCircle2 size={12} />,
+              count: totalTasksInWeek,
+            },
+            {
+              id: "focus",
+              label: t("weeklyMetricFocus"),
+              icon: <Timer size={12} />,
+            },
+          ]}
+        />
       </div>
 
       <div className="weekly-bars-container">

@@ -60,8 +60,7 @@
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-4) var(--space-3);
-  border-right: 1px solid var(--border);
-  background: var(--surface-2);
+  background: var(--bg);
   overflow-y: auto;
 }
 
@@ -71,18 +70,22 @@
   gap: var(--space-2);
   padding: var(--space-1) var(--space-2);
   font-size: var(--text-lg);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   letter-spacing: -0.02em;
 }
 
+/* Flat, in the app's own accent. A two-colour gradient on the mark is the
+   only gradient left in the interface, and a logo that is more saturated than
+   anything it sits above pulls the eye to the one thing on screen you never
+   need to look at. */
 .brand-mark {
   display: grid;
   place-items: center;
   width: 26px;
   height: 26px;
-  border-radius: 8px;
-  background: linear-gradient(140deg, var(--accent), var(--info));
-  color: #fff;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-text);
 }
 
 .nav {
@@ -98,7 +101,7 @@
   padding: 7px var(--space-2);
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   text-align: left;
   transition:
     background 120ms ease,
@@ -106,34 +109,44 @@
 }
 
 .nav-item:hover {
-  background: var(--surface-hover);
+  background: var(--surface-2);
   color: var(--text);
 }
 
+/* The current view is the one thing in the sidebar that is *on*. It reads as
+   the raised sheet the content is printed on, which is literally what pressing
+   it did — the accent stays for the one primary button per screen. */
 .nav-item[aria-current="true"] {
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 600;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: var(--weight-bold);
 }
 
 .nav-count {
   margin-left: auto;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--surface-hover);
+  background: var(--surface-2);
   color: var(--text-muted);
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
 }
 
 .nav-item[aria-current="true"] .nav-count {
-  background: var(--surface);
-  color: var(--accent);
+  background: var(--surface-2);
+  color: var(--text);
 }
+/* The overdue count sits beside the plain one on the same nav item, so it has
+   to be the one that is obviously not the same kind of number. */
 .nav-count.is-alert {
-  background: var(--danger-soft);
-  color: var(--danger);
+  background: var(--danger);
+  color: var(--accent-text);
+}
+
+.nav-item[aria-current="true"] .nav-count.is-alert {
+  background: var(--danger);
+  color: var(--accent-text);
 }
 
 .side-heading {
@@ -141,10 +154,10 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-2);
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: var(--text-2xs);
-  font-weight: 650;
-  letter-spacing: 0.06em;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
@@ -203,7 +216,7 @@
 .category-chip[aria-pressed="true"] {
   background: var(--surface-hover);
   color: var(--text);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 
 .category-chip-count {
@@ -222,7 +235,7 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-faint);
   background: transparent;
   border: none;
@@ -251,6 +264,17 @@
 
 /* ----------------------------------------------------------- topbar */
 
+/*
+ * Three grounds, and every surface rule follows from them.
+ *
+ *   --bg        the app's floor: the sidebar and the page a list sits on
+ *   --surface   anything raised off it: the topbar, a card, the panel, an input
+ *   --surface-2 anything inset into a raised thing: a tab tray, a count
+ *
+ * That is the whole system, and it is what replaced 102 hairline borders. The
+ * two tones used to be five units apart, so nothing could be told from
+ * anything without a line drawn around it.
+ */
 .main {
   display: flex;
   flex-direction: column;
@@ -259,12 +283,22 @@
   background: var(--surface);
 }
 
+/* Depth reads left to right and back to front, in three steps that need no
+   line between them:
+ *
+ *   sidebar   --surface-2   the furthest back
+ *   page      --bg          the ground a list sits on
+ *   blocks    --surface     cards, the topbar, an input, a hovered row
+ */
+
+/* No rule under it. The bar and the page beneath share a surface, and what
+   separates them is that the page starts with space — which is also what
+   separates every other block in this app now. */
 .topbar {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border);
+  padding: var(--space-3) var(--space-5);
   background: var(--surface);
 }
 
@@ -282,7 +316,6 @@
   max-width: 320px;
   flex: 1;
   padding: 6px var(--space-3);
-  border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--text-muted);
@@ -306,11 +339,11 @@
    topbar that changes appearance the most was the one whose appearance lived
    furthest from the stylesheet. */
 .sync-btn {
+  background: var(--surface-2);
   gap: 6px;
   padding: 5px 11px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .view-body {
@@ -326,7 +359,6 @@
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   cursor: pointer;
@@ -337,8 +369,7 @@
 }
 
 .level-badge-card:hover {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-sm);
+  background: var(--surface-2);
   transform: translateY(-1px);
 }
 
@@ -354,9 +385,9 @@
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  color: #fff;
+  border-radius: var(--radius-sm);
+  background: var(--warning-soft);
+  color: var(--warning);
   flex-shrink: 0;
   box-shadow: 0 2px 6px rgba(245, 158, 11, 0.35);
 }
@@ -369,7 +400,7 @@
 .level-number {
   position: relative;
   font-size: var(--text-sm);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
@@ -388,7 +419,7 @@
 
 .level-title {
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   color: var(--text);
 }
 
@@ -401,7 +432,7 @@
   background: var(--warning-soft);
   color: var(--warning);
   font-size: var(--text-2xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   line-height: 1;
 }
 
@@ -440,10 +471,12 @@
   height: 8px;
 }
 
+/* A bar that changes hue as it fills invents a second meaning for a length
+   that already has one. */
 .level-progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #f59e0b, #eab308, #10b981);
+  background: var(--warning);
   transition: width 400ms ease;
 }
 
@@ -477,7 +510,7 @@
 }
 
 .level-up-sparkle {
-  color: #f59e0b;
+  color: var(--warning);
   animation: pulseSparkle 1.5s infinite;
 }
 
@@ -498,12 +531,7 @@
   gap: 14px;
   padding: 14px 16px;
   border-radius: var(--radius);
-  background: linear-gradient(
-    135deg,
-    rgba(245, 158, 11, 0.12),
-    rgba(59, 130, 246, 0.12)
-  );
-  border: 1px solid var(--border);
+  background: var(--warning-soft);
 }
 
 .level-modal-shield {
@@ -512,10 +540,9 @@
   place-items: center;
   width: 52px;
   height: 52px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius);
+  background: var(--warning);
+  color: var(--accent-text);
 }
 
 .level-modal-star {
@@ -525,7 +552,7 @@
 
 .level-modal-lvl {
   font-size: var(--text-lg);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   position: relative;
 }
 
@@ -539,7 +566,7 @@
 .level-tier-row.is-current {
   background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
 }
 
 .level-tier-row.is-locked {
@@ -563,7 +590,7 @@
 }
 
 .sidebar-auth-guest-card:hover {
-  background: var(--surface-hover);
+  background: var(--surface-3);
   border-color: var(--accent);
   border-style: solid;
 }
@@ -573,7 +600,7 @@
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--accent-soft);
   color: var(--accent);
   flex-shrink: 0;
@@ -581,7 +608,7 @@
 
 .sidebar-auth-guest-title {
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   color: var(--text);
   line-height: 1.2;
 }
@@ -598,7 +625,6 @@
   padding: 8px 10px;
   border-radius: var(--radius);
   background: var(--surface);
-  border: 1px solid var(--border);
   cursor: pointer;
   transition: all 120ms ease;
 }
@@ -614,9 +640,9 @@
   width: 32px;
   height: 32px;
   border-radius: 999px;
-  background: linear-gradient(135deg, var(--accent), #7c3aed);
-  color: #fff;
-  font-weight: 700;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: var(--weight-bold);
   font-size: var(--text-sm);
   flex-shrink: 0;
   overflow: hidden;
@@ -636,7 +662,7 @@
 
 .sidebar-user-name {
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   color: var(--text);
   line-height: 1.2;
 }
@@ -645,9 +671,9 @@
   padding: 1px 4px;
   border-radius: 999px;
   background: var(--warning-soft);
-  color: #d97706;
+  color: var(--warning);
   font-size: var(--text-3xs);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   line-height: 1;
 }
 
@@ -694,17 +720,12 @@
   gap: 10px;
   padding: 10px 12px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(
-    135deg,
-    rgba(245, 158, 11, 0.12),
-    rgba(59, 130, 246, 0.08)
-  );
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: var(--warning-soft);
   font-size: var(--text-xs);
 }
 
 .auth-promo-icon {
-  color: #f59e0b;
+  color: var(--warning);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -719,7 +740,7 @@
   border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--text);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   font-size: var(--text-sm);
   border-radius: var(--radius);
   transition: all 120ms ease;
@@ -771,7 +792,7 @@
   width: 100%;
   padding: 10px;
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   margin-top: 4px;
 }
 
@@ -794,7 +815,7 @@
 }
 
 .link-btn.bold {
-  font-weight: 650;
+  font-weight: var(--weight-bold);
 }
 
 .auth-profile-card {
@@ -804,7 +825,6 @@
   padding: 12px 14px;
   border-radius: var(--radius);
   background: var(--surface-2);
-  border: 1px solid var(--border);
 }
 
 .auth-profile-avatar {
@@ -813,9 +833,9 @@
   width: 44px;
   height: 44px;
   border-radius: 999px;
-  background: linear-gradient(135deg, var(--accent), #7c3aed);
-  color: #fff;
-  font-weight: 700;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: var(--weight-bold);
   font-size: var(--text-lg);
   flex-shrink: 0;
   overflow: hidden;
@@ -829,7 +849,7 @@
 
 .auth-profile-name {
   font-size: var(--text-lg);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   margin: 0;
 }
 
@@ -856,7 +876,7 @@
 
 .pricing-status-pill {
   font-size: var(--text-xs);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--text);
 }
 
@@ -864,9 +884,9 @@
   padding: 2px 7px;
   border-radius: 999px;
   background: var(--warning-soft);
-  color: #d97706;
+  color: var(--warning);
   font-size: var(--text-2xs);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
 }
 
 .pricing-cards-grid {
@@ -881,9 +901,8 @@
   flex-direction: column;
   gap: 10px;
   padding: 14px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-2);
 }
 
 .pricing-card.highlighted {
@@ -898,15 +917,15 @@
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
   font-size: var(--text-3xs);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   text-transform: uppercase;
 }
 
 .pricing-card-title {
   font-size: var(--text-md);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--text);
 }
 
@@ -924,7 +943,7 @@
 
 .pricing-new-price {
   font-size: var(--text-2xl);
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   color: var(--text);
 }
 
@@ -955,8 +974,7 @@
   gap: 8px;
   padding: 8px 12px;
   border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
+  background: var(--warning-soft);
   font-size: var(--text-xs);
   color: var(--muted);
   line-height: 1.4;
@@ -975,7 +993,7 @@
 
 .trash-empty-title {
   font-size: var(--text-md);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text);
 }
 
@@ -999,8 +1017,7 @@
   gap: 12px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--surface-2);
   transition: background 120ms ease;
 }
 
@@ -1010,7 +1027,7 @@
 
 .trash-task-title {
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   color: var(--text);
 }
 
@@ -1021,7 +1038,7 @@
   padding: 1px 6px;
   border-radius: 999px;
   font-size: var(--text-2xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   border: 1px solid currentColor;
   background: var(--surface);
   flex-shrink: 0;

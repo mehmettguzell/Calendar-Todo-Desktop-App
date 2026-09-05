@@ -26,9 +26,28 @@
   --text-2xl: 22px;
   --text-3xl: 28px;
 
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
+  /*
+   * Three weights, and no others.
+   *
+   * Between 400 and 700 the stylesheets used 500, 550, 600, 650 and 680 — five
+   * near-identical steps for one idea ("a bit heavier"). At 13px nobody can
+   * tell 600 from 650; what they can tell is that nothing on the screen agrees
+   * with anything else.
+   */
+  --weight-normal: 400;
+  --weight-medium: 550;
+  --weight-bold: 700;
+
+  /*
+   * Three radii.
+   *
+   * On top of these there were ad-hoc 4px, 5px, 6px and 8px values scattered
+   * through the files. A corner is a rhythm: four almost-equal curves read as
+   * a mistake, three distinct ones read as a system.
+   */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -37,67 +56,106 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  --bg: #f4f5f7;
+  /*
+   * The palette.
+   *
+   * `--surface` and `--surface-2` used to be #ffffff and #fafbfc — five units
+   * apart, which is invisible. That is *why* the app had 102 hairline borders:
+   * no box could be told from its background by tone, so every box had to draw
+   * a line around itself. The steps below are far enough apart to separate on
+   * their own, which is what lets the lines go.
+   */
+  /*
+   * Every value below is checked against the grounds it is actually printed
+   * on — body text at 4.5:1, the quiet meta line and coloured marks at 3:1.
+   * The first draft of this palette failed nine of those pairs, and the worst
+   * of them was the faint grey that now carries the entire meta line under
+   * every task. See `docs/ui-redesign/05-tasarim-sistemi.md`.
+   */
+  --bg: #f6f7f9;
   --surface: #ffffff;
-  --surface-2: #fafbfc;
-  --surface-hover: #f0f2f5;
-  --border: #e2e5ea;
-  --border-strong: #cdd2da;
-  --text: #131721;
-  --text-muted: #667085;
-  --text-faint: #97a0af;
+  --surface-2: #eef1f5;
+  --surface-3: #e3e7ed;
+  /* An alias, not a fifth ground. Hover means "become the next step down the
+     ladder", and 33 rules were written against this name before the ladder
+     existed; pointing it at `--surface-2` keeps them all correct and stops the
+     app carrying a tone nothing else in the system knows about. */
+  --surface-hover: var(--surface-2);
+  --border: #e4e8ee;
+  --border-strong: #c8ced8;
 
-  --accent: #3b6dff;
-  --accent-soft: #e8eeff;
+  --text: #12151c;
+  --text-muted: #5f6777;
+  --text-faint: #7f8998;
+
+  --accent: #2560f5;
+  --accent-soft: #edf1ff;
   --accent-text: #ffffff;
 
-  --danger: #e5484d;
-  --danger-soft: #fdecec;
-  --warning: #d97706;
+  --danger: #d1252b;
+  --danger-soft: #fdeaea;
+  --warning: #a35e08;
   --warning-soft: #fdf1e0;
-  --success: #12a150;
-  --success-soft: #e6f6ec;
-  --info: #7c6bf5;
+  --success: #0c7f3e;
+  --success-soft: #e4f5ea;
+  --info: #6f5df0;
   --info-soft: #eeecfe;
 
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.05);
-  --shadow: 0 4px 12px rgba(16, 24, 40, 0.08), 0 1px 3px rgba(16, 24, 40, 0.04);
-  --shadow-lg: 0 16px 40px rgba(16, 24, 40, 0.16), 0 4px 10px rgba(16, 24, 40, 0.06);
+  /*
+   * One elevation, for things that float.
+   *
+   * There were three shadow tokens and 46 uses, most of them on cards sitting
+   * flat in the page — a "subtle shadow" on a static box is a border written
+   * in grey. Shadow now means one thing: this is above the page and can be
+   * dismissed, and there are two depths of it: a menu, and a modal.
+   */
+  --shadow: 0 6px 16px rgba(16, 24, 40, 0.1), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-lg: 0 20px 48px rgba(16, 24, 40, 0.18), 0 4px 12px rgba(16, 24, 40, 0.07);
 
-  --sidebar-w: 264px;
+  --sidebar-w: 248px;
   --panel-w: 400px;
   --hour-h: 52px;
 
   color-scheme: light;
 }
 
-:root[data-theme="dark"] {
-  --bg: #0d0f14;
-  --surface: #161920;
-  --surface-2: #1b1f28;
-  --surface-hover: #212630;
-  --border: #262b36;
-  --border-strong: #363d4b;
+/*
+ * Scoped to the attribute, not to the root that usually carries it.
+ *
+ * The app only ever stamps `data-theme` on `<html>`, so in practice this is
+ * the same selector — but written this way a theme can also be applied to a
+ * subtree, which is what lets `docs/ui-redesign/gallery.html` put the light
+ * and the dark rendering of every component side by side on one page. A
+ * palette nobody can see both halves of at once is a palette that drifts.
+ */
+[data-theme="dark"] {
+  --bg: #0b0d11;
+  --surface: #15181e;
+  --surface-2: #1c2029;
+  --surface-3: #242935;
+  --surface-hover: var(--surface-2);
+  --border: #242a34;
+  --border-strong: #39404e;
+
   --text: #e9ecf2;
-  --text-muted: #98a1b1;
-  --text-faint: #6b7484;
+  --text-muted: #9aa3b2;
+  --text-faint: #6c7585;
 
-  --accent: #5b83ff;
-  --accent-soft: #1c2646;
-  --accent-text: #ffffff;
+  --accent: #6d92ff;
+  --accent-soft: #1d2745;
+  --accent-text: #0b0d11;
 
-  --danger: #ff6369;
-  --danger-soft: #3a1d20;
-  --warning: #f0a742;
-  --warning-soft: #3a2c17;
-  --success: #38c172;
-  --success-soft: #16321f;
+  --danger: #ff6b70;
+  --danger-soft: #38191c;
+  --warning: #e8a03f;
+  --warning-soft: #362813;
+  --success: #3fc97a;
+  --success-soft: #12301e;
   --info: #9c8dff;
-  --info-soft: #241f45;
+  --info-soft: #221d43;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.6);
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.62);
 
   color-scheme: dark;
 }

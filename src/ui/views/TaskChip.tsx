@@ -1,11 +1,11 @@
-import type { DragEvent, MouseEvent } from "react";
+import type { CSSProperties, DragEvent, MouseEvent } from "react";
 import { Flag } from "lucide-react";
 import type { Category, TaskInstance } from "@/domain/types";
 import { cn } from "@/lib/cn";
 
 /**
  * Compact task rendering for the month grid.
- * All-day tasks read as filled bars, timed tasks as a dot plus a start time —
+ * All-day tasks read as tinted bars, timed tasks as a dot plus a start time —
  * the visual distinction the spec asks for in section 6.
  *
  * A task that runs `dueDate`..`endDate` is drawn on every day it covers. The
@@ -70,11 +70,21 @@ export function TaskChip({
         spanning && !span.isEnd && "span-continues",
         dragging && "chip-dragging",
       )}
+      /*
+       * The category's colour is handed to CSS as a variable rather than
+       * painted straight onto the background.
+       *
+       * A filled bar in an arbitrary category colour can never guarantee a
+       * readable label on top of it — and it did not: in dark mode an all-day
+       * chip was a solid blue slab with invisible text. CSS tints the colour
+       * against the current surface and puts it in a stripe down the edge, so
+       * the category is still identifiable and the title is always legible.
+       */
       style={
         isDeadline
           ? { borderColor: color, color }
           : allDay
-            ? { background: color }
+            ? ({ "--chip-color": color } as CSSProperties)
             : undefined
       }
       title={
