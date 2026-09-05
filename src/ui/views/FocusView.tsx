@@ -16,6 +16,7 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { useNow, useStore } from "@/state/store";
 import { useElapsedSeconds } from "@/services/scheduler";
+import { EmptyArt } from "@/ui/components/EmptyArt";
 import { Empty } from "@/ui/components/primitives";
 import { TaskRow } from "@/ui/task/TaskRow";
 
@@ -103,7 +104,7 @@ export function FocusView({
         </div>
         <div className="task-list">
           {todays.length === 0 ? (
-            <Empty icon={<Timer size={26} />} title={t("focusEmpty")} />
+            <Empty icon={<EmptyArt kind="cleared" />} title={t("focusEmpty")} />
           ) : (
             todays.map((instance) => (
               <TaskRow

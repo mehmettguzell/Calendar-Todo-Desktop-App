@@ -4,6 +4,23 @@
   --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
 
   /*
+   * The display face, for the handful of things that name a screen.
+   *
+   * A serif is the cheapest character this interface can buy: it costs no
+   * bytes, works offline — which matters for a desktop app that must open on a
+   * plane — and it says something the system sans cannot, which is that this
+   * is a place for your own days rather than a dashboard.
+   *
+   * It is spent on names only: the date on Today, a page title, a plan's
+   * title, a modal's title, an empty state's line. Every label, button, meta
+   * line and form field stays in the sans, because a serif at 11px in a
+   * control is illegible and pretending otherwise is how "characterful"
+   * becomes "hard to use".
+   */
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+    Georgia, "Times New Roman", serif;
+
+  /*
    * The type scale.
    *
    * The stylesheets had grown eighteen distinct font sizes over 226
@@ -57,49 +74,51 @@
   --space-6: 32px;
 
   /*
-   * The palette.
+   * Warm paper, warm ink, and an accent that is nobody's default.
    *
-   * `--surface` and `--surface-2` used to be #ffffff and #fafbfc — five units
-   * apart, which is invisible. That is *why* the app had 102 hairline borders:
-   * no box could be told from its background by tone, so every box had to draw
-   * a line around itself. The steps below are far enough apart to separate on
-   * their own, which is what lets the lines go.
+   * The previous palette was correct and completely anonymous: the same cold
+   * blue-grey every productivity tool ships with. Nothing was wrong with any
+   * single value, and together they said nothing about what this app is.
+   *
+   * So: paper rather than white, ink rather than black, and indigo rather than
+   * the #3b82f6 that half the web uses for its primary button. The three
+   * signal colours keep their jobs — amber is still "today", green "done", red
+   * "late" — because they are the only colours in here that a user has to
+   * *read*, and rotating those would be a redesign of the meaning, not the
+   * look.
+   *
+   * Every pair below is verified in `src/test/palette.test.ts`, which also
+   * checks the four tone steps still separate the surfaces now that the app
+   * draws almost no lines between them.
    */
-  /*
-   * Every value below is checked against the grounds it is actually printed
-   * on — body text at 4.5:1, the quiet meta line and coloured marks at 3:1.
-   * The first draft of this palette failed nine of those pairs, and the worst
-   * of them was the faint grey that now carries the entire meta line under
-   * every task. See `docs/ui-redesign/05-tasarim-sistemi.md`.
-   */
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-2: #eef1f5;
-  --surface-3: #e3e7ed;
+  --bg: #f4f2ef;
+  --surface: #fffefc;
+  --surface-2: #eae6e0;
+  --surface-3: #ded9d1;
   /* An alias, not a fifth ground. Hover means "become the next step down the
      ladder", and 33 rules were written against this name before the ladder
      existed; pointing it at `--surface-2` keeps them all correct and stops the
      app carrying a tone nothing else in the system knows about. */
   --surface-hover: var(--surface-2);
-  --border: #e4e8ee;
-  --border-strong: #c8ced8;
+  --border: #e3ded7;
+  --border-strong: #c6bfb5;
 
-  --text: #12151c;
-  --text-muted: #5f6777;
-  --text-faint: #7f8998;
+  --text: #1b1916;
+  --text-muted: #615b54;
+  --text-faint: #867f76;
 
-  --accent: #2560f5;
-  --accent-soft: #edf1ff;
+  --accent: #4a3fd4;
+  --accent-soft: #eceaff;
   --accent-text: #ffffff;
 
-  --danger: #d1252b;
-  --danger-soft: #fdeaea;
-  --warning: #a35e08;
-  --warning-soft: #fdf1e0;
-  --success: #0c7f3e;
-  --success-soft: #e4f5ea;
+  --danger: #c22f3a;
+  --danger-soft: #fbe9ea;
+  --warning: #8f5b05;
+  --warning-soft: #fbefdc;
+  --success: #12744a;
+  --success-soft: #e3f2e8;
   --info: #6f5df0;
-  --info-soft: #eeecfe;
+  --info-soft: #eceaff;
 
   /*
    * One elevation, for things that float.
@@ -129,30 +148,30 @@
  * palette nobody can see both halves of at once is a palette that drifts.
  */
 [data-theme="dark"] {
-  --bg: #0b0d11;
-  --surface: #15181e;
-  --surface-2: #1c2029;
-  --surface-3: #242935;
+  --bg: #100f0d;
+  --surface: #1a1815;
+  --surface-2: #232019;
+  --surface-3: #2e2a22;
   --surface-hover: var(--surface-2);
-  --border: #242a34;
-  --border-strong: #39404e;
+  --border: #2b2721;
+  --border-strong: #443f36;
 
-  --text: #e9ecf2;
-  --text-muted: #9aa3b2;
-  --text-faint: #6c7585;
+  --text: #f0ece5;
+  --text-muted: #a49c91;
+  --text-faint: #7b736a;
 
-  --accent: #6d92ff;
-  --accent-soft: #1d2745;
-  --accent-text: #0b0d11;
+  --accent: #9b91ff;
+  --accent-soft: #241f45;
+  --accent-text: #100f0d;
 
-  --danger: #ff6b70;
-  --danger-soft: #38191c;
-  --warning: #e8a03f;
-  --warning-soft: #362813;
-  --success: #3fc97a;
-  --success-soft: #12301e;
-  --info: #9c8dff;
-  --info-soft: #221d43;
+  --danger: #ff7b7f;
+  --danger-soft: #3a1c1e;
+  --warning: #e6a54a;
+  --warning-soft: #382a15;
+  --success: #4cc98a;
+  --success-soft: #14301f;
+  --info: #b0a6ff;
+  --info-soft: #241f45;
 
   --shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.62);

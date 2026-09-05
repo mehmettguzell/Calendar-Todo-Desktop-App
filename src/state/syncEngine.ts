@@ -1323,38 +1323,36 @@ async function flushPendingWrites(): Promise<void> {
         syncedCategoryFingerprints.delete(id);
     }
 
-    const tasksToWrite: Task[] = [];
-    const taskFingerprints = new Map<string, string>();
-    const deletedTaskIdSet = new Set(deletedTaskIds);
-    for (const id of taskIds) {
-      if (deletedTaskIdSet.has(id)) continue;
-      const task = taskById.get(id);
-      if (!task) continue;
-      const fp = localTaskFingerprint(task);
-      if (syncedTaskFingerprints.get(id) === fp) continue;
-      tasksToWrite.push(task);
-      taskFingerprints.set(id, fp);
-    }
-    if (tasksToWrite.length > 0) {
+    const plan = planTaskWrites({
+      queued: taskIds,
+      deleted: deletedTaskIds,
+      taskById,
+      synced: syncedTaskFingerprints,
+    });
+
+    if (plan.upsert.length > 0) {
+      const tasksToWrite = plan.upsert
+        .map((id) => taskById.get(id))
+        .filter((t): t is Task => Boolean(t));
       const { error } = await upsertTasksToCloud(tasksToWrite, userId);
       if (error) throw error;
-      for (const [id, fp] of taskFingerprints) {
-        syncedTaskFingerprints.set(id, fp);
+      for (const task of tasksToWrite) {
+        syncedTaskFingerprints.set(task.id, localTaskFingerprint(task));
       }
     }
 
-    if (deletedTaskIds.length > 0) {
+    if (plan.markDeleted.length > 0) {
       const { error } = await withTimeout(
         supabase
           .from("tasks")
           .update({ is_deleted: true, updated_at: new Date().toISOString() })
-          .in("id", deletedTaskIds)
+          .in("id", plan.markDeleted)
           .eq("user_id", userId),
         "task delete",
       );
       if (error) throw error;
-      for (const id of deletedTaskIds) syncedTaskFingerprints.delete(id);
     }
+    for (const id of deletedTaskIds) syncedTaskFingerprints.delete(id);
 
     await writeCollection(
       OCCURRENCE_SPEC,
@@ -1402,7 +1400,12 @@ async function flushPendingWrites(): Promise<void> {
     const pendingHistorySet = new Set(historyIds);
     await writeHistory(
       db.history.filter(
-        (h) => pendingHistorySet.has(h.id) && !syncedHistoryIds.has(h.id),
+        (h) =>
+          pendingHistorySet.has(h.id) &&
+          !syncedHistoryIds.has(h.id) &&
+          // The trail of a task that was created and trashed before it
+          // ever reached the cloud describes a row nothing over there has.
+          !plan.forget.has(h.taskId),
       ),
       userId,
     );
@@ -1442,6 +1445,61 @@ async function flushPendingWrites(): Promise<void> {
     );
     scheduleRetry(kind);
   }
+}
+
+/**
+ * What a flush should actually send about the tasks it has queued.
+ *
+ * Three answers, and the third is the one that was missing: some rows should
+ * be dropped entirely rather than written.
+ *
+ * Adding a task and then thinking better of it is among the most common things
+ * anyone does here, and it used to cost two requests — an upsert carrying a
+ * row whose only content was `is_deleted`, and an insert carrying that row's
+ * history. The server had never seen the task, so the first request built a
+ * tombstone for something that never existed and the second explained what had
+ * happened to it.
+ *
+ * `synced` is the record of what has actually been written, so "not in
+ * `synced`" means the cloud has never heard of this id. A row that is already
+ * in the trash and was never written has nothing to say to anyone; if it is
+ * ever restored, it will not match a stored fingerprint and the next flush
+ * picks it up then.
+ *
+ * A pure function of four values, because a rule about *not* making a request
+ * cannot be observed by watching requests.
+ */
+export function planTaskWrites(input: {
+  /** Ids the queue holds. */
+  queued: string[];
+  /** Ids queued as purges (a tombstone, not a soft delete). */
+  deleted: string[];
+  taskById: Map<string, Task>;
+  /** id -> the fingerprint last written to the cloud. */
+  synced: ReadonlyMap<string, string>;
+}): { upsert: string[]; markDeleted: string[]; forget: Set<string> } {
+  const { queued, deleted, taskById, synced } = input;
+  const purged = new Set(deleted);
+
+  const forget = new Set<string>();
+  for (const id of [...queued, ...deleted]) {
+    if (synced.has(id)) continue;
+    const task = taskById.get(id);
+    // A purge leaves no row behind at all, so `taskById` may not have it.
+    if (!task || task.deletedAt !== null) forget.add(id);
+  }
+
+  const upsert: string[] = [];
+  for (const id of queued) {
+    if (purged.has(id) || forget.has(id)) continue;
+    const task = taskById.get(id);
+    if (!task) continue;
+    if (synced.get(id) === localTaskFingerprint(task)) continue;
+    upsert.push(id);
+  }
+
+  const markDeleted = deleted.filter((id) => !forget.has(id));
+  return { upsert, markDeleted, forget };
 }
 
 /* ------------------------------------------------------------------ */

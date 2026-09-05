@@ -372,6 +372,12 @@ export function App() {
               filters={filters}
               selectedKey={selected?.key ?? null}
               onOpen={openInstance}
+              // The week strip doubles as navigation, the same way the mini
+              // month in the sidebar does.
+              onPickDate={(date) => {
+                setAnchor(date);
+                setView("calendar");
+              }}
             />
           ) : null}
 

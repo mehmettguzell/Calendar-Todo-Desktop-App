@@ -222,6 +222,14 @@ export function BudgetView() {
         </p>
       ) : null}
 
+      {/* The period's standing income and bills, directly under the figures
+          they explain. This used to sit in the right-hand column below, which
+          put the salary and the rent underneath a chart of where the money
+          had already gone — the plan printed after the result. */}
+      <div className="section">
+        <FixedCosts range={range} today={today} currency={currency} />
+      </div>
+
       <div className="budget-columns section">
         <section className="card budget-breakdown">
           <div className="section-head">
@@ -297,7 +305,6 @@ export function BudgetView() {
           )}
         </section>
 
-        <FixedCosts range={range} today={today} currency={currency} />
       </div>
 
       {/* Full width, and last: the ledger is what you drop into once the three

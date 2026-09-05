@@ -90,30 +90,33 @@ select {
   text-align: center;
 }
 
-/* The icon sits in a soft disc rather than floating: at 28px on an empty page
-   a bare glyph reads as something that failed to load. */
+/* Line art, drawn at a size that means it, rather than a glyph in a grey disc.
+   The disc existed because a 28px icon on an empty page reads as something
+   that failed to load; the answer to that is a bigger drawing, not a plate to
+   stand the small one on. */
 .empty-icon {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
-  margin-bottom: 2px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text-faint);
+  margin-bottom: 4px;
+  color: var(--border-strong);
+}
+
+.empty-art {
+  display: block;
 }
 
 .empty-title {
-  font-weight: var(--weight-bold);
-  font-size: var(--text-md);
-  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-weight: var(--weight-medium);
+  font-size: var(--text-lg);
+  color: var(--text);
 }
 
 .empty-hint {
-  font-size: var(--text-xs);
-  max-width: 42ch;
-  line-height: 1.5;
+  font-size: var(--text-sm);
+  max-width: 44ch;
+  line-height: 1.55;
+  color: var(--text-muted);
 }
 
 .empty-action {

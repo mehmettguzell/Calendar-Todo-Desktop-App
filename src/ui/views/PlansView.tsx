@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { toLocalDate } from "@/domain/datetime";
-import { planProgress, planStage, type PlanStage } from "@/domain/plan";
+import { planProgress, planStage } from "@/domain/plan";
 import { isMissed, type Deadline } from "@/domain/deadline";
 import { arrangePinned, pinOf } from "@/domain/manualOrder";
 import {
@@ -35,6 +35,7 @@ import {
   useLiveTasks,
 } from "@/state/selectors";
 import { useSelectionStore } from "@/state/selectionStore";
+import { useViewPrefs, type PlanFilter } from "@/state/viewPrefsStore";
 import { useNow, useStore } from "@/state/store";
 import { useListReorder, type RowReorder } from "@/ui/task/useListReorder";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
@@ -54,9 +55,11 @@ import { DeadlineEditor } from "@/ui/task/DeadlineEditor";
  * through with one they wrote down and never opened — the two things a page of
  * plans most needs to keep apart. `PlanStage` splits them, and `ALL` stays for
  * when the split is not what you are looking for.
+ *
+ * Which one is chosen lives in `viewPrefsStore`, not in this component: a view
+ * unmounts when you click another one in the sidebar, and a filter that resets
+ * every time you glance at Today is the app undoing a choice you just made.
  */
-type PlanFilter = "ALL" | PlanStage;
-
 const PLAN_TABS: { id: PlanFilter; labelKey: TranslationKey }[] = [
   { id: "ALL", labelKey: "plansAll" },
   { id: "STARTED", labelKey: "plansStarted" },
@@ -162,7 +165,8 @@ export function PlansView({
   const clearSelection = useSelectionStore((s) => s.clear);
   const replaceSelection = useSelectionStore((s) => s.replace);
 
-  const [filter, setFilter] = useState<PlanFilter>("ALL");
+  const filter = useViewPrefs((s) => s.planFilter);
+  const setFilter = useViewPrefs((s) => s.setPlanFilter);
   const [newPlanModal, setNewPlanModal] = useState(false);
 
   const plans = useMemo(() => {

@@ -10,9 +10,9 @@ import {
   Plus,
   Sun,
 } from "lucide-react";
-import { formatTracked, toLocalDate } from "@/domain/datetime";
+import { formatTracked, localeTag, toLocalDate } from "@/domain/datetime";
 import { getMotivationalMessage } from "@/domain/gamification";
-import type { Task, TaskInstance } from "@/domain/types";
+import type { LocalDate, Task, TaskInstance } from "@/domain/types";
 import { fireConfetti } from "@/lib/confetti";
 import { cn } from "@/lib/cn";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
@@ -26,9 +26,10 @@ import {
   type Filters,
 } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
+import { EmptyArt } from "@/ui/components/EmptyArt";
 import { Empty } from "@/ui/components/primitives";
 import { ProgressRing } from "@/ui/components/ProgressRing";
-import { WeeklyBarChart } from "@/ui/components/WeeklyBarChart";
+import { WeekStrip } from "@/ui/components/WeekStrip";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
 import { Composer, focusComposer } from "@/ui/task/Composer";
 import { TaskList } from "@/ui/task/TaskList";
@@ -41,13 +42,23 @@ export function TodayView({
   filters,
   selectedKey,
   onOpen,
+  onPickDate,
 }: {
   filters: Filters;
   selectedKey: string | null;
   onOpen: (instance: TaskInstance) => void;
+  /** Opens a day in the calendar; the week strip is navigation too. */
+  onPickDate?: (date: LocalDate) => void;
 }) {
   const now = useNow();
   const today = toLocalDate(now);
+  // Split in two so the weekday can sit above the date at a different weight,
+  // which is what makes the pair read as a heading rather than a timestamp.
+  const weekday = now.toLocaleDateString(localeTag(), { weekday: "long" });
+  const dayAndMonth = now.toLocaleDateString(localeTag(), {
+    day: "numeric",
+    month: "long",
+  });
   const groups = useTodoGroups(filters);
   const sessions = useFocusSessions();
   const rollOverTo = useStore((s) => s.rollOverTo);
@@ -164,21 +175,27 @@ export function TodayView({
           <ProgressRing
             completed={done}
             total={sorted.length}
+            size={76}
+            strokeWidth={7}
             onCelebrate={() => fireConfetti({ particleCount: 100 })}
           />
 
-          {/* Three lines, not five.
-              The greeting used to arrive as a coloured pill, a second coloured
-              pill for the streak, a sentence and a stat row — four decorated
-              things above the first task, three of them saying some version of
-              "you are doing fine". The greeting is now plain text (its colour
-              still carries the mood), and the streak joined the stats, where
-              every other number about today already lives. */}
+          {/* The date is the headline.
+              A day planner that never printed the date: the topbar said
+              "Bugün", the sidebar held a mini month, and the screen you open
+              first every morning never told you what day it was. It is the one
+              fact on this page that is true whether or not you have any tasks,
+              and it is what the screen should be recognisable by. */}
           <div className="today-hero-text">
-            <h2 className={cn("today-hero-headline", motivation.badgeType)}>
+            <div className="today-date">
+              <span className="today-date-weekday">{weekday}</span>
+              <h2 className="today-date-day">{dayAndMonth}</h2>
+            </div>
+
+            <p className={cn("today-hero-headline", motivation.badgeType)}>
               {motivation.emoji}{" "}
               {t(motivation.titleKey as TranslationKey, motivation.params)}
-            </h2>
+            </p>
 
             <p className="today-hero-subtitle">
               {t(motivation.subtitleKey as TranslationKey, {
@@ -236,7 +253,7 @@ export function TodayView({
             with the first finished task and stays from then on. */}
         {hasWeekHistory ? (
           <div className="today-hero-right">
-            <WeeklyBarChart stats={weeklyStats} />
+            <WeekStrip stats={weeklyStats} onPickDate={onPickDate} />
           </div>
         ) : null}
       </div>
@@ -314,7 +331,7 @@ export function TodayView({
       >
         {allDayTasks.length === 0 && timedTasks.length === 0 ? (
           <Empty
-            icon={<CalendarCheck size={28} />}
+            icon={<EmptyArt kind="cleared" />}
             title={t("todayEmptyTitle")}
             hint={t("todayEmptyHint")}
             action={

@@ -12,6 +12,7 @@ import {
 import type { Task, TaskInstance } from "@/domain/types";
 import { useStore, useNow } from "@/state/store";
 import { useLiveTasks } from "@/state/selectors";
+import { EmptyArt } from "@/ui/components/EmptyArt";
 import { Empty } from "@/ui/components/primitives";
 import { PageHeader } from "@/ui/components/PageHeader";
 import { toInstance } from "@/domain/task";
@@ -190,7 +191,7 @@ export function NotesView({
       {notes.length === 0 ? (
         <>
           <Empty
-            icon={<StickyNote size={28} />}
+            icon={<EmptyArt kind="notes" />}
             title={t("notesEmptyTitle")}
             hint={t("notesEmptyHint")}
           />
@@ -210,7 +211,7 @@ export function NotesView({
         </>
       ) : visible.length === 0 ? (
         <Empty
-          icon={<Search size={28} />}
+          icon={<EmptyArt kind="search" />}
           title={t("notesNoMatch")}
           hint={t("notesNoMatchHint")}
         />

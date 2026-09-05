@@ -169,6 +169,26 @@ describe("the plans page", () => {
     expect(screen.queryByText("Başlamadım")).toBeNull();
   });
 
+  it("is still on the tab you left it on when you come back", () => {
+    makePlan("Başlamadım", ["a"]);
+    const started = makePlan("Başladım", ["b"]);
+    act(() => {
+      useStore
+        .getState()
+        .setStatus({ taskId: started.id, occurrenceDate: null }, "IN_PROGRESS");
+    });
+
+    const first = render(<PlansView selectedKey={null} onOpen={() => undefined} />);
+    act(() => tab(/Başladıklarım/).click());
+    // Clicking another view in the sidebar unmounts this one, which is what
+    // used to throw the choice away.
+    first.unmount();
+
+    render(<PlansView selectedKey={null} onOpen={() => undefined} />);
+    expect(tab(/Başladıklarım/).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByText("Başlamadım")).toBeNull();
+  });
+
   it("still reaches the actions that moved behind the menu", () => {
     const plan = makePlan("Sunum", ["Slaytlar"]);
     render(<PlansView selectedKey={null} onOpen={() => undefined} />);

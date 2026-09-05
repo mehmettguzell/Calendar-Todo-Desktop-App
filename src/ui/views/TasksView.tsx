@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   CheckCircle2,
   CircleAlert,
@@ -7,7 +7,6 @@ import {
   FolderKanban,
   Layers,
   List,
-  ListChecks,
   MousePointerClick,
 } from "lucide-react";
 import { toLocalDate } from "@/domain/datetime";
@@ -25,15 +24,15 @@ import {
   type TodoGroup,
 } from "@/state/selectors";
 import { useSelectionStore } from "@/state/selectionStore";
+import { useViewPrefs } from "@/state/viewPrefsStore";
 import { useNow, useStore } from "@/state/store";
+import { EmptyArt } from "@/ui/components/EmptyArt";
 import { Empty } from "@/ui/components/primitives";
 import { PageHeader } from "@/ui/components/PageHeader";
 import { Segmented } from "@/ui/components/Segmented";
 import { Composer, focusComposer } from "@/ui/task/Composer";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
 import { TaskList } from "@/ui/task/TaskList";
-
-type ViewMode = "list" | "priority" | "category";
 
 export function TasksView({
   filters,
@@ -55,10 +54,14 @@ export function TasksView({
   const beginSelecting = useSelectionStore((s) => s.begin);
   const clearSelection = useSelectionStore((s) => s.clear);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [filterPill, setFilterPill] = useState<
-    "all" | "high" | "overdue" | "completed"
-  >("all");
+  // Both live in `viewPrefsStore` for the same reason the plans filter does:
+  // a view unmounts on every sidebar click, and coming back to "all tasks,
+  // list" after every glance at the calendar is the app forgetting on your
+  // behalf.
+  const viewMode = useViewPrefs((s) => s.taskLayout);
+  const setViewMode = useViewPrefs((s) => s.setTaskLayout);
+  const filterPill = useViewPrefs((s) => s.taskFilter);
+  const setFilterPill = useViewPrefs((s) => s.setTaskFilter);
 
   const parentCache = useMemo(() => {
     const map = new Map<string, Task>();
@@ -264,7 +267,7 @@ function ListView({
     if (filtered.length === 0) {
       return (
         <Empty
-          icon={<ListChecks size={28} />}
+          icon={<EmptyArt kind="search" />}
           title={t("tasksNoMatchTitle")}
           hint={t("tasksNoMatchHint")}
         />
@@ -284,7 +287,7 @@ function ListView({
   if (groups.length === 0) {
     return (
       <Empty
-        icon={<ListChecks size={28} />}
+        icon={<EmptyArt kind="inbox" />}
         title={t("tasksEmptyTitle")}
         hint={t("tasksEmptyHint")}
         action={
