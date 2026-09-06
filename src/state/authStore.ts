@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
 import {
+  avatarToBackfill,
   calculateTrialStatus,
+  mergeProfileRow,
+  profileFromAuthUser,
   type PlanTier,
   type SubscriptionStatus,
   type TrialCalculation,
@@ -131,7 +134,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         data: { session },
       } = await supabase.auth.getSession();
 
-      set({ session });
+      // The session is the identity. Reading the user off it here is what
+      // makes the sidebar right the moment the window opens — offline
+      // included — instead of an empty card waiting on a request that, in a
+      // tunnel, never comes back.
+      set({
+        session,
+        user: session?.user
+          ? profileFromAuthUser(session.user, get().user)
+          : null,
+      });
 
       if (session?.user) {
         // Deliberately not awaited: see above.
@@ -161,7 +173,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if (event === "INITIAL_SESSION") set({ session: null });
           return;
         }
-        set({ session: newSession });
+        // Same on every later session — a token refresh included, which is
+        // otherwise a moment where the profile could be rebuilt from a row
+        // that knows less than the session does.
+        set({
+          session: newSession,
+          user: profileFromAuthUser(newSession.user, get().user),
+        });
         void get().hydrateAccountDetails(newSession.user.id);
       });
       authListener = data.subscription;
@@ -179,8 +197,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     ]);
   },
 
+  /**
+   * Enrich the signed-in user with their stored row.
+   *
+   * *Enrich*, not replace. The session already said who this is; the row adds
+   * what only the server knows and corrects what the user has since edited.
+   * A column that is null says nothing — see `mergeProfileRow`, which is where
+   * the intermittent profile picture came from.
+   */
   fetchProfile: async (userId: string) => {
     if (!supabase) return;
+
+    const authUser = get().session?.user;
+    const base =
+      get().user ??
+      (authUser ? profileFromAuthUser(authUser, null) : null);
+    if (!base) return;
+
     try {
       const { data } = await supabase
         .from("profiles")
@@ -188,51 +221,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         .eq("id", userId)
         .maybeSingle();
 
-      if (data) {
-        set({
-          user: {
-            id: data.id,
-            email: data.email,
-            fullName: data.full_name,
-            avatarUrl: data.avatar_url,
-            createdAt: data.created_at,
-            updatedAt: data.updated_at,
+      const merged = mergeProfileRow(base, data);
+      set({ user: merged });
+
+      const now = new Date().toISOString();
+      if (!data) {
+        // No row: create it, or `tasks.user_id -> profiles.id` rejects every
+        // write this account makes.
+        await supabase.from("profiles").upsert(
+          {
+            id: userId,
+            email: merged.email,
+            full_name: merged.fullName,
+            avatar_url: merged.avatarUrl,
+            created_at: merged.createdAt ?? now,
+            updated_at: now,
           },
-        });
-      } else {
-        // Fallback: If profile row is missing in public.profiles table, create it immediately
-        // so that foreign key constraints on public.tasks (user_id -> profiles.id) succeed!
-        const session = get().session;
-        const authUser = session?.user;
-        const email = authUser?.email ?? "";
-        const fullName =
-          (authUser?.user_metadata?.full_name as string) ??
-          email.split("@")[0] ??
-          "User";
-        const now = new Date().toISOString();
+          { onConflict: "id" },
+        );
+        return;
+      }
 
-        const profileRecord = {
-          id: userId,
-          email,
-          full_name: fullName,
-          avatar_url: (authUser?.user_metadata?.avatar_url as string) ?? null,
-          created_at: authUser?.created_at ?? now,
-          updated_at: now,
-        };
-
+      // The row exists but has never been told about the provider's picture.
+      // Writing it back is what makes this account's other devices — and the
+      // next cold start on this one — show the same face.
+      const backfill = avatarToBackfill(merged, data);
+      if (backfill) {
         await supabase
           .from("profiles")
-          .upsert(profileRecord, { onConflict: "id" });
-        set({
-          user: {
-            id: profileRecord.id,
-            email: profileRecord.email,
-            fullName: profileRecord.full_name,
-            avatarUrl: profileRecord.avatar_url ?? undefined,
-            createdAt: profileRecord.created_at,
-            updatedAt: profileRecord.updated_at,
-          },
-        });
+          .update({ avatar_url: backfill, updated_at: now })
+          .eq("id", userId);
       }
     } catch (err) {
       console.warn("Could not fetch or create user profile:", err);
@@ -294,21 +312,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       if (data.session) {
-        const authUser = data.session.user;
-        const initialUser: UserProfile = {
-          id: authUser.id,
-          email: authUser.email ?? "",
-          fullName:
-            (authUser.user_metadata?.full_name as string) ??
-            authUser.email?.split("@")[0] ??
-            "User",
-          avatarUrl: (authUser.user_metadata?.avatar_url as string) ?? null,
-          createdAt: authUser.created_at,
-          updatedAt: new Date().toISOString(),
-        };
         set({
           session: data.session,
-          user: initialUser,
+          user: profileFromAuthUser(data.session.user, get().user),
           authModalOpen: false,
           loading: false,
         });
@@ -358,18 +364,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       if (data.session) {
-        const authUser = data.session.user;
-        const initialUser: UserProfile = {
-          id: authUser.id,
-          email: authUser.email ?? "",
-          fullName: fullName || authUser.email?.split("@")[0] || "User",
-          avatarUrl: (authUser.user_metadata?.avatar_url as string) ?? null,
-          createdAt: authUser.created_at,
-          updatedAt: new Date().toISOString(),
-        };
+        const fromSession = profileFromAuthUser(data.session.user, get().user);
         set({
           session: data.session,
-          user: initialUser,
+          // The name they just typed beats whatever the session inferred from
+          // the address; the row that carries it may not exist yet.
+          user: { ...fromSession, fullName: fullName || fromSession.fullName },
           authModalOpen: false,
           loading: false,
         });

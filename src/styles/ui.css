@@ -399,3 +399,19 @@
     transition: none;
   }
 }
+
+/* The shared face.
+   Both places that draw one — the sidebar card and the profile modal — bring
+   their own size and ground; this only fixes what a picture does inside that
+   frame, so a component can be dropped anywhere without a new rule. */
+.avatar {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

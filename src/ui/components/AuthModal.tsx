@@ -16,6 +16,7 @@ import {
 } from "@/state/authStore";
 import { getSubscriptionStatusLabel } from "@/domain/auth";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { Avatar } from "./Avatar";
 import { Modal } from "./primitives";
 
 export function AuthModal() {
@@ -485,17 +486,11 @@ export function AuthModal() {
         {view === "profile" && user && (
           <div className="col" style={{ gap: 16 }}>
             <div className="auth-profile-card">
-              <div className="auth-profile-avatar">
-                {user.avatarUrl ? (
-                  <img src={user.avatarUrl} alt={user.fullName ?? "User"} />
-                ) : (
-                  <span>
-                    {(user.fullName || user.email || "U")
-                      .charAt(0)
-                      .toUpperCase()}
-                  </span>
-                )}
-              </div>
+              <Avatar
+                className="auth-profile-avatar"
+                src={user.avatarUrl}
+                name={user.fullName || user.email}
+              />
               <div className="grow truncate">
                 <h3 className="auth-profile-name truncate">
                   {user.fullName ?? t("authUser")}
