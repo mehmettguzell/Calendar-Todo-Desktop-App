@@ -9,7 +9,7 @@ import {
   List,
   MousePointerClick,
 } from "lucide-react";
-import { toLocalDate } from "@/domain/datetime";
+import { addDaysLocal, toLocalDate } from "@/domain/datetime";
 import { insertAt } from "@/domain/manualOrder";
 import { enclosingPlan, toInstance } from "@/domain/task";
 import type { Priority, Task, TaskInstance } from "@/domain/types";
@@ -18,6 +18,7 @@ import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
   arrangeInstances,
   useCategories,
+  useDeadlineMarkers,
   useLiveTasks,
   useTodoGroups,
   type Filters,
@@ -31,6 +32,7 @@ import { Empty } from "@/ui/components/primitives";
 import { PageHeader } from "@/ui/components/PageHeader";
 import { Segmented } from "@/ui/components/Segmented";
 import { Composer, focusComposer } from "@/ui/task/Composer";
+import { DeadlineMarkers } from "@/ui/task/DeadlineMarkers";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
 import { TaskList } from "@/ui/task/TaskList";
 
@@ -49,6 +51,21 @@ export function TasksView({
   const today = toLocalDate(now);
   const groups = useTodoGroups(filters);
   const { t } = useI18n();
+
+  /*
+   * The dates worth knowing about from this page: the ones already missed, and
+   * the week ahead. They are markers, not rows — see `DeadlineMarkers` — and
+   * `useTodoGroups` no longer carries them, so this is where they come from.
+   *
+   * A month back rather than everything, because a checkpoint missed in March
+   * is not news in September; a week forward, because that is the horizon this
+   * page's own buckets stop at.
+   */
+  const deadlineMarkers = useDeadlineMarkers(
+    addDaysLocal(today, -30),
+    addDaysLocal(today, 7),
+    filters,
+  );
 
   const selecting = useSelectionStore((s) => s.active);
   const beginSelecting = useSelectionStore((s) => s.begin);
@@ -205,6 +222,14 @@ export function TasksView({
       <div className="section">
         <Composer placeholder={t("quickAddPlaceholder")} />
       </div>
+
+      {/* Above the lists and shaped nothing like them: a deadline is a date
+          this page is measured against, not one more thing on it. */}
+      <DeadlineMarkers
+        markers={deadlineMarkers}
+        onOpen={onOpen}
+        className="section"
+      />
 
       {/* Main View Contents */}
       {viewMode === "list" ? (

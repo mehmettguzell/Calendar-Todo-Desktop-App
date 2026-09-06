@@ -98,6 +98,7 @@ export function toInstance(
     key: instanceKey(task.id, date, isRecurring || span.length > 1),
     span,
     isDeadline: false,
+    deadlineOnly: false,
     task,
     date,
     isRecurring,
@@ -138,7 +139,12 @@ export function instancesInRange(
     return out;
   }
 
-  out.push({ ...toInstance(task, deadline, null, now), key: deadlineKey(task.id), isDeadline: true });
+  out.push({
+    ...toInstance(task, deadline, null, now),
+    key: deadlineKey(task.id),
+    isDeadline: true,
+    deadlineOnly: true,
+  });
   return out;
 }
 

@@ -55,13 +55,13 @@ const live = () => useStore.getState().db.tasks.filter((t) => !t.deletedAt);
  */
 const openRowMenu = () =>
   act(() => {
-    screen.getByTitle("Diğer eylemler").click();
+    screen.getByTitle("Daha fazla").click();
   });
 
 const removeStep = () => {
   openRowMenu();
   act(() => {
-    screen.getByText("Listeden / Tarihten Kaldır (Planda kalır)").click();
+    screen.getByText("Tarihini kaldır (planda kalır)").click();
   });
 };
 

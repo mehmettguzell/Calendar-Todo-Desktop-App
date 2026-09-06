@@ -20,6 +20,7 @@ import {
   arrangeInstances,
   useFocusSessions,
   useGamificationStats,
+  deadlineMarkersOf,
   useInstancesInRange,
   useTodoGroups,
   useWeeklyStatsHook,
@@ -32,6 +33,7 @@ import { ProgressRing } from "@/ui/components/ProgressRing";
 import { WeekStrip } from "@/ui/components/WeekStrip";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
 import { Composer, focusComposer } from "@/ui/task/Composer";
+import { DeadlineMarkers } from "@/ui/task/DeadlineMarkers";
 import { TaskList } from "@/ui/task/TaskList";
 
 /**
@@ -81,6 +83,18 @@ export function TodayView({
     [filters],
   );
   const todays = useInstancesInRange(today, today, todayFilters);
+  /*
+   * The dates falling today, kept out of the lists below.
+   *
+   * `todays` holds them too — the calendar wants them — so everything that
+   * counts or lists work filters them back out. Today's own filter forces
+   * `showCompleted`, which for a checkpoint means a met one still shows: on
+   * the day you hit it, that is the part of the day worth seeing.
+   */
+  const deadlineMarkers = useMemo(
+    () => deadlineMarkersOf(todays, today),
+    [todays, today],
+  );
 
   const focusedToday = useMemo(
     () =>
@@ -90,8 +104,12 @@ export function TodayView({
     [sessions, today],
   );
 
-  const done = todays.filter((i) => i.storedStatus === "COMPLETED").length;
-  const sorted = arrangeInstances(todays);
+  const work = useMemo(
+    () => todays.filter((instance) => !instance.deadlineOnly),
+    [todays],
+  );
+  const done = work.filter((i) => i.storedStatus === "COMPLETED").length;
+  const sorted = arrangeInstances(work);
   const openCount = sorted.length - done;
 
   /*
@@ -303,6 +321,15 @@ export function TodayView({
           />
         </Section>
       ) : null}
+
+      {/* The day's dates, before the day's work.
+          A deadline is context for the list underneath rather than an item in
+          it, so it sits above it and looks nothing like it. */}
+      <DeadlineMarkers
+        markers={deadlineMarkers}
+        onOpen={onOpen}
+        className="section"
+      />
 
       {/* Timed Tasks Section */}
       {timedTasks.length > 0 ? (

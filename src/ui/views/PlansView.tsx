@@ -59,11 +59,18 @@ import { DeadlineEditor } from "@/ui/task/DeadlineEditor";
  * Which one is chosen lives in `viewPrefsStore`, not in this component: a view
  * unmounts when you click another one in the sidebar, and a filter that resets
  * every time you glance at Today is the app undoing a choice you just made.
+ *
+ * Started leads the strip, because it is the tab somebody opening this page is
+ * already looking for. `ALL` used to lead, so every visit began by putting the
+ * plans in progress back among the ones written down months ago and never
+ * opened — the reader doing by eye the one job the tabs exist to do. It keeps
+ * its place one step to the right of the two stages, where it reads as the way
+ * *out* of the split rather than the way in.
  */
 const PLAN_TABS: { id: PlanFilter; labelKey: TranslationKey }[] = [
-  { id: "ALL", labelKey: "plansAll" },
   { id: "STARTED", labelKey: "plansStarted" },
   { id: "NOT_STARTED", labelKey: "plansNotStarted" },
+  { id: "ALL", labelKey: "plansAll" },
   { id: "COMPLETED", labelKey: "plansCompleted" },
 ];
 

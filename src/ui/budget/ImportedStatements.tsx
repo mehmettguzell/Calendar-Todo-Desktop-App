@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { FileText, Undo2 } from "lucide-react";
 import { formatDate, fromInstant, toLocalDate } from "@/domain/datetime";
 import { formatMoney } from "@/domain/money";
-import { isLive } from "@/domain/statementBatch";
+import { isLive, type StatementBatch } from "@/domain/statementBatch";
 import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
 import { useStore } from "@/state/store";
@@ -16,6 +16,25 @@ import { useStore } from "@/state/store";
  */
 function importedOn(instant: string): string {
   return toLocalDate(fromInstant(instant));
+}
+
+/**
+ * The imports that belong to a window, newest first.
+ *
+ * Exported because the budget page counts them on its tab, and a count that
+ * disagrees with the list under it is worse than no count at all.
+ */
+export function statementsInRange(
+  batches: StatementBatch[],
+  range: { from: string; to: string },
+): StatementBatch[] {
+  return batches
+    .filter((batch) => {
+      if (batch.deletedAt !== null) return false;
+      const day = importedOn(batch.importedAt);
+      return day >= range.from && day <= range.to;
+    })
+    .sort((a, b) => b.importedAt.localeCompare(a.importedAt));
 }
 
 /**
@@ -54,15 +73,8 @@ export function ImportedStatements({
    * is answered on the line rather than by the heading.
    */
   const visible = useMemo(
-    () =>
-      batches
-        .filter((batch) => {
-          if (batch.deletedAt !== null) return false;
-          const day = importedOn(batch.importedAt);
-          return day >= range.from && day <= range.to;
-        })
-        .sort((a, b) => b.importedAt.localeCompare(a.importedAt)),
-    [batches, range.from, range.to],
+    () => statementsInRange(batches, range),
+    [batches, range],
   );
 
   if (visible.length === 0) return null;

@@ -290,6 +290,17 @@ export interface TaskInstance {
    */
   isDeadline: boolean;
   /**
+   * This row exists *only* because of a deadline: it is a date, not work.
+   *
+   * `isDeadline` also gets set on a real occurrence that happens to fall on the
+   * task's deadline — a one-day job due by its own date — and that row is still
+   * the task, still tickable, still a task in every list. This one is not: no
+   * time was ever scheduled on this day, and there is nothing here to do. The
+   * lists use it to keep markers out of the work, which is the difference
+   * between "you have 9 things today" and "you have 7 things and 2 dates".
+   */
+  deadlineOnly: boolean;
+  /**
    * The name of the checkpoint this instance marks, when it marks one.
    *
    * A named deadline is drawn on the calendar under its own label — "Backend

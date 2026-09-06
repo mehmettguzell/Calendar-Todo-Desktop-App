@@ -6,6 +6,10 @@ import { useStore } from "@/state/store";
  * entry points — creating a subtask, re-filing a task under a plan, and
  * changing a plan's own category — and all three have to agree, or the Plans
  * view and the category filters start disagreeing about the same task.
+ *
+ * Priority inherits down the same two of those paths, for the same reason and
+ * with one difference: a priority the task already carries is somebody's
+ * answer, so it is never overwritten. `NONE` is the absence of an answer.
  */
 beforeEach(async () => {
   await useStore.getState().resetDatabase();
@@ -15,6 +19,8 @@ beforeEach(async () => {
 const store = () => useStore.getState();
 const categoryOf = (id: string) =>
   useStore.getState().db.tasks.find((t) => t.id === id)?.categoryId ?? null;
+const priorityOf = (id: string) =>
+  useStore.getState().db.tasks.find((t) => t.id === id)?.priority ?? null;
 
 const setup = () => {
   const work = store().addCategory("Tez", "#6366f1");
@@ -134,5 +140,65 @@ describe("re-filing a plan", () => {
     store().updateTask(plan.id, { categoryId: work.id });
 
     expect(useStore.getState().db.tasks.find((t) => t.id === step.id)?.updatedAt).toBe(before);
+  });
+});
+
+/**
+ * How urgent a step is, is how urgent the thing it is a step of is.
+ *
+ * Every box that adds a step is a single line with no priority field on it, so
+ * steps were all born NONE. Put on today, a step of an urgent plan then
+ * arrived in the list looking like the least pressing thing on it — and there
+ * was nowhere in that flow to say otherwise.
+ */
+describe("a step's priority", () => {
+  const urgentPlan = () =>
+    store().createTask({ title: "Tez", tags: ["plan"], priority: "HIGH" });
+
+  it("starts at its plan's", () => {
+    const plan = urgentPlan();
+    const step = store().createTask({ title: "Kaynak taraması", parentId: plan.id });
+    expect(priorityOf(step.id)).toBe("HIGH");
+  });
+
+  it("reaches a step's own steps", () => {
+    const plan = urgentPlan();
+    const step = store().createTask({ title: "Kaynak taraması", parentId: plan.id });
+    const leaf = store().createTask({ title: "Kapak", parentId: step.id });
+    expect(priorityOf(leaf.id)).toBe("HIGH");
+  });
+
+  it("keeps one it was given explicitly", () => {
+    const plan = urgentPlan();
+    const step = store().createTask({
+      title: "Kaynak taraması",
+      parentId: plan.id,
+      priority: "LOW",
+    });
+    expect(priorityOf(step.id)).toBe("LOW");
+  });
+
+  it("stays NONE under a plan that claims nothing", () => {
+    const plan = store().createTask({ title: "Tez", tags: ["plan"] });
+    const step = store().createTask({ title: "Adım", parentId: plan.id });
+    expect(priorityOf(step.id)).toBe("NONE");
+  });
+
+  it("is adopted when a loose task is filed under the plan", () => {
+    const plan = urgentPlan();
+    const loose = store().createTask({ title: "Makale oku" });
+
+    store().setParent(loose.id, plan.id);
+
+    expect(priorityOf(loose.id)).toBe("HIGH");
+  });
+
+  it("is left alone when the task already has one of its own", () => {
+    const plan = urgentPlan();
+    const loose = store().createTask({ title: "Makale oku", priority: "LOW" });
+
+    store().setParent(loose.id, plan.id);
+
+    expect(priorityOf(loose.id)).toBe("LOW");
   });
 });

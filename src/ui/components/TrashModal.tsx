@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { AlertCircle, RotateCcw, Trash2 } from "lucide-react";
 import { useCategories, useTrashedTasks } from "@/state/selectors";
-import { useStore } from "@/state/store";
+import { TRASH_RETENTION_MS, useStore } from "@/state/store";
 import { useI18n } from "@/lib/i18n";
 import { Modal } from "./primitives";
 
@@ -11,7 +11,7 @@ export function TrashModal({ onClose }: { onClose: () => void }) {
   const restoreTask = useStore((s) => s.restoreTask);
   const purgeTask = useStore((s) => s.purgeTask);
   const emptyTrash = useStore((s) => s.emptyTrash);
-  const { t, language } = useI18n();
+  const { t } = useI18n();
 
   const sortedTasks = useMemo(() => {
     return [...trashedTasks].sort((a, b) => {
@@ -38,13 +38,18 @@ export function TrashModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const getDaysRemaining = (deletedAt: string | null) => {
-    if (!deletedAt) return 3;
-    const deletedMs = new Date(deletedAt).getTime();
-    const expiresMs = deletedMs + 3 * 24 * 60 * 60 * 1000;
-    const diffHours = (expiresMs - Date.now()) / (1000 * 60 * 60);
-    const diffDays = Math.max(1, Math.ceil(diffHours / 24));
-    return diffDays;
+  /*
+   * How long this row has left, counted in the unit the window is measured in.
+   *
+   * It used to say "N gün kaldı" against a hard-coded three days — a second
+   * copy of a number that lives in the store, and one that could only ever
+   * print "1" once the window shrank to a day. Hours are what a 24-hour window
+   * has to say, and the last stretch of it says "az kaldı" rather than "0".
+   */
+  const hoursLeft = (deletedAt: string | null) => {
+    const from = deletedAt ? new Date(deletedAt).getTime() : Date.now();
+    const left = from + TRASH_RETENTION_MS - Date.now();
+    return Math.max(0, Math.ceil(left / (60 * 60 * 1000)));
   };
 
   return (
@@ -86,7 +91,7 @@ export function TrashModal({ onClose }: { onClose: () => void }) {
           <div className="trash-task-list scroll">
             {sortedTasks.map((task) => {
               const cat = task.categoryId ? catMap.get(task.categoryId) : null;
-              const daysLeft = getDaysRemaining(task.deletedAt);
+              const left = hoursLeft(task.deletedAt);
 
               return (
                 <div key={task.id} className="trash-task-row">
@@ -116,10 +121,7 @@ export function TrashModal({ onClose }: { onClose: () => void }) {
                       style={{ gap: 8, fontSize: "var(--text-2xs)", color: "var(--muted)" }}
                     >
                       <span>
-                        {daysLeft}{" "}
-                        {language === "tr"
-                          ? "gün kaldı"
-                          : `day${daysLeft > 1 ? "s" : ""} left`}
+                        {left > 0 ? t("trashHoursLeft", { n: left }) : t("trashAlmostGone")}
                       </span>
                       {task.dueDate && (
                         <>

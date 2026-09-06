@@ -102,8 +102,9 @@ describe("useRequestDelete", () => {
     requestDelete()(plan.id);
 
     expect(asked).toHaveLength(1);
-    expect(asked[0]).toContain("1");
-    expect(asked[0]).not.toContain("2");
+    // The count, not just the digit: the sentence also names how long the
+    // trash keeps things, so a bare "not 2" would fail on "24 saat".
+    expect(asked[0]).toContain("altındaki 1 görev");
     expect(live()).toHaveLength(0);
     expect(kept.id).toBeTruthy();
   });

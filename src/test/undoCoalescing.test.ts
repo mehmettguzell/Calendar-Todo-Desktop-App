@@ -7,19 +7,23 @@ import { UNDO_WINDOW_MS, useUndoStore } from "@/state/undoStore";
 /**
  * A change taken back must cost the backend nothing.
  *
- * The flush waited five seconds and the undo toast stood for eight, so any
+ * The flush once waited five seconds and the undo toast stood for eight, so any
  * regret arriving in that three-second gap — the ordinary case — was written
  * to the cloud and then written away again: two requests for a document that
  * ended where it started, and a value that flickered on every other device.
  *
- * Two things have to hold for that to cost nothing. The queue has to still be
- * waiting when the reversal lands (`flushDelayMs`), and the reversal has to
- * put the row back to the byte the cloud already holds, so the flush's
- * fingerprint check drops it (`localTaskFingerprint`).
+ * The gathering window has since grown past the toast, which closes that gap
+ * from the other side; the hold is kept, and tested, because the two numbers
+ * are set for unrelated reasons and either can move again.
+ *
+ * Two things have to hold for a reversal to cost nothing. The queue has to
+ * still be waiting when it lands (`flushDelayMs`), and it has to put the row
+ * back to the byte the cloud already holds, so the flush's fingerprint check
+ * drops it (`localTaskFingerprint`).
  */
 const NOW = 1_700_000_000_000;
-const FLUSH_DELAY_MS = 5_000;
-const FLUSH_MAX_WAIT_MS = 30_000;
+const FLUSH_DELAY_MS = 30_000;
+const FLUSH_MAX_WAIT_MS = 120_000;
 
 describe("how long the queue waits", () => {
   it("uses the plain trailing delay when nothing is offered for undo", () => {
@@ -33,13 +37,30 @@ describe("how long the queue waits", () => {
   });
 
   it("waits out an undo offer that outlasts the delay", () => {
+    // Longer than any window this app has shipped, so the rule is exercised
+    // rather than swallowed by whatever `FLUSH_DELAY_MS` happens to be.
+    const longOffer = FLUSH_DELAY_MS + 5_000;
+    expect(
+      flushDelayMs({
+        now: NOW,
+        queuedSince: NOW,
+        undoOfferExpiresAt: NOW + longOffer,
+      }),
+    ).toBe(longOffer);
+  });
+
+  it("ignores an undo offer the delay already outlasts", () => {
+    // Which is the live case: the toast stands for eight seconds and the
+    // window gathers for thirty, so the offer has lapsed long before the
+    // flush — no reversal inside it ever reaches the wire.
+    expect(UNDO_WINDOW_MS).toBeLessThan(FLUSH_DELAY_MS);
     expect(
       flushDelayMs({
         now: NOW,
         queuedSince: NOW,
         undoOfferExpiresAt: NOW + UNDO_WINDOW_MS,
       }),
-    ).toBe(UNDO_WINDOW_MS);
+    ).toBe(FLUSH_DELAY_MS);
   });
 
   it("does not shorten the delay for an offer about to lapse", () => {
@@ -57,7 +78,7 @@ describe("how long the queue waits", () => {
       flushDelayMs({
         now: NOW,
         queuedSince: NOW - (FLUSH_MAX_WAIT_MS - 1_000),
-        undoOfferExpiresAt: NOW + UNDO_WINDOW_MS,
+        undoOfferExpiresAt: NOW + FLUSH_DELAY_MS + 5_000,
       }),
     ).toBe(1_000);
   });

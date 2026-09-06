@@ -145,6 +145,7 @@ export function useInstancesInRange(
           ...toInstance(task, deadline.date, null, now),
           key: namedDeadlineKey(task.id, deadline.id),
           isDeadline: true,
+          deadlineOnly: true,
           deadlineId: deadline.id,
           deadlineLabel: deadline.label,
           deadlineMet: deadline.completedAt !== null,
@@ -153,6 +154,45 @@ export function useInstancesInRange(
     }
     return out.sort(compareInstances);
   }, [tasks, occurrences, deadlineIndex, from, to, filters, now]);
+}
+
+/**
+ * The deadlines falling in a window, as markers rather than as work.
+ *
+ * Two kinds land here and they read the same: a task's own `deadline` (the day
+ * the whole thing stops being on time) and each named checkpoint under it
+ * ("Backend bitecek"). Neither is a day the task occupies — see
+ * `TaskInstance.deadlineOnly` — so neither belongs in a list of things to do,
+ * and a list-shaped view asks for them separately.
+ *
+ * Sorted with the missed ones first: a date already gone is the only one on
+ * this list that changes what you would do next.
+ */
+export function deadlineMarkersOf(
+  instances: TaskInstance[],
+  today: LocalDate,
+): TaskInstance[] {
+  return instances
+    .filter((instance) => instance.deadlineOnly)
+    .sort((a, b) => {
+      const aMissed = (a.date ?? "") < today;
+      const bMissed = (b.date ?? "") < today;
+      if (aMissed !== bMissed) return aMissed ? -1 : 1;
+      return (a.date ?? "").localeCompare(b.date ?? "");
+    });
+}
+
+export function useDeadlineMarkers(
+  from: LocalDate,
+  to: LocalDate,
+  filters: Filters = EMPTY_FILTERS,
+): TaskInstance[] {
+  const instances = useInstancesInRange(from, to, filters);
+  const now = useNow();
+  return useMemo(
+    () => deadlineMarkersOf(instances, toLocalDate(now)),
+    [instances, now],
+  );
 }
 
 export function groupByDate(
@@ -291,6 +331,10 @@ export function useTodoGroups(filters: Filters): TodoGroup[] {
     // because it is both the representative and today's occurrence.
     const seen = new Set<string>();
     const place = (instance: TaskInstance) => {
+      // A deadline is a date, not a todo. It reaches these screens through
+      // `useDeadlineMarkers`, which the views draw as markers — dropping it
+      // into a bucket here is what made a date look like one more thing to do.
+      if (instance.deadlineOnly) return;
       const key = `${instance.task.id}:${instance.date ?? "someday"}`;
       if (seen.has(key)) return;
       seen.add(key);

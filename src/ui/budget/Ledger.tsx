@@ -111,13 +111,13 @@ export function Ledger({
   return (
     <section className="card budget-ledger">
       <div className="section-head">
-        <h3>{t("budgetMovements")}</h3>
+        <h3>{t("budgetEntries")}</h3>
         <span className="faint" style={{ fontSize: "var(--text-xs)" }}>
           {t("ledgerCount", { n: filtered.length })}
         </span>
       </div>
 
-      <p className="faint ledger-hint">{t("budgetMovementsHint")}</p>
+      <p className="faint ledger-hint">{t("budgetEntriesHint")}</p>
 
       <div className="ledger-controls">
         <div className="segmented-tabs is-sm">

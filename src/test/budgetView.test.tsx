@@ -1,5 +1,5 @@
 import { act } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { emptyDatabase } from "@/data/db";
 import { toLocalDate } from "@/domain/datetime";
@@ -7,10 +7,15 @@ import { useStore } from "@/state/store";
 import { App } from "@/App";
 
 /**
- * The budget page renders, with the wishlist above the month.
+ * The budget page asks one question at a time.
  *
- * The domain tests know what the numbers should be; this one exists because a
- * component that throws takes the whole tab with it, and neither a typecheck
+ * It used to ask five at once, down one scroll — wishlist, totals, statements,
+ * entry form, standing bills, breakdown, ledger — with three tab strips on
+ * screen simultaneously. Each of those is now a tab, and this file walks them
+ * the way a person would: land on the summary, press a tab, find the thing.
+ *
+ * The domain tests know what the numbers should be; these exist because a
+ * component that throws takes the whole page with it, and neither a typecheck
  * nor a domain test notices that.
  */
 const today = toLocalDate(new Date());
@@ -50,13 +55,58 @@ async function openBudget() {
   });
 }
 
-describe("the budget tab", () => {
-  it("shows the wishlist above the month's totals", async () => {
+/** The page's own tab strip — not the period one beside it. */
+const sections = () =>
+  screen.getByRole("tablist", { name: /^(Budget sections|Bütçe bölümleri)$/ });
+
+const openTab = (name: RegExp) =>
+  act(() => {
+    within(sections()).getByRole("tab", { name }).click();
+  });
+
+describe("the budget page", () => {
+  it("opens on the summary, with the rest one press away", async () => {
     await openBudget();
 
-    expect(screen.getByText(/^(To buy|Alınacaklar)$/)).toBeDefined();
+    const tabs = within(sections())
+      .getAllByRole("tab")
+      // The count rides inside the tab, so strip it to read the strip.
+      .map((tab) => tab.textContent?.replace(/\d+$/, "") ?? "");
+    expect(tabs).toEqual([
+      "Özet",
+      "İşlemler",
+      "Ekstreler",
+      "Sabit gelir/gider",
+      "Alınacaklar",
+    ]);
+
+    // Where the money went is the summary's business…
+    expect(screen.getByText("Nereye gitti")).toBeDefined();
+    // …and none of the other four are also on screen underneath it.
+    expect(screen.queryByText("Tüm işlemler")).toBeNull();
+    expect(screen.queryByText("Sabit gelir & giderler")).toBeNull();
+    expect(screen.queryByText("Alınacaklar", { selector: "h3" })).toBeNull();
+  });
+
+  it("puts the standing bills on their own tab, after the statements", async () => {
+    await openBudget();
+    openTab(/Sabit gelir/);
+
+    expect(screen.getByText("Sabit gelir & giderler")).toBeDefined();
+    // The month's own figures are not underneath them: a different question.
+    expect(screen.queryByText("Nereye gitti")).toBeNull();
+  });
+});
+
+describe("the wishlist", () => {
+  it("has a tab of its own rather than the top of the page", async () => {
+    await openBudget();
+    openTab(/Alınacaklar/);
+
     // The list is empty, so it says how to start rather than showing nothing.
-    expect(screen.getByPlaceholderText(/What do you want\?|Ne alınacak\?/)).toBeDefined();
+    expect(
+      screen.getByPlaceholderText(/What do you want\?|Ne alınacak\?/),
+    ).toBeDefined();
   });
 
   it("lists an item with its price, and does not put it in the totals", async () => {
@@ -69,6 +119,7 @@ describe("the budget tab", () => {
         url: "teknosa.com/x",
       });
     });
+    openTab(/Alınacaklar/);
 
     expect(screen.getByText("Kulaklık")).toBeDefined();
     // The link is rendered as a host, and only ever as http(s).
@@ -77,7 +128,9 @@ describe("the budget tab", () => {
     // Nothing has been bought, so nothing has been spent.
     expect(useStore.getState().db.transactions).toHaveLength(0);
   });
+});
 
+describe("the entries tab", () => {
   it("renders an instalment purchase as this month's charge", async () => {
     await openBudget();
 
@@ -91,6 +144,7 @@ describe("the budget tab", () => {
         instalments: 12,
       });
     });
+    openTab(/İşlemler/);
 
     // The ledger row shows the charge, not the price, and says which one it is.
     expect(screen.getByText("1/12")).toBeDefined();
@@ -116,25 +170,34 @@ describe("the imported statements list", () => {
         db: { ...state.db, statementBatches: batches as never },
       }));
     });
+    openTab(/Ekstreler/);
   };
 
   it("lists a statement loaded this month, whatever period it covers", async () => {
     await withBatches([batch()]);
 
-    expect(screen.getByText(/^(Imported statements|Yüklenen ekstreler)$/)).toBeDefined();
+    expect(
+      screen.getByText(/^(Imported statements|Yüklenen ekstreler)$/),
+    ).toBeDefined();
     expect(screen.getByText("2026-07-01 → 2026-07-31")).toBeDefined();
   });
 
   it("leaves out one loaded in another month, so the list cannot pile up", async () => {
     await withBatches([batch({ importedAt: noonOn("2024-02-15") })]);
 
-    expect(screen.queryByText(/^(Imported statements|Yüklenen ekstreler)$/)).toBeNull();
+    expect(
+      screen.queryByText(/^(Imported statements|Yüklenen ekstreler)$/),
+    ).toBeNull();
   });
 
-  it("says nothing at all until something has been imported", async () => {
+  it("says how to start when nothing has been imported", async () => {
     await withBatches([]);
 
-    expect(screen.queryByText(/^(Imported statements|Yüklenen ekstreler)$/)).toBeNull();
+    expect(
+      screen.queryByText(/^(Imported statements|Yüklenen ekstreler)$/),
+    ).toBeNull();
+    // …but the tab is not a blank screen: it says why it is empty.
+    expect(screen.getByText("Bu ay ekstre yüklenmemiş.")).toBeDefined();
   });
 
   it("offers the way back out", async () => {

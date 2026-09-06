@@ -5,6 +5,7 @@ import { toLocalDate } from "@/domain/datetime";
 import { planProgress, planStage } from "@/domain/plan";
 import type { Task } from "@/domain/types";
 import { useStore } from "@/state/store";
+import { useViewPrefs } from "@/state/viewPrefsStore";
 import { PlansView } from "@/ui/views/PlansView";
 
 /**
@@ -150,6 +151,31 @@ describe("ticking a step", () => {
 describe("the plans page", () => {
   const tab = (name: RegExp) => screen.getByRole("tab", { name });
 
+  /**
+   * The page opens on the plans already under way.
+   *
+   * Read off the store's own initial state rather than off a render, because
+   * the suite deliberately puts every page on its unfiltered tab (see
+   * `test/setup.ts`) — the default this asserts is the one a user meets.
+   */
+  it("opens on the plans already under way", () => {
+    expect(useViewPrefs.getInitialState().planFilter).toBe("STARTED");
+  });
+
+  it("keeps Tümü in the strip, to the right of the two stages", () => {
+    render(<PlansView selectedKey={null} onOpen={() => undefined} />);
+
+    const labels = screen
+      .getAllByRole("tab")
+      .map((each) => each.textContent?.replace(/\d+$/, "") ?? "");
+    expect(labels).toEqual([
+      "Başladıklarım",
+      "Başlayacaklarım",
+      "Tümü",
+      "Tamamlananlar",
+    ]);
+  });
+
   it("counts each stage on its own tab, and filters to it", () => {
     makePlan("Başlamadım", ["a"]);
     const started = makePlan("Başladım", ["b"]);
@@ -195,11 +221,11 @@ describe("the plans page", () => {
 
     // Four controls used to sit on every card at once. They are one press
     // deeper now, so this is the test that they are still reachable at all.
-    act(() => screen.getByTitle("Diğer işlemler").click());
+    act(() => screen.getByTitle("Daha fazla").click());
     expect(screen.getByText("Bu plana odaklan")).toBeTruthy();
     expect(screen.getByText("Planı sil")).toBeTruthy();
 
-    act(() => screen.getByText("Bugüne Ata").click());
+    act(() => screen.getByText("Bugüne ata").click());
     expect(taskOf(plan.id).dueDate).toBe(toLocalDate(new Date()));
     expect(taskOf(plan.id).allDay).toBe(true);
   });

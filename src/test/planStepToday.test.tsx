@@ -66,7 +66,7 @@ describe("the today button on a panel's subtask row", () => {
 
     render(<SubtaskList parent={taskOf(step.id)} onOpen={() => undefined} />);
     act(() => {
-      screen.getByTitle("Bugüne Ata").click();
+      screen.getByTitle("Bugüne ata").click();
     });
 
     expect(dueDateOf(leaf.id)).toBe(TUESDAY);
@@ -90,7 +90,7 @@ describe("the today button on a panel's subtask row", () => {
 
     render(<SubtaskList parent={taskOf(step.id)} onOpen={() => undefined} />);
     act(() => {
-      screen.getByTitle("Bugünden / Görevlerden Kaldır (Planda kalır)").click();
+      screen.getByTitle("Bugünden kaldır (planda kalır)").click();
     });
 
     expect(dueDateOf(leaf.id)).toBeNull();
@@ -103,7 +103,7 @@ describe("the today button on a panel's subtask row", () => {
 
     render(<SubtaskList parent={taskOf(plan.id)} onOpen={() => undefined} />);
     act(() => {
-      screen.getByTitle("Bugüne Ata").click();
+      screen.getByTitle("Bugüne ata").click();
     });
 
     expect(dueDateOf(step.id)).toBe(TUESDAY);
@@ -116,7 +116,7 @@ describe("the today button on a panel's subtask row", () => {
       .createTask({ title: "Adım", parentId: task.id, dueDate: null });
 
     render(<SubtaskList parent={taskOf(task.id)} onOpen={() => undefined} />);
-    expect(screen.queryByTitle("Bugüne Ata")).toBeNull();
+    expect(screen.queryByTitle("Bugüne ata")).toBeNull();
 
     // …and the rule the button follows still holds for the list itself.
     act(() => {

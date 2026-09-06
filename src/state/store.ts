@@ -443,8 +443,22 @@ let pendingSave: { repo: Repository; db: Database } | null = null;
  */
 const SAVE_DEBOUNCE_MS = 400;
 
-/** How long a trashed task stays recoverable before it is purged for good. */
-const TRASH_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
+/**
+ * How long a trashed task stays recoverable before it is purged for good.
+ *
+ * One day, down from three. A trashed row is not free: it is still stored here,
+ * still stored in the cloud, and still read by every full sync pass — three
+ * days of everything anybody deleted, carried around by every device on the
+ * account.
+ *
+ * A day is the floor rather than an hour because of *how* the mistake is
+ * noticed. Deleting the wrong thing is almost never seen at the time — the undo
+ * toast covers that minute — it is seen the next time the list is opened, which
+ * for a task manager is the next morning. A window that closes overnight would
+ * purge exactly the rows somebody was about to come back for; one that lasts
+ * until the next visit is the cheapest one that still catches the real mistake.
+ */
+export const TRASH_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 /** Debounced write-behind: the UI never waits on the disk. */
 export function persist(db: Database) {
@@ -676,12 +690,21 @@ export const useStore = create<StoreState>((set, get) => {
       const siblings = get().db.tasks.filter(
         (t) => t.parentId === (draft.parentId ?? null),
       );
+      const parent = draft.parentId
+        ? (get().db.tasks.find((t) => t.id === draft.parentId) ?? null)
+        : null;
       const task: Task = {
         id: createId("t"),
         title: draft.title.trim(),
         description: draft.description ?? "",
         status: "TODO",
-        priority: draft.priority ?? "NONE",
+        // How urgent a step is, is how urgent the thing it is a step of is —
+        // until somebody says otherwise. Steps are added from a one-line box
+        // with no priority field on it, so they were all born NONE: put on
+        // today, a step of an urgent plan arrived in the list looking like the
+        // least pressing thing on it, and there was nowhere in the flow that
+        // added the step to say different.
+        priority: draft.priority ?? parent?.priority ?? "NONE",
         dueDate: draft.dueDate ?? null,
         endDate: draft.endDate ?? null,
         deadline: draft.deadline ?? null,
@@ -691,11 +714,7 @@ export const useStore = create<StoreState>((set, get) => {
         // A subtask belongs to whatever its parent belongs to, unless the
         // caller says otherwise. Filing a step under "Tez" and then having to
         // pick the category again is asking for the same fact twice.
-        categoryId:
-          draft.categoryId ??
-          (draft.parentId
-            ? (get().db.tasks.find((t) => t.id === draft.parentId)?.categoryId ?? null)
-            : null),
+        categoryId: draft.categoryId ?? parent?.categoryId ?? null,
         tags: draft.tags ?? [],
         parentId: draft.parentId ?? null,
         recurrence: draft.recurrence ?? null,
@@ -1438,16 +1457,30 @@ export const useStore = create<StoreState>((set, get) => {
          * A plan with no category of its own claims nothing: clearing the
          * task's category would destroy information to express nothing.
          */
-        const adopted =
+        const newParent =
           parentId === null
             ? null
-            : (db.tasks.find((t) => t.id === parentId)?.categoryId ?? null);
+            : (db.tasks.find((t) => t.id === parentId) ?? null);
+        const adopted = newParent?.categoryId ?? null;
         const categoryId = adopted ?? task.categoryId;
+
+        /*
+         * …and into its urgency, but only where the task has none of its own.
+         *
+         * `NONE` is the absence of an answer, not an answer — nothing in the
+         * app sets it deliberately — so filling it in from the plan takes
+         * nothing away. A task that says LOW keeps saying LOW under a HIGH
+         * plan: that one *was* somebody's answer, and overwriting it would be
+         * the move quietly disagreeing with them.
+         */
+        const priority =
+          task.priority === "NONE" ? (newParent?.priority ?? "NONE") : task.priority;
 
         const next: Task = {
           ...task,
           parentId,
           categoryId,
+          priority,
           order: siblings.length,
           // The pin it carried belonged to the list it just left.
           manualOrder: null,

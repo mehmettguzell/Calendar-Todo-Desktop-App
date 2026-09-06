@@ -2264,6 +2264,51 @@
   letter-spacing: -0.01em;
 }
 
+/* The period's net, beside the period's name.
+   The one number that stays on screen whichever tab is open — enough to know
+   whether the month is going well without leaving the tab you are on. */
+.budget-range-net {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.budget-range-net.is-positive {
+  color: var(--success);
+  background: var(--success-soft);
+}
+.budget-range-net.is-negative {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* Which question the page is answering.
+   A row of its own under the period bar, because the two strips do different
+   jobs: the one above chooses the window, this one chooses the question about
+   it. Side by side in a single bar — which is how the page grew — they read as
+   one undifferentiated wall of tabs, and nobody could say which drove what. */
+.budget-tabbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+
+/* One sentence saying what this tab is for.
+   The budget is the one screen in the app whose vocabulary is not obvious on
+   sight — "sabitler", "ekstre", "hareket" — and a line of plain language costs
+   a row and answers the question before it is asked. */
+.budget-tab-hint {
+  max-width: 78ch;
+  margin: -8px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
 .budget-totals {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -2436,6 +2481,14 @@
   background: var(--surface-2);
 }
 
+/* Inside its own titled card the form has stopped being a floating row, so it
+   stops drawing the ground for one: two panels of the same tone stacked is a
+   border written in grey. */
+.budget-entry-card .budget-entry {
+  padding: 0;
+  background: none;
+}
+
 .budget-entry .budget-amount {
   flex: 0 0 118px;
   font-variant-numeric: tabular-nums;
@@ -2463,21 +2516,6 @@
 }
 
 /* Breakdown & ledger ------------------------------------------------- */
-
-/* One child now that the fixed costs moved above it, so `auto-fit` keeps the
-   breakdown full width instead of leaving a phantom second column. */
-.budget-columns {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
-  gap: var(--space-4);
-  align-items: start;
-}
-
-@media (max-width: 980px) {
-  .budget-columns {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 
 .budget-bars {
   display: flex;
@@ -3611,4 +3649,130 @@
 .spend-share.over {
   color: var(--danger);
   font-weight: var(--weight-bold);
+}
+
+/* ==================================================================
+   Deadline markers
+   A deadline is a date, not work. In Today and Görevler it used to be
+   drawn as a task row — checkbox, priority stripe, drag handle, a timer
+   offering to track time against a date — so a day with three tasks and
+   two checkpoints read as five things to do.
+
+   The shape is the message. Nothing here is full-bleed, nothing here is
+   tickable, and the dashed edge is the app's existing sign for "a day
+   written against something" — the calendar's own checkpoint chips use
+   the same language. They wrap on one strip above the lists, because a
+   handful of dates is a glance, not a list to be worked down.
+   ================================================================== */
+
+.deadline-markers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.deadline-markers-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 2px;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.deadline-markers-head .count {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.deadline-marker-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deadline-marker {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.deadline-marker:hover {
+  border-color: var(--accent);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.deadline-marker-flag {
+  align-self: center;
+  flex: none;
+  color: var(--accent);
+}
+
+/* What finishes, in the reader's colour — the one part of the line that is
+   the user's own words. */
+.deadline-marker-name {
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+
+/* Which plan it belongs to. Present only on a named checkpoint, where the
+   name alone ("Backend bitecek") does not say what it is a checkpoint of. */
+.deadline-marker-of {
+  color: var(--text-faint);
+}
+.deadline-marker-of::before {
+  content: "· ";
+}
+
+.deadline-marker-when {
+  margin-left: auto;
+  padding-left: var(--space-2);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+/* Gone, and still outstanding: the only one of these that changes what you
+   would do next, so it is the only one that carries a colour. */
+.deadline-marker.is-missed {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.deadline-marker.is-missed .deadline-marker-flag,
+.deadline-marker.is-missed .deadline-marker-name,
+.deadline-marker.is-missed .deadline-marker-when {
+  color: var(--danger);
+}
+
+/* Met. Kept legible rather than hidden — "we hit that one" is part of what
+   the day has to say — but struck through and stepped back. */
+.deadline-marker.is-met {
+  border-style: solid;
+  border-color: var(--border);
+  color: var(--text-faint);
+}
+.deadline-marker.is-met .deadline-marker-flag {
+  color: var(--success);
+}
+.deadline-marker.is-met .deadline-marker-name {
+  color: var(--text-faint);
+  text-decoration: line-through;
 }

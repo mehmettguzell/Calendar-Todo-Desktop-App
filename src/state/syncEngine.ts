@@ -1068,18 +1068,21 @@ function forgetSyncedState() {
  * — so the window is what decides how many requests those bursts become. That
  * document costs 537 writes at 600ms, ~420 at 2.5s, and 186 at 30s.
  *
- * Five seconds sits past the bulk of those sub-two-second gaps, so a burst
- * still collapses into one request, while every device in the account is at
- * most five seconds behind — which is under the time it takes to pick up
- * another one. The saving from a longer window shrinks as the curve flattens;
- * half a minute of lag on a shared calendar does not.
+ * Thirty seconds is where that curve has flattened: the same document costs
+ * 537 writes at 600ms, ~420 at 2.5s, 186 at 5s and 121 at 30s, and past there
+ * the line is nearly level — a longer window buys single-digit savings for
+ * minutes of lag. So this is the cheapest window worth having, which is what
+ * it was picked to be.
  *
- * Nothing is at stake in the delay itself: the local write already succeeded,
- * `visibilitychange` drains the queue when the window goes away, and
- * `syncDifferences` finds by content whatever a crash in this window would
- * have skipped.
+ * What the lag costs is bounded on both ends. Nothing is at stake in the delay
+ * itself: the local write already succeeded, `visibilitychange` drains the
+ * queue the moment the window goes away — closing the lid, switching apps,
+ * walking to the other machine — and `syncDifferences` finds by content
+ * whatever a crash inside the window would have skipped. The case it does cost
+ * is two devices open side by side, where an edit can now sit half a minute
+ * before the other one hears about it.
  */
-const FLUSH_DELAY_MS = 5_000;
+const FLUSH_DELAY_MS = 30_000;
 /**
  * How long a continuous stream of edits may hold the queue back.
  *
@@ -1088,8 +1091,11 @@ const FLUSH_DELAY_MS = 5_000;
  * — someone writing a long note would sync nothing for as long as they wrote —
  * so the first queued change also starts this ceiling, and once it passes the
  * flush goes regardless of what is still being typed.
+ *
+ * Four times the window, as it has always been: a ceiling equal to the window
+ * would fire on every burst and there would be no window.
  */
-const FLUSH_MAX_WAIT_MS = 30_000;
+const FLUSH_MAX_WAIT_MS = 120_000;
 const pendingTaskIds = new Set<string>();
 const pendingCategoryIds = new Set<string>();
 const pendingOccurrenceIds = new Set<string>();
@@ -1187,14 +1193,16 @@ function scheduleFlush() {
  * 1. **The trailing delay.** Every new change pushes it out again, so a
  *    request never leaves mid-burst.
  * 2. **A live undo offer holds the queue.** An undo toast is a statement that
- *    the change is not final, and it stands for eight seconds — three longer
- *    than the delay. So the ordinary "change it, look at it, take it back"
- *    spent two round trips: one to write the edit and one to write it away
- *    again, for a document that ends exactly where it started. Every other
- *    device watched the value flicker to something nobody chose. Waiting for
- *    the offer to lapse collapses the pair into nothing — the reversal puts
- *    the row back to the fingerprint the cloud already holds, so the flush
- *    finds nothing to write.
+ *    the change is not final, and it once stood three seconds longer than the
+ *    delay. So the ordinary "change it, look at it, take it back" spent two
+ *    round trips: one to write the edit and one to write it away again, for a
+ *    document that ends exactly where it started. Every other device watched
+ *    the value flicker to something nobody chose. Waiting for the offer to
+ *    lapse collapses the pair into nothing — the reversal puts the row back to
+ *    the fingerprint the cloud already holds, so the flush finds nothing to
+ *    write. The gathering window now outlasts the toast on its own, so this
+ *    rule currently never binds; it stays because the two numbers are set for
+ *    unrelated reasons and either can move.
  * 3. **The ceiling wins over both.** A stream of edits, or a toast replaced by
  *    the next toast, must not postpone the write forever.
  *
