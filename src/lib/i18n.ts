@@ -173,6 +173,9 @@ export const DICTIONARY = {
     weeklyMetricFocus: "Odak",
     focusStartedAt: "{time} de başladı",
     focusCancel: "Vazgeç",
+    resume: "Devam et",
+    focusPausedAt: "Duraklatıldı",
+    focusOngoing: "sürüyor",
     focusStop: "Bitir",
     focusClearHistory: "Geçmişi temizle",
     focusClearHistoryConfirm:
@@ -1113,6 +1116,9 @@ export const DICTIONARY = {
     weeklyMetricFocus: "Focus",
     focusStartedAt: "Started {time}",
     focusCancel: "Cancel",
+    resume: "Resume",
+    focusPausedAt: "Paused",
+    focusOngoing: "running",
     focusStop: "Stop",
     focusClearHistory: "Clear history",
     focusClearHistoryConfirm:

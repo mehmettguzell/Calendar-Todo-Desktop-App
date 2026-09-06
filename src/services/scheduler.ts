@@ -178,21 +178,38 @@ export function useReminderScheduler(): {
   return { alerts, dismissAlert };
 }
 
-/** Keeps the running focus timer's elapsed seconds ticking once per second. */
-export function useElapsedSeconds(startedAt: string | null): number {
-  const [elapsed, setElapsed] = useState(0);
+/**
+ * Keeps the running focus timer's elapsed seconds ticking once per second.
+ *
+ * `startedAt` is when the *current run* began, so a paused timer passes null
+ * and the display holds at whatever was banked — still counting up would be
+ * the screen disagreeing with the button that was just pressed, and no timer
+ * at all would look like the seconds had been thrown away. No interval is
+ * armed while paused, either: there is nothing left to recompute.
+ */
+export function useElapsedSeconds(
+  startedAt: string | null,
+  bankedSec = 0,
+): number {
+  const [elapsed, setElapsed] = useState(bankedSec);
 
   useEffect(() => {
     if (!startedAt) {
-      setElapsed(0);
+      setElapsed(bankedSec);
       return;
     }
     const compute = () =>
-      setElapsed(Math.max(0, Math.round((Date.now() - new Date(startedAt).getTime()) / 1000)));
+      setElapsed(
+        bankedSec +
+          Math.max(
+            0,
+            Math.round((Date.now() - new Date(startedAt).getTime()) / 1000),
+          ),
+      );
     compute();
     const handle = setInterval(compute, 1000);
     return () => clearInterval(handle);
-  }, [startedAt]);
+  }, [startedAt, bankedSec]);
 
   return elapsed;
 }

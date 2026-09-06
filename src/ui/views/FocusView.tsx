@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Square, Timer, Trash2 } from "lucide-react";
+import { Pause, Play, Square, Timer, Trash2 } from "lucide-react";
 import {
   formatDuration,
   formatTracked,
@@ -9,10 +9,12 @@ import {
 } from "@/domain/datetime";
 import type { TaskInstance } from "@/domain/types";
 import {
+  splitDay,
   useFocusSessions,
   useInstancesInRange,
   type Filters,
 } from "@/state/selectors";
+import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
 import { useNow, useStore } from "@/state/store";
 import { useElapsedSeconds } from "@/services/scheduler";
@@ -36,6 +38,8 @@ export function FocusView({
   const { t } = useI18n();
   const runningFocus = useStore((s) => s.runningFocus);
   const stopFocus = useStore((s) => s.stopFocus);
+  const pauseFocus = useStore((s) => s.pauseFocus);
+  const resumeFocus = useStore((s) => s.resumeFocus);
   const cancelFocus = useStore((s) => s.cancelFocus);
   const clearFocusSessions = useStore((s) => s.clearFocusSessions);
   const deleteFocusSession = useStore((s) => s.deleteFocusSession);
@@ -44,7 +48,19 @@ export function FocusView({
   const now = useNow();
   const today = toLocalDate(now);
   const todays = useInstancesInRange(today, today, filters);
-  const elapsed = useElapsedSeconds(runningFocus?.startedAt ?? null);
+  /*
+   * The same day, in the same order Today prints it — one function decides,
+   * so the two screens cannot disagree about which task comes first. Flat
+   * rather than in three sections: this list is a rack to start a timer from,
+   * and the headings would be three rows of chrome around at most a handful of
+   * tasks.
+   */
+  const day = useMemo(() => splitDay(todays), [todays]);
+  const paused = runningFocus !== null && runningFocus.runStartedAt === null;
+  const elapsed = useElapsedSeconds(
+    runningFocus?.runStartedAt ?? null,
+    runningFocus?.bankedSec ?? 0,
+  );
 
   const runningTask = tasks.find((t) => t.id === runningFocus?.taskId) ?? null;
 
@@ -59,22 +75,40 @@ export function FocusView({
   return (
     <div className="page">
       {runningFocus && runningTask ? (
-        <div className="focus-bar section">
+        <div className={cn("focus-bar section", paused && "is-paused")}>
           <Timer size={18} />
           <div className="grow">
             <div style={{ fontWeight: 600 }}>{runningTask.title}</div>
             <div className="muted" style={{ fontSize: "var(--text-xs)" }}>
-              {t("focusStartedAt", {
-                time: fromInstant(runningFocus.startedAt).toLocaleTimeString(
-                  localeTag(),
-                  { timeStyle: "short" },
-                ),
-              })}
+              {paused
+                ? t("focusPausedAt")
+                : t("focusStartedAt", {
+                    time: fromInstant(
+                      runningFocus.startedAt,
+                    ).toLocaleTimeString(localeTag(), { timeStyle: "short" }),
+                  })}
             </div>
           </div>
           <span className="timer mono">{formatDuration(elapsed)}</span>
           <button type="button" className="btn ghost" onClick={cancelFocus}>
             {t("focusCancel")}
+          </button>
+          {/* Between "throw it away" and "that is done": the button for
+              stepping away from something you are coming back to. */}
+          <button
+            type="button"
+            className="btn"
+            onClick={paused ? resumeFocus : pauseFocus}
+          >
+            {paused ? (
+              <>
+                <Play size={14} /> {t("resume")}
+              </>
+            ) : (
+              <>
+                <Pause size={14} /> {t("pause")}
+              </>
+            )}
           </button>
           <button type="button" className="btn" onClick={stopFocus}>
             <Square size={14} /> {t("focusStop")}
@@ -100,13 +134,13 @@ export function FocusView({
       <section className="section">
         <div className="section-head">
           <h2>{t("focusTodaysTasks")}</h2>
-          <span className="count">{todays.length}</span>
+          <span className="count">{day.ordered.length}</span>
         </div>
         <div className="task-list">
-          {todays.length === 0 ? (
+          {day.ordered.length === 0 ? (
             <Empty icon={<EmptyArt kind="cleared" />} title={t("focusEmpty")} />
           ) : (
-            todays.map((instance) => (
+            day.ordered.map((instance) => (
               <TaskRow
                 key={instance.key}
                 instance={instance}
@@ -155,14 +189,23 @@ export function FocusView({
                   className="mono"
                   style={{ minWidth: 64, textAlign: "right" }}
                 >
-                  {session.endedAt
-                    ? formatTracked(session.durationSec)
-                    : "running"}
+                  {/* An unfinished session says so rather than printing the
+                      seconds it has banked so far — which for a timer started
+                      a minute ago is "0dk", and reads as a session that
+                      recorded nothing. It was the English word "running" in a
+                      Turkish interface until now. */}
+                  {session.endedAt ? (
+                    formatTracked(session.durationSec)
+                  ) : paused && runningFocus?.sessionId === session.id ? (
+                    <span className="faint">{t("focusPausedAt")}</span>
+                  ) : (
+                    <span className="faint">{t("focusOngoing")}</span>
+                  )}
                 </span>
                 <button
                   type="button"
                   className="btn ghost icon sm"
-                  title="Sil"
+                  title={t("delete")}
                   onClick={() => deleteFocusSession(session.id)}
                   style={{ opacity: 0.6 }}
                 >

@@ -195,11 +195,41 @@ export type TransactionPatch = Partial<
   >
 >;
 
+/**
+ * The timer that is on right now.
+ *
+ * Deliberately not part of the document: a timer is a fact about *this*
+ * sitting at *this* machine, and a running session arriving from another
+ * device is not something anybody asked for. What it produces — the session
+ * row and its seconds — is stored and synced like everything else.
+ *
+ * It is split into three fields rather than one start time so the clock can be
+ * stopped without the session being ended. `startedAt` is when the sitting
+ * began and is what the bar prints; `runStartedAt` is when the *current* run
+ * began and is `null` while paused; `bankedSec` is everything earlier runs
+ * added up to, and is written through to the session on each pause so nothing
+ * is lost if the window closes on a paused timer.
+ */
 export interface RunningFocus {
   sessionId: string;
   taskId: string;
   occurrenceDate: LocalDate | null;
   startedAt: string;
+  /** When the current run began, or `null` while paused. */
+  runStartedAt: string | null;
+  /** Seconds banked by earlier runs of this same session. */
+  bankedSec: number;
+}
+
+/** Whole seconds this session has actually been running, pauses excluded. */
+export function focusElapsedSec(
+  running: RunningFocus | null,
+  now: number = Date.now(),
+): number {
+  if (!running) return 0;
+  if (!running.runStartedAt) return running.bankedSec;
+  const thisRun = (now - new Date(running.runStartedAt).getTime()) / 1000;
+  return running.bankedSec + Math.max(0, Math.round(thisRun));
 }
 
 interface StoreState {
@@ -259,6 +289,10 @@ interface StoreState {
   dismissReminder(reminderId: string): void;
 
   startFocus(instance: TaskInstance): void;
+  /** Stop the clock without ending the session. */
+  pauseFocus(): void;
+  /** Start it again where it left off. */
+  resumeFocus(): void;
   stopFocus(): void;
   cancelFocus(): void;
   /** Drop one recorded session. */
@@ -1259,6 +1293,8 @@ export const useStore = create<StoreState>((set, get) => {
           taskId: session.taskId,
           occurrenceDate: session.occurrenceDate,
           startedAt: session.startedAt,
+          runStartedAt: session.startedAt,
+          bankedSec: 0,
         },
       });
       commit((db) => {
@@ -1273,16 +1309,39 @@ export const useStore = create<StoreState>((set, get) => {
       });
     },
 
+    /**
+     * Stop the clock, keep the session.
+     *
+     * The seconds are banked onto the row as they are, so a paused timer that
+     * never gets resumed — the window closed, the day ended — has still
+     * recorded the work that was done. `endedAt` stays null, which is what
+     * separates a session that is merely paused from one that is finished.
+     */
+    pauseFocus() {
+      const running = get().runningFocus;
+      if (!running?.runStartedAt) return;
+      const bankedSec = focusElapsedSec(running);
+      set({ runningFocus: { ...running, runStartedAt: null, bankedSec } });
+      commit((db) => ({
+        ...db,
+        focusSessions: db.focusSessions.map((s) =>
+          s.id === running.sessionId ? { ...s, durationSec: bankedSec } : s,
+        ),
+      }));
+    },
+
+    resumeFocus() {
+      const running = get().runningFocus;
+      // Already running: resuming would restart this run and lose its seconds.
+      if (!running || running.runStartedAt) return;
+      set({ runningFocus: { ...running, runStartedAt: nowInstant() } });
+    },
+
     stopFocus() {
       const running = get().runningFocus;
       if (!running) return;
       const endedAt = new Date();
-      const durationSec = Math.max(
-        0,
-        Math.round(
-          (endedAt.getTime() - new Date(running.startedAt).getTime()) / 1000,
-        ),
-      );
+      const durationSec = focusElapsedSec(running, endedAt.getTime());
       set({ runningFocus: null });
       commit((db) =>
         appendHistory(

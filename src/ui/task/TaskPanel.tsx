@@ -16,6 +16,7 @@ import {
   Minimize2,
   MoreHorizontal,
   Plus,
+  Square,
   StickyNote,
   Target,
   Trash2,
@@ -82,7 +83,6 @@ export function TaskPanel({
   const updateTask = useStore((s) => s.updateTask);
   const requestDelete = useRequestDelete();
   const toggleComplete = useStore((s) => s.toggleComplete);
-  const setStatus = useStore((s) => s.setStatus);
   const clearSnooze = useStore((s) => s.clearSnooze);
   const reschedule = useStore((s) => s.reschedule);
   const setParent = useStore((s) => s.setParent);
@@ -90,6 +90,8 @@ export function TaskPanel({
   const createTask = useStore((s) => s.createTask);
   const startFocus = useStore((s) => s.startFocus);
   const stopFocus = useStore((s) => s.stopFocus);
+  const pauseFocus = useStore((s) => s.pauseFocus);
+  const resumeFocus = useStore((s) => s.resumeFocus);
   const runningFocus = useStore((s) => s.runningFocus);
   const copyToClipboard = useClipboardStore((s) => s.copy);
   const clip = useClipboardStore((s) => s.clip);
@@ -187,6 +189,7 @@ export function TaskPanel({
   };
 
   const isFocused = runningFocus?.taskId === task.id;
+  const isPaused = isFocused && runningFocus?.runStartedAt === null;
   const ref = useMemo(
     () => ({
       taskId: task.id,
@@ -309,20 +312,30 @@ export function TaskPanel({
               buttons with no answer to "which one did I come here for" —
               finishing the task is the answer, and it is the only one wearing
               the accent. */}
+          {/* This button said "Duraklat" and ended the session — and put the
+              task back to TODO, so stepping away for five minutes read as
+              never having started. It pauses now, which is what it says, and
+              finishing gets a button of its own beside it. */}
           <button
             type="button"
-            className={cn("btn ghost", isFocused && "active")}
+            className={cn("btn ghost", isFocused && !isPaused && "active")}
             onClick={() => {
-              if (isFocused) {
-                stopFocus();
-                setStatus(ref, "TODO");
-              } else {
-                startFocus(instance);
-              }
+              if (!isFocused) startFocus(instance);
+              else if (isPaused) resumeFocus();
+              else pauseFocus();
             }}
           >
-            {isFocused ? t("pause") : t("startShort")}
+            {isPaused ? t("resume") : isFocused ? t("pause") : t("startShort")}
           </button>
+          {isFocused ? (
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => stopFocus()}
+            >
+              <Square size={14} /> {t("focusStop")}
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn ghost"

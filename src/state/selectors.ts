@@ -195,6 +195,42 @@ export function useDeadlineMarkers(
   );
 }
 
+/**
+ * One day's rows, in the order Today prints them.
+ *
+ * Today draws three lists — the ones with a time on them, then the rest of the
+ * day, then what has been finished — and Odaklanma drew the same day as one
+ * flat list in whatever order the query happened to return. Two screens
+ * showing one day in two orders is the same fault as two records for one task:
+ * the second one has to be re-read to be trusted.
+ *
+ * So the arrangement lives here and both call it. `ordered` is the three lists
+ * concatenated — the day as a single column, reading exactly as it reads on
+ * Today.
+ *
+ * Deadlines are dropped: a date is not something you can spend an hour on, and
+ * a marker in a list of things to work through is a row that cannot be
+ * started. They reach Today through `deadlineMarkersOf` instead.
+ */
+export interface DayLists {
+  timed: TaskInstance[];
+  allDay: TaskInstance[];
+  completed: TaskInstance[];
+  /** timed → all-day → completed, as one list. */
+  ordered: TaskInstance[];
+}
+
+export function splitDay(instances: TaskInstance[]): DayLists {
+  const sorted = arrangeInstances(
+    instances.filter((instance) => !instance.deadlineOnly),
+  );
+  const open = sorted.filter((i) => i.storedStatus !== "COMPLETED");
+  const timed = open.filter((i) => i.startsAt !== null);
+  const allDay = open.filter((i) => i.startsAt === null);
+  const completed = sorted.filter((i) => i.storedStatus === "COMPLETED");
+  return { timed, allDay, completed, ordered: [...timed, ...allDay, ...completed] };
+}
+
 export function groupByDate(
   instances: TaskInstance[],
 ): Map<LocalDate, TaskInstance[]> {

@@ -17,10 +17,10 @@ import { fireConfetti } from "@/lib/confetti";
 import { cn } from "@/lib/cn";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
-  arrangeInstances,
+  deadlineMarkersOf,
+  splitDay,
   useFocusSessions,
   useGamificationStats,
-  deadlineMarkersOf,
   useInstancesInRange,
   useTodoGroups,
   useWeeklyStatsHook,
@@ -104,14 +104,6 @@ export function TodayView({
     [sessions, today],
   );
 
-  const work = useMemo(
-    () => todays.filter((instance) => !instance.deadlineOnly),
-    [todays],
-  );
-  const done = work.filter((i) => i.storedStatus === "COMPLETED").length;
-  const sorted = arrangeInstances(work);
-  const openCount = sorted.length - done;
-
   /*
    * Today's own tasks, minus the ones the Overdue section is already showing.
    *
@@ -126,33 +118,21 @@ export function TodayView({
     [overdue],
   );
 
-  // Timed vs All-day vs Completed separation
-  const timedTasks = useMemo(
-    () =>
-      sorted.filter(
-        (t) =>
-          t.storedStatus !== "COMPLETED" &&
-          t.startsAt !== null &&
-          !overdueKeys.has(t.key),
-      ),
-    [sorted, overdueKeys],
+  /*
+   * The day, split the way it is drawn — and split by the same function
+   * Odaklanma uses, so the two screens cannot put one day in two orders.
+   */
+  const day = useMemo(
+    () => splitDay(todays.filter((i) => !overdueKeys.has(i.key))),
+    [todays, overdueKeys],
   );
+  const timedTasks = day.timed;
+  const allDayTasks = day.allDay;
+  const completedTodayTasks = day.completed;
 
-  const allDayTasks = useMemo(
-    () =>
-      sorted.filter(
-        (t) =>
-          t.storedStatus !== "COMPLETED" &&
-          t.startsAt === null &&
-          !overdueKeys.has(t.key),
-      ),
-    [sorted, overdueKeys],
-  );
-
-  const completedTodayTasks = useMemo(
-    () => sorted.filter((t) => t.storedStatus === "COMPLETED"),
-    [sorted],
-  );
+  const done = completedTodayTasks.length;
+  const openCount = timedTasks.length + allDayTasks.length;
+  const dayCount = done + openCount;
 
   const hasWeekHistory = useMemo(
     () =>
@@ -176,14 +156,14 @@ export function TodayView({
   const prevDoneRef = useRef<number>(done);
   useEffect(() => {
     if (
-      sorted.length > 0 &&
-      done === sorted.length &&
-      prevDoneRef.current < sorted.length
+      dayCount > 0 &&
+      done === dayCount &&
+      prevDoneRef.current < dayCount
     ) {
       fireConfetti({ particleCount: 100 });
     }
     prevDoneRef.current = done;
-  }, [done, sorted.length]);
+  }, [done, dayCount]);
 
   return (
     <div className="page">
@@ -192,7 +172,7 @@ export function TodayView({
         <div className="today-hero-left">
           <ProgressRing
             completed={done}
-            total={sorted.length}
+            total={dayCount}
             size={76}
             strokeWidth={7}
             onCelebrate={() => fireConfetti({ particleCount: 100 })}

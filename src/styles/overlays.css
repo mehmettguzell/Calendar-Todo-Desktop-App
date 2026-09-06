@@ -169,6 +169,17 @@
 
 .focus-bar .timer { font-size: var(--text-xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 
+/* Paused. The accent is what says "this is running right now", so a stopped
+   clock gives it up and stands in the ordinary surface — the number is still
+   there, in full, because those seconds are still yours. */
+.focus-bar.is-paused {
+  border-color: var(--border-strong);
+  border-style: dashed;
+  background: var(--surface-2);
+}
+
+.focus-bar.is-paused .timer { color: var(--text-muted); }
+
 .color-picker { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .color-picker button {

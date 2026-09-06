@@ -5,6 +5,7 @@ import {
   Flag,
   GripVertical,
   MoreHorizontal,
+  Pause,
   Play,
   Repeat,
   Square,
@@ -80,6 +81,8 @@ export function TaskRow({
   const pushUndo = useUndoStore((s) => s.push);
   const startFocus = useStore((s) => s.startFocus);
   const stopFocus = useStore((s) => s.stopFocus);
+  const pauseFocus = useStore((s) => s.pauseFocus);
+  const resumeFocus = useStore((s) => s.resumeFocus);
   const runningFocus = useStore((s) => s.runningFocus);
   const tasks = useStore((s) => s.db.tasks);
   const hasReminder = useHasReminder(task.id);
@@ -121,6 +124,7 @@ export function TaskRow({
   const done = instance.storedStatus === "COMPLETED";
   const doneSubtasks = subtasks.filter((s) => s.status === "COMPLETED").length;
   const isFocused = runningFocus?.taskId === task.id;
+  const isPaused = isFocused && runningFocus?.runStartedAt === null;
   const isLate = instance.status === "OVERDUE";
 
   const time =
@@ -306,17 +310,43 @@ export function TaskRow({
             <GripVertical size={14} />
           </div>
         ) : null}
+        {/* One button while nothing is running, two on the row that is: a
+            timer you cannot stop without leaving the screen you started it on
+            is a timer that gets left running, and one you can only stop is a
+            timer that gets stopped when you meant to step away for a minute.
+            Only ever one row in the app wears the pair. */}
         <button
           type="button"
-          className={cn("btn ghost icon sm", isFocused && "active")}
-          title={isFocused ? t("formStopTimer") : t("formStartTimer")}
+          className={cn("btn ghost icon sm", isFocused && !isPaused && "active")}
+          title={
+            isPaused
+              ? t("resume")
+              : isFocused
+                ? t("pause")
+                : t("formStartTimer")
+          }
           onClick={(e) => {
             e.stopPropagation();
-            isFocused ? stopFocus() : startFocus(instance);
+            if (!isFocused) startFocus(instance);
+            else if (isPaused) resumeFocus();
+            else pauseFocus();
           }}
         >
-          {isFocused ? <Square size={14} /> : <Play size={14} />}
+          {isFocused && !isPaused ? <Pause size={14} /> : <Play size={14} />}
         </button>
+        {isFocused ? (
+          <button
+            type="button"
+            className="btn ghost icon sm"
+            title={t("formStopTimer")}
+            onClick={(e) => {
+              e.stopPropagation();
+              stopFocus();
+            }}
+          >
+            <Square size={14} />
+          </button>
+        ) : null}
         <button
           type="button"
           className="btn ghost icon sm"
