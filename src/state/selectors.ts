@@ -218,6 +218,8 @@ export interface DayLists {
   completed: TaskInstance[];
   /** timed → all-day → completed, as one list. */
   ordered: TaskInstance[];
+  /** `ordered`'s task ids, which is what a Shift-click measures across. */
+  ids: string[];
 }
 
 export function splitDay(instances: TaskInstance[]): DayLists {
@@ -228,7 +230,14 @@ export function splitDay(instances: TaskInstance[]): DayLists {
   const timed = open.filter((i) => i.startsAt !== null);
   const allDay = open.filter((i) => i.startsAt === null);
   const completed = sorted.filter((i) => i.storedStatus === "COMPLETED");
-  return { timed, allDay, completed, ordered: [...timed, ...allDay, ...completed] };
+  const ordered = [...timed, ...allDay, ...completed];
+  return {
+    timed,
+    allDay,
+    completed,
+    ordered,
+    ids: ordered.map((instance) => instance.task.id),
+  };
 }
 
 export function groupByDate(

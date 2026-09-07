@@ -1,5 +1,14 @@
-import { useMemo, useState } from "react";
-import { ExternalLink, Plus, ShoppingBag, Trash2, Wallet } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import {
+  Check,
+  ExternalLink,
+  Pencil,
+  Plus,
+  ShoppingBag,
+  Trash2,
+  Wallet,
+  X,
+} from "lucide-react";
 import { formatMoney, parseAmount } from "@/domain/money";
 import {
   linkLabel,
@@ -28,8 +37,11 @@ export function Wishlist({ currency }: { currency: string }) {
   const { t } = useI18n();
   const items = useStore((s) => s.db.wishlist);
   const addWishlistItem = useStore((s) => s.addWishlistItem);
+  const updateWishlistItem = useStore((s) => s.updateWishlistItem);
   const removeWishlistItem = useStore((s) => s.removeWishlistItem);
   const buyWishlistItem = useStore((s) => s.buyWishlistItem);
+  /** Which row is open for editing — at most one, like every other list. */
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
@@ -99,15 +111,28 @@ export function Wishlist({ currency }: { currency: string }) {
         <p className="faint wishlist-empty">{t("wishlistEmpty")}</p>
       ) : (
         <ul className="wishlist-rows">
-          {open.map((item) => (
-            <WishlistRow
-              key={item.id}
-              item={item}
-              currency={currency}
-              onBuy={() => buyWishlistItem(item.id)}
-              onRemove={() => removeWishlistItem(item.id)}
-            />
-          ))}
+          {open.map((item) =>
+            item.id === editingId ? (
+              <WishlistEditRow
+                key={item.id}
+                item={item}
+                onCancel={() => setEditingId(null)}
+                onSave={(patch) => {
+                  updateWishlistItem(item.id, patch);
+                  setEditingId(null);
+                }}
+              />
+            ) : (
+              <WishlistRow
+                key={item.id}
+                item={item}
+                currency={currency}
+                onEdit={() => setEditingId(item.id)}
+                onBuy={() => buyWishlistItem(item.id)}
+                onRemove={() => removeWishlistItem(item.id)}
+              />
+            ),
+          )}
         </ul>
       )}
     </section>
@@ -117,11 +142,13 @@ export function Wishlist({ currency }: { currency: string }) {
 function WishlistRow({
   item,
   currency,
+  onEdit,
   onBuy,
   onRemove,
 }: {
   item: WishlistItem;
   currency: string;
+  onEdit: () => void;
   onBuy: () => void;
   onRemove: () => void;
 }) {
@@ -130,7 +157,19 @@ function WishlistRow({
   return (
     <li className="wishlist-row">
       <span className="wishlist-row-text">
-        <span className="wishlist-row-title truncate">{item.title}</span>
+        {/* The name is the way in.
+            A price typed in a hurry, a link pasted from the wrong tab, a thing
+            renamed once it is decided — this is a list that gets corrected,
+            and the only way to correct it used to be deleting the row and
+            typing all three fields again. */}
+        <button
+          type="button"
+          className="wishlist-row-title truncate"
+          title={t("wishlistEdit")}
+          onClick={onEdit}
+        >
+          {item.title}
+        </button>
         {item.url ? (
           /*
             `rel` is not decoration: this opens a page the user pasted from
@@ -168,12 +207,111 @@ function WishlistRow({
       <button
         type="button"
         className="btn ghost icon sm"
+        title={t("wishlistEdit")}
+        aria-label={t("wishlistEdit")}
+        onClick={onEdit}
+      >
+        <Pencil size={14} />
+      </button>
+      <button
+        type="button"
+        className="btn ghost icon sm"
         title={t("wishlistRemove")}
         aria-label={t("wishlistRemove")}
         onClick={onRemove}
       >
         <Trash2 size={14} />
       </button>
+    </li>
+  );
+}
+
+/**
+ * The same row, open for correction.
+ *
+ * Deliberately the three fields of the add form in the same order and the same
+ * widths, in place of the row rather than in a dialog: what is being changed
+ * is one line of a list you are looking at, and a modal over it would hide the
+ * three other prices that are the reason for the change.
+ *
+ * A blank price is a real answer — "I have not looked it up yet" — so it is
+ * saved as one rather than rejected, exactly as it is when the item is added.
+ */
+function WishlistEditRow({
+  item,
+  onSave,
+  onCancel,
+}: {
+  item: WishlistItem;
+  onSave: (patch: { title: string; priceMinor: number | null; url: string }) => void;
+  onCancel: () => void;
+}) {
+  const { t } = useI18n();
+  const [title, setTitle] = useState(item.title);
+  const [price, setPrice] = useState(
+    item.priceMinor === null ? "" : String(item.priceMinor / 100),
+  );
+  const [url, setUrl] = useState(item.url ?? "");
+  const titleRef = useRef<HTMLInputElement>(null);
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    onSave({ title: trimmed, priceMinor: parseAmount(price), url });
+  };
+
+  return (
+    <li className="wishlist-row is-editing">
+      <form className="wishlist-add grow" onSubmit={submit}>
+        <input
+          ref={titleRef}
+          autoFocus
+          className="input grow"
+          aria-label={t("wishlistName")}
+          placeholder={t("wishlistName")}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          // Escape anywhere in the row puts it back, which is what a list of
+          // one-line rows makes people expect.
+          onKeyDown={(e) => e.key === "Escape" && onCancel()}
+        />
+        <input
+          className="input mono wishlist-price"
+          inputMode="decimal"
+          aria-label={t("wishlistPrice")}
+          placeholder={t("wishlistPrice")}
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          onKeyDown={(e) => e.key === "Escape" && onCancel()}
+        />
+        <input
+          className="input wishlist-link"
+          aria-label={t("wishlistLink")}
+          placeholder={t("wishlistLink")}
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => e.key === "Escape" && onCancel()}
+        />
+        <button
+          type="submit"
+          className="btn primary icon sm"
+          title={t("save")}
+          aria-label={t("save")}
+          disabled={!title.trim()}
+        >
+          <Check size={14} />
+        </button>
+        <button
+          type="button"
+          className="btn ghost icon sm"
+          title={t("cancel")}
+          aria-label={t("cancel")}
+          onClick={onCancel}
+        >
+          <X size={14} />
+        </button>
+      </form>
     </li>
   );
 }

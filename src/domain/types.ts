@@ -233,6 +233,8 @@ export interface Settings {
    * deleted it" — and would helpfully put the deleted one back on every launch.
    */
   categorySeedVersion?: number;
+  /** The same, for the budget's own labels. See `backfillBudgetCategories`. */
+  budgetCategorySeedVersion?: number;
 
   /* Budget capture ------------------------------------------------- */
 

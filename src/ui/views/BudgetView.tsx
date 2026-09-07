@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
+  Check,
   ChevronLeft,
   ChevronRight,
   FileUp,
   PiggyBank,
   Plus,
   Wallet,
+  X,
 } from "lucide-react";
 import { formatDate, toLocalDate } from "@/domain/datetime";
 import {
@@ -25,6 +27,7 @@ import {
   transactionsInRange,
   type BudgetCategory,
   type MoneyFlow,
+  type Transaction,
 } from "@/domain/money";
 import { openWishlist } from "@/domain/wishlist";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
@@ -104,6 +107,15 @@ export function BudgetView() {
   const materialise = useStore((s) => s.materialiseRecurringTransactions);
   const [generated, setGenerated] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
+  /*
+   * The entry that was just typed, and the one the ledger should open.
+   *
+   * The form is on Özet and the row it writes is on İşlemler, so without these
+   * an amount typed wrong five seconds ago can only be corrected by knowing
+   * which tab it went to. The receipt below the form is the way back.
+   */
+  const [justAdded, setJustAdded] = useState<Transaction | null>(null);
+  const [focusEntryId, setFocusEntryId] = useState<string | null>(null);
 
   const tab = useViewPrefs((s) => s.budgetTab);
   const setTab = useViewPrefs((s) => s.setBudgetTab);
@@ -169,6 +181,9 @@ export function BudgetView() {
     [transactions, range, today],
   );
   const wishlistOpen = useMemo(() => openWishlist(wishlist), [wishlist]);
+
+  // Stable, so the ledger's effect does not re-run on every render of this page.
+  const clearFocusEntry = useCallback(() => setFocusEntryId(null), []);
 
   const [breakdownFlow, setBreakdownFlow] = useState<MoneyFlow>("EXPENSE");
   const breakdown = useMemo(
@@ -312,7 +327,45 @@ export function BudgetView() {
             />
           </section>
 
-          <QuickEntry defaultDate={clampToRange(today, range)} autoFocus />
+          <QuickEntry
+            defaultDate={clampToRange(today, range)}
+            autoFocus
+            onAdded={setJustAdded}
+          />
+
+          {justAdded ? (
+            <p className="budget-added-note section">
+              <Check size={13} aria-hidden />
+              <span className="truncate">
+                {t("budgetAdded", {
+                  what:
+                    justAdded.note.trim() ||
+                    justAdded.merchant?.trim() ||
+                    t("budgetEntries"),
+                  amount: formatMoney(justAdded.amountMinor, currency),
+                })}
+              </span>
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => {
+                  setFocusEntryId(justAdded.id);
+                  setJustAdded(null);
+                  setTab("entries");
+                }}
+              >
+                {t("edit")}
+              </button>
+              <button
+                type="button"
+                className="btn ghost icon sm"
+                aria-label={t("cancel")}
+                onClick={() => setJustAdded(null)}
+              >
+                <X size={13} />
+              </button>
+            </p>
+          ) : null}
 
           {generated > 0 ? (
             <p className="budget-generated-note section">
@@ -407,6 +460,8 @@ export function BudgetView() {
               categories={categories}
               currency={currency}
               today={today}
+              openEntryId={focusEntryId}
+              onOpenedEntry={clearFocusEntry}
             />
           </div>
         </>
@@ -508,8 +563,11 @@ function StatCard({
 function QuickEntry({
   defaultDate,
   autoFocus = false,
+  onAdded,
 }: {
   defaultDate: string;
+  /** Handed what was just written, so the page can offer it back. */
+  onAdded?: (entry: Transaction) => void;
   /**
    * Put the cursor in the amount box on mount.
    *
@@ -562,7 +620,7 @@ function QuickEntry({
       ? ensureBudgetCategory(categoryName, flow)
       : null;
 
-    addTransaction({
+    const entry = addTransaction({
       date,
       amountMinor,
       flow,
@@ -570,6 +628,7 @@ function QuickEntry({
       note,
       account,
     });
+    onAdded?.(entry);
 
     setAmount("");
     setNote("");

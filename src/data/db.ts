@@ -3,6 +3,7 @@ import { normaliseLink, type WishlistItem } from "@/domain/wishlist";
 import { normaliseLabel, type Deadline } from "@/domain/deadline";
 import type { StatementBatch } from "@/domain/statementBatch";
 import {
+  BUDGET_SEED_VERSION,
   seedBudgetCategories,
   type BudgetCategory,
   type Transaction,
@@ -156,6 +157,7 @@ export function emptyDatabase(): Database {
     settings: {
       ...DEFAULT_SETTINGS,
       categorySeedVersion: CATEGORY_SEED_VERSION,
+      budgetCategorySeedVersion: BUDGET_SEED_VERSION,
     },
   };
 }
@@ -330,6 +332,38 @@ export function deduplicateCategories(
   };
 }
 
+/**
+ * Give an existing document the budget seed rounds it was created too early
+ * to see.
+ *
+ * The same rule as `backfillCategories`, for the same reason: matched by name
+ * because a seeded category gets a fresh id in every document, offered exactly
+ * once because "you have never been shown Sigara" and "you were, and you
+ * deleted it" have to stay different answers.
+ */
+function backfillBudgetCategories(
+  categories: BudgetCategory[],
+  seenVersion: number,
+  language: "tr" | "en",
+): BudgetCategory[] {
+  if (seenVersion >= BUDGET_SEED_VERSION) return categories;
+
+  const taken = new Set(
+    categories.map((c) => `${(c.name ?? "").trim().toLowerCase()}::${c.flow}`),
+  );
+  const at = new Date().toISOString();
+  const additions = seedBudgetCategories(language, seenVersion + 1)
+    .filter((seed) => !taken.has(`${seed.name.trim().toLowerCase()}::${seed.flow}`))
+    .map((seed, index) => ({
+      ...seed,
+      id: createId("b"),
+      order: categories.length + index,
+      updatedAt: at,
+    }));
+
+  return additions.length > 0 ? [...categories, ...additions] : categories;
+}
+
 export function deduplicateBudgetCategories(
   categories: BudgetCategory[],
   transactions: Transaction[] = [],
@@ -418,9 +452,15 @@ export function migrate(raw: unknown): Database {
     ? doc.transactions.map(normaliseTransaction)
     : base.transactions;
 
-  const rawBudgetCategories = Array.isArray(doc.budgetCategories)
+  const storedBudgetCategories = Array.isArray(doc.budgetCategories)
     ? doc.budgetCategories.map(normaliseBudgetCategory)
     : defaultBudgetCategories(language);
+  // A document written before a budget seed round existed is offered it now.
+  const rawBudgetCategories = backfillBudgetCategories(
+    storedBudgetCategories,
+    doc.settings?.budgetCategorySeedVersion ?? 0,
+    language,
+  );
 
   const {
     budgetCategories: cleanBudgetCategories,
@@ -479,7 +519,11 @@ export function migrate(raw: unknown): Database {
       ? doc.deadlines.map(normaliseDeadline).filter(isUsableDeadline)
       : base.deadlines,
     statementBatches: recoveredBatches,
-    settings: { ...settings, categorySeedVersion: CATEGORY_SEED_VERSION },
+    settings: {
+      ...settings,
+      categorySeedVersion: CATEGORY_SEED_VERSION,
+      budgetCategorySeedVersion: BUDGET_SEED_VERSION,
+    },
   };
 }
 

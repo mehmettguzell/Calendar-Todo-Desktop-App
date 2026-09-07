@@ -9,7 +9,6 @@ import {
   GripVertical,
   Lightbulb,
   MoreHorizontal,
-  MousePointerClick,
   Plus,
   Sun,
   Timer,
@@ -168,7 +167,6 @@ export function PlansView({
 
   const selecting = useSelectionStore((s) => s.active);
   const pickedCount = useSelectionStore((s) => s.ids.length);
-  const beginSelecting = useSelectionStore((s) => s.begin);
   const clearSelection = useSelectionStore((s) => s.clear);
   const replaceSelection = useSelectionStore((s) => s.replace);
 
@@ -309,16 +307,6 @@ export function PlansView({
       <PageHeader
         actions={
           <>
-            <button
-              type="button"
-              className={cn("btn ghost sm", selecting && "active")}
-              aria-pressed={selecting}
-              title={t("plansPickHint")}
-              onClick={() => (selecting ? clearSelection() : beginSelecting())}
-            >
-              <MousePointerClick size={13} />
-              {t("bulkSelect")}
-            </button>
             <ResetOrderButton tasks={plans} />
             <button
               type="button"

@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Search, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Pencil, Search, Trash2, X } from "lucide-react";
 import { addDaysLocal, formatDate } from "@/domain/datetime";
 import {
   instalmentCount,
@@ -74,11 +74,24 @@ export function Ledger({
   categories,
   currency,
   today,
+  openEntryId = null,
+  onOpenedEntry,
 }: {
   rows: Transaction[];
   categories: BudgetCategory[];
   currency: string;
   today: LocalDate;
+  /**
+   * An entry to open the moment this list appears.
+   *
+   * How the summary hands its reader back what they just typed: the entry form
+   * lives on one tab and the row it wrote lives on another, and without this
+   * the way to correct a number you got wrong five seconds ago is to know
+   * which tab it went to and find it there.
+   */
+  openEntryId?: string | null;
+  /** Told once the row has been opened, so the request is not repeated. */
+  onOpenedEntry?: () => void;
 }) {
   const { t } = useI18n();
   const [flow, setFlow] = useState<MoneyFlow | "ALL">("ALL");
@@ -100,13 +113,27 @@ export function Ledger({
         entry.note,
         entry.merchant ?? "",
         entry.account ?? "",
-        entry.categoryId ? (categoryById.get(entry.categoryId)?.name ?? "") : "",
+        entry.categoryId
+          ? (categoryById.get(entry.categoryId)?.name ?? "")
+          : "",
       ].join(" ");
       return fold(haystack).includes(needle);
     });
   }, [rows, flow, query, categoryById]);
 
   const days = useMemo(() => groupByDay(filtered), [filtered]);
+
+  /*
+   * Matched on the transaction rather than on the row key: an instalment
+   * purchase is twelve rows, and the one to open is whichever of them this
+   * period is showing.
+   */
+  useEffect(() => {
+    if (!openEntryId) return;
+    const match = rows.find((entry) => entry.id === openEntryId);
+    if (match) setOpenId(rowKey(match));
+    onOpenedEntry?.();
+  }, [openEntryId, rows, onOpenedEntry]);
 
   return (
     <section className="card budget-ledger">
@@ -174,12 +201,18 @@ export function Ledger({
                 <h4>{describeDay(day.date, today, t)}</h4>
                 <span className="ledger-day-rule" aria-hidden />
                 {day.inMinor > 0 ? (
-                  <span className="ledger-day-total income mono" title={t("ledgerDayIn")}>
+                  <span
+                    className="ledger-day-total income mono"
+                    title={t("ledgerDayIn")}
+                  >
                     +{formatMoney(day.inMinor, currency)}
                   </span>
                 ) : null}
                 {day.outMinor > 0 ? (
-                  <span className="ledger-day-total mono" title={t("ledgerDayOut")}>
+                  <span
+                    className="ledger-day-total mono"
+                    title={t("ledgerDayOut")}
+                  >
                     −{formatMoney(day.outMinor, currency)}
                   </span>
                 ) : null}
@@ -262,79 +295,106 @@ function LedgerRow({
 
   const origin = originOf(entry);
   const detail: string[] = [];
-  if (category && fold(category.name) !== fold(title)) detail.push(category.name);
+  if (category && fold(category.name) !== fold(title))
+    detail.push(category.name);
   if (entry.account) detail.push(entry.account);
   // Only worth saying when the note is not already the title.
-  if (entry.note.trim() && fold(entry.note) !== fold(title)) detail.push(entry.note);
+  if (entry.note.trim() && fold(entry.note) !== fold(title))
+    detail.push(entry.note);
 
   return (
     <li className={cn("ledger-row", open && "open")}>
-      <button
-        type="button"
-        className="ledger-row-head"
-        aria-expanded={open}
-        title={open ? t("ledgerClose") : t("ledgerEdit")}
-        onClick={onToggle}
-      >
-        <span
-          className="ledger-row-icon"
-          style={{
-            background: `color-mix(in srgb, ${
-              category?.color ?? "var(--text-faint)"
-            } 18%, transparent)`,
-          }}
-          aria-hidden
+      <div className="ledger-row-line">
+        <button
+          type="button"
+          className="ledger-row-head"
+          aria-expanded={open}
+          title={open ? t("ledgerClose") : t("ledgerEdit")}
+          onClick={onToggle}
         >
-          {category?.icon ?? "•"}
-        </span>
+          <span
+            className="ledger-row-icon"
+            style={{
+              background: `color-mix(in srgb, ${
+                category?.color ?? "var(--text-faint)"
+              } 18%, transparent)`,
+            }}
+            aria-hidden
+          >
+            {category?.icon ?? "•"}
+          </span>
 
-        <span className="ledger-row-text">
-          <span className="ledger-row-title truncate">{title}</span>
-          {detail.length > 0 ? (
-            <span className="ledger-row-detail truncate">{detail.join(" · ")}</span>
-          ) : null}
-        </span>
+          <span className="ledger-row-text">
+            <span className="ledger-row-title truncate">{title}</span>
+            {detail.length > 0 ? (
+              <span className="ledger-row-detail truncate">
+                {detail.join(" · ")}
+              </span>
+            ) : null}
+          </span>
 
-        <span className="ledger-row-tags">
-          {entry.recurrence || entry.recurrenceSourceId ? (
-            <span className="ledger-tag repeat" title={t("budgetRepeating")}>
-              ↻
-            </span>
-          ) : null}
-          {entry.instalmentIndex !== undefined ? (
-            <span
-              className="ledger-tag instalment"
-              title={t("ledgerInstalmentHint", {
-                index: entry.instalmentIndex,
-                count: instalmentCount(purchase),
-                total: formatMoney(purchase.amountMinor, currency),
-              })}
-            >
-              {entry.instalmentIndex}/{instalmentCount(purchase)}
-            </span>
-          ) : null}
-          {origin !== "manual" ? (
-            <span className="ledger-tag">{t(ORIGIN_LABEL[origin])}</span>
-          ) : null}
-          {/*
+          <span className="ledger-row-tags">
+            {entry.recurrence || entry.recurrenceSourceId ? (
+              <span className="ledger-tag repeat" title={t("budgetRepeating")}>
+                ↻
+              </span>
+            ) : null}
+            {entry.instalmentIndex !== undefined ? (
+              <span
+                className="ledger-tag instalment"
+                title={t("ledgerInstalmentHint", {
+                  index: entry.instalmentIndex,
+                  count: instalmentCount(purchase),
+                  total: formatMoney(purchase.amountMinor, currency),
+                })}
+              >
+                {entry.instalmentIndex}/{instalmentCount(purchase)}
+              </span>
+            ) : null}
+            {origin !== "manual" ? (
+              <span className="ledger-tag">{t(ORIGIN_LABEL[origin])}</span>
+            ) : null}
+            {/*
             Only for what the *bank* announced and has not settled. A hold, a
             tip or a currency conversion really does settle at another figure,
             so the mark is worth having — but a row the user typed is exactly
             what they said it was, and badging every one of those turned a
             warning into wallpaper.
           */}
-          {origin === "alert" && isProvisional(entry) ? (
-            <span className="ledger-tag pending" title={t("spendProvisionalHint")}>
-              {t("spendProvisional")}
-            </span>
-          ) : null}
-        </span>
+            {origin === "alert" && isProvisional(entry) ? (
+              <span
+                className="ledger-tag pending"
+                title={t("spendProvisionalHint")}
+              >
+                {t("spendProvisional")}
+              </span>
+            ) : null}
+          </span>
 
-        <span className={cn("ledger-row-amount mono", entry.flow.toLowerCase())}>
-          {entry.flow === "INCOME" ? "+" : "−"}
-          {formatMoney(entry.amountMinor, currency)}
-        </span>
-      </button>
+          <span
+            className={cn("ledger-row-amount mono", entry.flow.toLowerCase())}
+          >
+            {entry.flow === "INCOME" ? "+" : "−"}
+            {formatMoney(entry.amountMinor, currency)}
+          </span>
+        </button>
+
+        {/* The row has always opened into its editor on a click; the only thing
+          that said so was a tooltip, which is a thing you find by accident.
+          A number you typed wrong is the most ordinary reason to come back to
+          this list, so the way to fix it is a control, in the place every
+          other list in this app puts one. */}
+        <button
+          type="button"
+          className={cn("btn ghost icon sm ledger-row-edit", open && "is-open")}
+          title={open ? t("ledgerClose") : t("ledgerEdit")}
+          aria-label={open ? t("ledgerClose") : t("ledgerEdit")}
+          aria-expanded={open}
+          onClick={onToggle}
+        >
+          {open ? <X size={14} /> : <Pencil size={14} />}
+        </button>
+      </div>
 
       {open ? (
         <EntryEditor
@@ -535,9 +595,12 @@ function groupByDay(entries: Transaction[]): DayGroup[] {
   const days = new Map<LocalDate, DayGroup>();
 
   for (const entry of entries) {
-    const day =
-      days.get(entry.date) ??
-      { date: entry.date, entries: [], outMinor: 0, inMinor: 0 };
+    const day = days.get(entry.date) ?? {
+      date: entry.date,
+      entries: [],
+      outMinor: 0,
+      inMinor: 0,
+    };
     day.entries.push(entry);
     // Investment leaves the account like a spend does, so it counts as
     // outgoing here even though the summary refuses to call it a loss.

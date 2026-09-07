@@ -7,7 +7,6 @@ import {
   FolderKanban,
   Layers,
   List,
-  MousePointerClick,
 } from "lucide-react";
 import { addDaysLocal, toLocalDate } from "@/domain/datetime";
 import { insertAt } from "@/domain/manualOrder";
@@ -24,7 +23,6 @@ import {
   type Filters,
   type TodoGroup,
 } from "@/state/selectors";
-import { useSelectionStore } from "@/state/selectionStore";
 import { useViewPrefs } from "@/state/viewPrefsStore";
 import { useNow, useStore } from "@/state/store";
 import { EmptyArt } from "@/ui/components/EmptyArt";
@@ -66,10 +64,6 @@ export function TasksView({
     addDaysLocal(today, 7),
     filters,
   );
-
-  const selecting = useSelectionStore((s) => s.active);
-  const beginSelecting = useSelectionStore((s) => s.begin);
-  const clearSelection = useSelectionStore((s) => s.clear);
 
   // Both live in `viewPrefsStore` for the same reason the plans filter does:
   // a view unmounts on every sidebar click, and coming back to "all tasks,
@@ -153,19 +147,8 @@ export function TasksView({
       <PageHeader
         actions={
           <>
-            {/* The one visible door into selecting. Everything else about the
-                feature stays out of the way until it is opened — a Ctrl-click
-                on any row does the same for anyone who already knows. */}
-            <button
-              type="button"
-              className={cn("btn ghost sm", selecting && "active")}
-              aria-pressed={selecting}
-              title={t("bulkSelectHint")}
-              onClick={() => (selecting ? clearSelection() : beginSelecting())}
-            >
-              <MousePointerClick size={13} />
-              {t("bulkSelect")}
-            </button>
+            {/* Picking is reached from the topbar now — one door, on every
+                screen that has rows, instead of one per page header. */}
             <Segmented
               size="sm"
               ariaLabel={t("tasksGroupBy")}

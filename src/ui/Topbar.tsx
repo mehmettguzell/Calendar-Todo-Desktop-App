@@ -19,9 +19,26 @@ import { useAuthStore } from "@/state/authStore";
 import type { Filters } from "@/state/selectors";
 import { syncDifferences } from "@/state/syncEngine";
 import { useSyncStore, type SkippedRow, type SyncPhase } from "@/state/syncStore";
+import { SelectButton } from "./task/SelectButton";
 import type { CalendarMode } from "./views/CalendarView";
 import type { ViewId } from "./Sidebar";
 import { Segmented } from "./components/Segmented";
+
+/**
+ * Where a task can be picked.
+ *
+ * Which is every view that draws tasks: the six of them each show rows, chips
+ * or cards backed by the same `Task`, and the bulk bar acts on tasks rather
+ * than on whatever a given screen calls them.
+ */
+const SELECTABLE_VIEWS = new Set<ViewId>([
+  "today",
+  "tasks",
+  "plans",
+  "calendar",
+  "focus",
+  "notes",
+]);
 
 const MODES: { id: CalendarMode; labelKey: TranslationKey }[] = [
   { id: "month", labelKey: "calMonth" },
@@ -293,6 +310,12 @@ export function Topbar({
       ) : null}
 
       <span className="grow" />
+
+      {/* Every screen that draws rows draws the same way into picking them.
+          Bütçe is the exception, and it is the honest one: there is nothing
+          there a bulk task action could apply to, and a button that does
+          nothing is worse than one that is absent. */}
+      {SELECTABLE_VIEWS.has(view) ? <SelectButton /> : null}
 
       <label className="search">
         <Search size={14} />

@@ -147,6 +147,10 @@ export function FocusView({
                 showDate={false}
                 selected={instance.key === selectedKey}
                 onOpen={onOpen}
+                // The same rows as Today's, so they can be picked the same
+                // way — the bulk bar is global and did not care which screen
+                // the rows came from; only this list could not offer any.
+                listIds={day.ids}
               />
             ))
           )}

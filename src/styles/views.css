@@ -2301,6 +2301,27 @@
    The budget is the one screen in the app whose vocabulary is not obvious on
    sight — "sabitler", "ekstre", "hareket" — and a line of plain language costs
    a row and answers the question before it is asked. */
+/* What was just written down, and the way back to it.
+   The form is on the summary and the row it writes is a tab away, so the
+   moment after an entry is typed is the one moment the page has to hand it
+   back — a wrong amount is noticed then, not on a tab you have to know
+   about. */
+.budget-added-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: calc(var(--space-5) * -1 + 6px) 0 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--success-soft);
+  color: var(--success);
+  font-size: var(--text-xs);
+}
+
+.budget-added-note .btn {
+  color: inherit;
+}
+
 .budget-tab-hint {
   max-width: 78ch;
   margin: -8px 0 0;
@@ -2445,8 +2466,28 @@
   min-width: 0;
   flex: 1 1 auto;
 }
+/* The name is also the way into editing the row, so it is a button — but a
+   button that has to read as the line of text it replaced. Only the underline
+   on hover says it can be pressed, which is the same signal the link beside it
+   uses. */
 .wishlist-row-title {
+  padding: 0;
   font-size: var(--text-sm);
+  text-align: left;
+}
+button.wishlist-row-title:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+/* Open for correction: the form takes the whole row, so the three fields land
+   where the three facts were. */
+.wishlist-row.is-editing {
+  padding: 4px 2px;
+}
+.wishlist-row.is-editing .wishlist-add {
+  margin-bottom: 0;
 }
 /* The link is a destination, not the row: it stays small and never competes
    with the name of the thing. */
@@ -3490,12 +3531,35 @@
   list-style: none;
 }
 
+/* The row and the one control that acts on it. The head still takes the whole
+   click — the pencil is the part that *says* so. */
+.ledger-row-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Out of the way until the row is under the pointer or being read by the
+   keyboard, and permanently visible while its editor is open. A pencil on
+   every row of a month of shopping is forty pencils and no ledger. */
+.ledger-row-edit {
+  flex: none;
+  opacity: 0;
+}
+.ledger-row-line:hover .ledger-row-edit,
+.ledger-row-line:focus-within .ledger-row-edit,
+.ledger-row-edit.is-open {
+  opacity: 1;
+}
+
 .ledger-row-head {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  /* Takes the row, leaving the pencil beside it its own width. */
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 7px 4px;
   border: none;
   border-radius: var(--radius-sm);
@@ -3775,4 +3839,63 @@
 .deadline-marker.is-met .deadline-marker-name {
   color: var(--text-faint);
   text-decoration: line-through;
+}
+
+/* ==================================================================
+   Picking, on the surfaces that are not rows
+   The bulk bar is one bar and does not care which screen a task was
+   picked on, so every rendering of a task has to be pickable and has
+   to say so the same way: a soft accent fill for what is held, and a
+   pointer on whatever now means "pick me" instead of "open me".
+
+   The two rules the row already sets stand here too — nothing shows
+   until the mode is on, and the mode is off by default.
+   ================================================================== */
+
+/* A note is a task with a tag on it, so the card picks like a row. The
+   checkbox sits in the corner the pin does not use. */
+.note-pick {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.note-pick input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.note-card.picking .note-title {
+  /* The heading shifts clear of the checkbox rather than sitting under it. */
+  padding-left: 20px;
+}
+
+.note-card.picked {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* A month chip and a week event are too small for a checkbox — a grid of
+   them would read as a form. The mode itself is the affordance: while it is
+   on a click picks, and what is held is outlined. */
+.chip.picking,
+.event.picking {
+  cursor: pointer;
+}
+
+.chip.picked,
+.event.picked {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.chip.picked {
+  background: var(--accent-soft);
 }

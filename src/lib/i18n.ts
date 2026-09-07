@@ -211,7 +211,6 @@ export const DICTIONARY = {
     plansPickDone: "Tamamlananları seç",
     plansPickActive: "Tamamlanmayanları seç",
     plansPickCount: "{n} seçili",
-    plansPickHint: "Toplu silmek için seç; Ctrl+tık ve Shift+tık da çalışır.",
     plansSubtaskOpen: "Adımın özelliklerini aç",
     plansAssignedToday: "Bugüne atanmış",
     importModeRows: "Satır satır",
@@ -682,6 +681,7 @@ export const DICTIONARY = {
     budgetOverviewHint:
       "Bu dönemde ne girdi, ne çıktı ve para nereye gitti. Tek tek işlemler “İşlemler” sekmesinde.",
     budgetAddHeading: "İşlem ekle",
+    budgetAdded: "Eklendi: {what} · {amount}",
     budgetStatementsHint:
       "Banka ekstreni yükle, harcamalar tek tek bütçene geçsin. Yanlış yüklediysen tek tuşla geri alabilirsin.",
     budgetWishlistHint:
@@ -891,6 +891,7 @@ export const DICTIONARY = {
     wishlistBuy: "Aldım",
     wishlistBuyHint: "Aldım: bu tutar harcama olarak deftere yazılır ve listeden düşer.",
     wishlistRemove: "Listeden çıkar",
+    wishlistEdit: "Düzenle: adını, fiyatını ya da linkini değiştir",
     undoneWishlistRemoved: "Listeden çıkarıldı",
     undoneWishlistBought: "Harcama olarak eklendi",
     budgetInstalments: "Taksit sayısı",
@@ -1154,7 +1155,6 @@ export const DICTIONARY = {
     plansPickDone: "Select completed",
     plansPickActive: "Select unfinished",
     plansPickCount: "{n} selected",
-    plansPickHint: "Pick what to delete together; Ctrl-click and Shift-click work too.",
     plansSubtaskOpen: "Open this step",
     plansAssignedToday: "Assigned to today",
     importModeRows: "Row by row",
@@ -1624,6 +1624,7 @@ export const DICTIONARY = {
     budgetOverviewHint:
       "What came in, what went out, and where it went this period. The entries themselves are under “Entries”.",
     budgetAddHeading: "Add an entry",
+    budgetAdded: "Added: {what} · {amount}",
     budgetStatementsHint:
       "Load a bank statement and its spending lands in the budget one line at a time. Loaded the wrong one? Take it back with a single press.",
     budgetWishlistHint:
@@ -1809,6 +1810,7 @@ export const DICTIONARY = {
     wishlistBuy: "Bought",
     wishlistBuyHint: "Bought: writes it to the ledger as an expense and takes it off the list.",
     wishlistRemove: "Remove from list",
+    wishlistEdit: "Edit: change the name, the price or the link",
     undoneWishlistRemoved: "Taken off the list",
     undoneWishlistBought: "Added as an expense",
     budgetInstalments: "Instalments",

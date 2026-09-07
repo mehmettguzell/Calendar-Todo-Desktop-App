@@ -23,13 +23,13 @@ import {
   useSubtasks,
   useTrackedSeconds,
 } from "@/state/selectors";
-import { useSelectionStore } from "@/state/selectionStore";
 import { useNow, useStore } from "@/state/store";
 import { useUndoStore } from "@/state/undoStore";
 import { Checkbox, Popover, StatusBadge } from "@/ui/components/primitives";
 import type { RowReorder } from "./useListReorder";
 import { SnoozeMenu } from "./SnoozeMenu";
 import { useRequestDelete } from "./useRequestDelete";
+import { usePickGesture } from "./usePickGesture";
 
 /**
  * One task, as it appears in every list-shaped view.
@@ -93,28 +93,20 @@ export function TaskRow({
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const selectionActive = useSelectionStore((s) => s.active);
-  const picked = useSelectionStore((s) => s.ids.includes(task.id));
-  const pick = useSelectionStore((s) => s.pick);
   /*
    * Picking stays out of sight until it is asked for.
    *
    * A modifier click is what asks for it — the gesture every file list on every
    * desktop already uses — and only then does the checkbox column appear. A
    * list nobody is selecting in looks exactly as it did before selecting
-   * existed.
+   * existed. The gesture itself is shared with the month grid and the note
+   * wall, so all three answer a click the same way.
    */
-  const selectable = listIds !== undefined;
-  const picking = selectable && selectionActive;
-
-  const onRowClick = (e: MouseEvent<HTMLElement>) => {
-    if (!selectable) return false;
-    if (!picking && !e.ctrlKey && !e.metaKey && !e.shiftKey) return false;
-    e.preventDefault();
-    e.stopPropagation();
-    pick(task.id, { listIds, range: e.shiftKey });
-    return true;
-  };
+  const { picking, picked, onClickCapture, toggle } = usePickGesture({
+    taskId: task.id,
+    listIds,
+    enabled: listIds !== undefined,
+  });
 
   const parentTask = task.parentId
     ? (tasks.find((t) => t.id === task.parentId) ?? null)
@@ -159,11 +151,11 @@ export function TaskRow({
             type="checkbox"
             checked={picked}
             aria-label={t("bulkSelectAria", { title: task.title })}
-            onChange={() => pick(task.id, { listIds })}
+            onChange={() => toggle()}
             onClick={(e) => {
               if (e.shiftKey) {
                 e.preventDefault();
-                pick(task.id, { listIds, range: true });
+                toggle(true);
               }
             }}
           />
@@ -179,7 +171,7 @@ export function TaskRow({
         type="button"
         className="task-main"
         onClick={(e) => {
-          if (onRowClick(e)) return;
+          if (onClickCapture(e)) return;
           onOpen(instance);
         }}
       >

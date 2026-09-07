@@ -685,7 +685,9 @@ export type CategoryKey =
   | "electronics"
   | "home"
   | "cash"
-  | "fees";
+  | "fees"
+  | "shopping"
+  | "tobacco";
 
 interface CatalogueEntry {
   tr: string;
@@ -716,22 +718,59 @@ export const CATEGORY_CATALOGUE: Record<CategoryKey, CatalogueEntry> = {
   home: { tr: "Ev", en: "Home", flow: "EXPENSE", color: "#84cc16", icon: "🛋️" },
   cash: { tr: "Nakit çekim", en: "Cash withdrawal", flow: "EXPENSE", color: "#78716c", icon: "🏧" },
   fees: { tr: "Banka ücretleri", en: "Bank fees", flow: "EXPENSE", color: "#94a3b8", icon: "🏛️" },
+  /*
+   * Alışveriş is deliberately not Giyim and not Market.
+   *
+   * Those two are what the statement importer can recognise from a shop name;
+   * this is the bucket for the rest of a trip out — the thing somebody means
+   * when they say "alışveriş yaptım" and it was not food and not clothes.
+   */
+  shopping: { tr: "Alışveriş", en: "Shopping", flow: "EXPENSE", color: "#f472b6", icon: "🛍️" },
+  /*
+   * A habit is the one kind of spending where the *count* matters as much as
+   * the total, and it disappears inside "Market" — which is exactly where it
+   * used to land, being bought in one.
+   */
+  tobacco: { tr: "Sigara", en: "Tobacco", flow: "EXPENSE", color: "#a16207", icon: "🚬" },
 };
 
-/** What a brand-new document starts with. The rest arrive when they are needed. */
-const SEEDED_KEYS: CategoryKey[] = [
-  "salary",
-  "sideIncome",
-  "rent",
-  "groceries",
-  "transport",
-  "bills",
-  "eatingOut",
-  "health",
-  "fun",
-  "savings",
-  "investments",
+/**
+ * What a document starts with, in the rounds the suggestions were introduced.
+ *
+ * The rest of the catalogue arrives when a statement actually needs it. Round
+ * 0 is what the app has always shipped; a later round is offered once to a
+ * document that predates it — see `backfillBudgetCategories`, and
+ * `SEED_ROUNDS` in `data/db.ts`, which does the same for task categories and
+ * is where this shape comes from.
+ *
+ * To add more later: append a round. Never edit an old one — a document that
+ * has been past it will not look again, which is what keeps a category
+ * somebody deleted from coming back every launch.
+ */
+const BUDGET_SEED_ROUNDS: CategoryKey[][] = [
+  [
+    "salary",
+    "sideIncome",
+    "rent",
+    "groceries",
+    "transport",
+    "bills",
+    "eatingOut",
+    "health",
+    "fun",
+    "savings",
+    "investments",
+  ],
+  ["shopping", "tobacco"],
 ];
+
+/** The round a fresh document starts at: all of them. */
+export const BUDGET_SEED_VERSION = BUDGET_SEED_ROUNDS.length - 1;
+
+/** The keys of every round from `fromRound` on. */
+export function budgetSeedKeys(fromRound = 0): CategoryKey[] {
+  return BUDGET_SEED_ROUNDS.slice(fromRound).flat();
+}
 
 /**
  * The name a category key carries in a given language.
@@ -753,8 +792,9 @@ export function categoryNameFor(key: CategoryKey, language: "tr" | "en"): string
 
 export function seedBudgetCategories(
   language: "tr" | "en" = "tr",
+  fromRound = 0,
 ): Omit<BudgetCategory, "id" | "updatedAt">[] {
-  return SEEDED_KEYS.map((key, order) => {
+  return budgetSeedKeys(fromRound).map((key, order) => {
     const entry = CATEGORY_CATALOGUE[key];
     return {
       name: language === "tr" ? entry.tr : entry.en,
