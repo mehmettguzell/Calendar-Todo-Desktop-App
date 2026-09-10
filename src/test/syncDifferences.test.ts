@@ -6,11 +6,16 @@ vi.mock("@/lib/supabase", async () => {
 });
 
 import { supabaseMock } from "./supabaseMock";
-import { forgetSyncedState, pendingIds, resetPullState, resetRetryBudget } from "@/sync";
+import {
+  forgetSyncedState,
+  pendingIds,
+  resetPullState,
+  resetRetryBudget,
+  syncDifferences,
+} from "@/sync";
 import { useStore } from "@/state/store";
 import { useAuthStore } from "@/state/authStore";
 import { useSyncStore } from "@/state/syncStore";
-import { syncDifferences } from "@/state/syncEngine";
 
 /**
  * The safety net: reconcile both sides by content, with no queue or journal.

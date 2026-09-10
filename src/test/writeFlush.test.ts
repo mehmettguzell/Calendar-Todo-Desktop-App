@@ -6,11 +6,16 @@ vi.mock("@/lib/supabase", async () => {
 });
 
 import { supabaseMock } from "./supabaseMock";
-import { FLUSH_DELAY_MS, forgetSyncedState, resetRetryBudget } from "@/sync";
+import {
+  FLUSH_DELAY_MS,
+  forgetSyncedState,
+  resetRetryBudget,
+  syncDeleteTaskToCloud,
+  syncTaskToCloud,
+} from "@/sync";
 import { useStore } from "@/state/store";
 import { useAuthStore } from "@/state/authStore";
 import { useSyncStore } from "@/state/syncStore";
-import { syncDeleteTaskToCloud, syncTaskToCloud } from "@/state/syncEngine";
 
 /**
  * What a failed write must not do: lose the edit.

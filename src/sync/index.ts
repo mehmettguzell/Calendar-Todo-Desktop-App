@@ -26,3 +26,5 @@ export * from "./mergeCategories";
 export * from "./mergeTasks";
 export * from "./mergeTrail";
 export * from "./differences";
+export * from "./storeBridge";
+export * from "./lifecycle";

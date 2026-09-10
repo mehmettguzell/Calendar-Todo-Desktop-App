@@ -64,7 +64,7 @@ import {
   syncDeleteCategoryToCloud,
   syncDeleteTaskToCloud,
   syncTaskToCloud,
-} from "./syncEngine";
+} from "@/sync/storeBridge";
 import { fireConfetti } from "@/lib/confetti";
 import { useUndoStore } from "./undoStore";
 import type {

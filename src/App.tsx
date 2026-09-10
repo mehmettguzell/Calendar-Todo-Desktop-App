@@ -51,7 +51,7 @@ import { useUndoStore } from "@/state/undoStore";
 import { pasteTaskOn } from "@/state/clipboardActions";
 import { useClipboardStore } from "@/state/clipboardStore";
 import { useAuthStore } from "@/state/authStore";
-import { initSyncEngine } from "@/state/syncEngine";
+import { initSyncEngine } from "@/sync";
 import {
   useApplyLanguage,
   useApplyTheme,

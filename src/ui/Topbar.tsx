@@ -17,7 +17,7 @@ import { localeTag } from "@/domain/datetime";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { useAuthStore } from "@/state/authStore";
 import type { Filters } from "@/state/selectors";
-import { syncDifferences } from "@/state/syncEngine";
+import { syncDifferences } from "@/sync";
 import { useSyncStore, type SkippedRow, type SyncPhase } from "@/state/syncStore";
 import { SelectButton } from "./task/SelectButton";
 import type { CalendarMode } from "./views/CalendarView";

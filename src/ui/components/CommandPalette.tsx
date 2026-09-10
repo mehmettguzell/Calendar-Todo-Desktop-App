@@ -21,7 +21,7 @@ import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
 import { useLiveTasks, useOccurrenceIndex } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
-import { syncDifferences } from "@/state/syncEngine";
+import { syncDifferences } from "@/sync";
 import type { ViewId } from "@/ui/Sidebar";
 
 /**
