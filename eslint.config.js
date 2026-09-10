@@ -60,15 +60,21 @@ export default tseslint.config(
   },
 
   {
-    files: [
-      "src/sync/**/*.{ts,tsx}",
-      "src/data/dto/**/*.{ts,tsx}",
-      "src/data/supabase/**/*.{ts,tsx}",
-    ],
+    files: ["src/sync/**/*.{ts,tsx}", "src/data/supabase/**/*.{ts,tsx}"],
     rules: {
       ...sizeLimits,
       complexity: ["error", 10],
     },
+  },
+
+  {
+    // The DTO layer is row mappers: one `?? null` per nullable column reads as
+    // branching to `complexity`, but a flat field map is the opposite of
+    // complex, and splitting it to satisfy the metric only adds indirection.
+    // Size limits still apply — a mapper file that grows past 400 lines is
+    // doing more than mapping.
+    files: ["src/data/dto/**/*.{ts,tsx}"],
+    rules: { ...sizeLimits, complexity: "off" },
   },
 
   {

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { OPTIONAL_COLUMNS, serializeTaskForCloud } from "@/state/syncEngine";
+import { OPTIONAL_COLUMNS, toTaskRow as serializeTaskForCloud } from "@/data/dto";
 import type { Task } from "@/domain/types";
 
 /**
@@ -14,7 +14,14 @@ import type { Task } from "@/domain/types";
  * consulted through `columnDropped` but never listed, so every push failed —
  * and nothing else in the codebase notices, which is what this file is for.
  */
-const SOURCE = readFileSync(resolve("src/state/syncEngine.ts"), "utf8");
+/**
+ * The task payload and its fingerprints live in the DTO layer; the drop
+ * registry sits beside them. Both files together are what `columnDropped` is
+ * consulted from and what the conditional `payload.x =` assignments live in.
+ */
+const SOURCE =
+  readFileSync(resolve("src/data/dto/taskRow.ts"), "utf8") +
+  readFileSync(resolve("src/data/dto/optionalColumns.ts"), "utf8");
 
 describe("optional cloud columns", () => {
   it("registers every column the engine is willing to drop", () => {

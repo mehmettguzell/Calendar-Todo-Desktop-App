@@ -24,10 +24,60 @@ import type {
   Tombstone,
 } from "@/domain/types";
 import type { BudgetCategory, Transaction } from "@/domain/money";
-import { normaliseLink, type WishlistItem } from "@/domain/wishlist";
-import { normaliseLabel, type Deadline } from "@/domain/deadline";
-import type { SettledSnapshot, StatementBatch } from "@/domain/statementBatch";
+import type { WishlistItem } from "@/domain/wishlist";
+import type { Deadline } from "@/domain/deadline";
+import type { StatementBatch } from "@/domain/statementBatch";
 import type { HistoryEntry } from "@/domain/types";
+import {
+  budgetCategoryFromRow,
+  cloudBudgetCategoryFingerprint,
+  cloudCategoryFingerprint,
+  cloudDeadlineFingerprint,
+  cloudOccurrenceFingerprint,
+  cloudReminderFingerprint,
+  cloudStatementBatchFingerprint,
+  cloudTaskFingerprint,
+  cloudTransactionFingerprint,
+  cloudWishlistFingerprint,
+  deadlineFromRow,
+  dropOptionalColumn,
+  transactionFromRow,
+  wishlistFromRow,
+  localBudgetCategoryFingerprint,
+  localCategoryFingerprint,
+  localDeadlineFingerprint,
+  localOccurrenceFingerprint,
+  localReminderFingerprint,
+  localStatementBatchFingerprint,
+  localTaskFingerprint,
+  localTransactionFingerprint,
+  localWishlistFingerprint,
+  occurrenceFromRow,
+  optionalColumnCount,
+  reminderFromRow,
+  statementBatchFromRow,
+  taskFromRow,
+  toBudgetCategoryRow,
+  toCategoryRow,
+  toDeadlineRow,
+  toFocusSessionRow,
+  toHistoryRow,
+  toOccurrenceRow,
+  toReminderRow,
+  toStatementBatchRow,
+  toTaskRow,
+  toTransactionRow,
+  toWishlistRow,
+  withoutMissingColumns,
+} from "@/data/dto";
+
+export {
+  cloudTaskFingerprint,
+  localTaskFingerprint,
+  OPTIONAL_COLUMNS,
+} from "@/data/dto";
+/** @deprecated moved to `@/data/dto` as `toTaskRow`; kept for existing tests. */
+export { toTaskRow as serializeTaskForCloud } from "@/data/dto";
 
 /**
  * ============================================================================
@@ -674,306 +724,6 @@ function chunked<T>(items: T[], size: number): T[][] {
 }
 
 /**
- * Collapses the three "empty" spellings that travel between the two stores.
- *
- * The cloud writes `description || null`, PostgREST returns absent columns as
- * `undefined`, and the local store uses `""` and `null` interchangeably. Unless
- * all three normalise to the same value, a task with an empty description looks
- * different on *every* comparison — which is exactly why "sync" reported the
- * user's whole table as changed each time it ran.
- */
-function nz(value: unknown): unknown {
-  return value === undefined || value === null || value === "" ? null : value;
-}
-
-/**
- * `completed_at` is a TIMESTAMPTZ, so Postgres hands it back as
- * `2026-08-22T10:00:00+00:00` while the local store holds
- * `2026-08-22T10:00:00.000Z`. Same instant, different text: compare the
- * instant, never the spelling.
- */
-function nzInstant(value: unknown): number | string | null {
-  if (value === undefined || value === null || value === "") return null;
-  const ms = new Date(value as string).getTime();
-  return Number.isNaN(ms) ? String(value) : ms;
-}
-
-/** Key order in JSONB round-trips is not guaranteed, so rebuild it explicitly. */
-function canonicalRecurrence(value: unknown): string {
-  if (!value || typeof value !== "object") return "null";
-  const r = value as Record<string, unknown>;
-  const byWeekday = Array.isArray(r.byWeekday)
-    ? [...(r.byWeekday as number[])].sort((a, b) => a - b)
-    : null;
-  return JSON.stringify([
-    nz(r.freq),
-    typeof r.interval === "number" ? r.interval : 1,
-    byWeekday && byWeekday.length > 0 ? byWeekday : null,
-    nz(r.until),
-    r.count ?? null,
-  ]);
-}
-
-/**
- * A stable digest of every field this engine actually writes to the cloud.
- *
- * Two rows with the same fingerprint are identical as far as sync is
- * concerned, so nothing needs to move in either direction. `created_at` and
- * `updated_at` are deliberately excluded: `updated_at` is the conflict
- * tie-breaker, not part of the content.
- */
-function taskFingerprint(fields: unknown[]): string {
-  return JSON.stringify(fields);
-}
-
-export function localTaskFingerprint(task: Task): string {
-  return taskFingerprint([
-    nz(task.title),
-    nz(task.description),
-    nz(task.categoryId),
-    nz(task.parentId),
-    nz(task.priority),
-    nz(task.status),
-    (task.tags ?? []).map(String),
-    nz(task.dueDate),
-    columnDropped("tasks", "end_date") ? null : nz(task.endDate),
-    columnDropped("tasks", "deadline") ? null : nz(task.deadline),
-    Boolean(task.allDay),
-    nz(task.startTime),
-    nz(task.endTime),
-    canonicalRecurrence(task.recurrence),
-    columnDropped("tasks", "estimate_minutes")
-      ? null
-      : (task.estimateMinutes ?? null),
-    nz(task.snoozedUntil),
-    nzInstant(task.completedAt),
-    task.deletedAt !== null,
-  ]);
-}
-
-export function cloudTaskFingerprint(row: Record<string, unknown>): string {
-  return taskFingerprint([
-    nz(row.title),
-    nz(row.description),
-    nz(row.category_id),
-    nz(row.parent_id),
-    nz(row.priority),
-    nz(row.status),
-    ((row.tags as string[] | null) ?? []).map(String),
-    nz(row.due_date),
-    columnDropped("tasks", "end_date") ? null : nz(row.end_date),
-    columnDropped("tasks", "deadline") ? null : nz(row.deadline),
-    Boolean(row.all_day),
-    nz(row.start_time),
-    nz(row.end_time),
-    canonicalRecurrence(row.recurrence),
-    columnDropped("tasks", "estimate_minutes")
-      ? null
-      : ((row.estimate_minutes as number) ?? null),
-    nz(row.snoozed_until),
-    nzInstant(row.completed_at),
-    Boolean(row.is_deleted),
-  ]);
-}
-
-function localCategoryFingerprint(cat: Category): string {
-  return JSON.stringify([cat.name.trim(), cat.color, false]);
-}
-
-function cloudCategoryFingerprint(row: Record<string, unknown>): string {
-  return JSON.stringify([
-    String(row.name ?? "").trim(),
-    row.color,
-    Boolean(row.is_deleted),
-  ]);
-}
-
-function localOccurrenceFingerprint(o: Occurrence): string {
-  return JSON.stringify([
-    o.taskId,
-    o.date,
-    o.status,
-    nzInstant(o.completedAt),
-    nz(o.snoozedUntil),
-  ]);
-}
-
-function cloudOccurrenceFingerprint(row: Record<string, unknown>): string {
-  return JSON.stringify([
-    row.task_id,
-    row.date,
-    row.status,
-    nzInstant(row.completed_at),
-    nz(row.snoozed_until),
-  ]);
-}
-
-function localReminderFingerprint(r: Reminder): string {
-  return JSON.stringify([
-    r.taskId,
-    r.kind,
-    r.offsetMinutes ?? null,
-    nzInstant(r.remindAt),
-    r.status,
-    nz(r.snoozedUntil),
-    nz(r.lastFiredFor),
-  ]);
-}
-
-function cloudReminderFingerprint(row: Record<string, unknown>): string {
-  return JSON.stringify([
-    row.task_id,
-    row.kind,
-    row.offset_minutes ?? null,
-    nzInstant(row.remind_at),
-    row.status,
-    nz(row.snoozed_until),
-    nz(row.last_fired_for),
-  ]);
-}
-
-function localTransactionFingerprint(t: Transaction): string {
-  return JSON.stringify([
-    t.date,
-    t.amountMinor,
-    t.flow,
-    nz(t.categoryId),
-    nz(t.note),
-    canonicalRecurrence(t.recurrence),
-    nz(t.recurrenceSourceId),
-    nz(t.lastGeneratedFor),
-    nz(t.merchant),
-    nz(t.externalId),
-    t.instalments ?? null,
-    t.deletedAt !== null,
-  ]);
-}
-
-function cloudTransactionFingerprint(row: Record<string, unknown>): string {
-  return JSON.stringify([
-    row.date,
-    Math.round(Number(row.amount_minor) || 0),
-    row.flow,
-    nz(row.category_id),
-    nz(row.note),
-    canonicalRecurrence(row.recurrence),
-    nz(row.recurrence_source_id),
-    nz(row.last_generated_for),
-    nz(row.merchant),
-    nz(row.external_id),
-    // A project without the column reads as "no plan", which is what every row
-    // written before instalments existed actually is.
-    typeof row.instalments === "number" ? row.instalments : null,
-    Boolean(row.is_deleted),
-  ]);
-}
-
-function localWishlistFingerprint(item: WishlistItem): string {
-  return JSON.stringify([
-    item.title,
-    item.priceMinor ?? null,
-    nz(item.url),
-    nz(item.note),
-    nz(item.categoryId),
-    item.order,
-    nz(item.boughtAt),
-    nz(item.transactionId),
-    item.deletedAt !== null,
-  ]);
-}
-
-function cloudWishlistFingerprint(row: Record<string, unknown>): string {
-  return JSON.stringify([
-    String(row.title ?? ""),
-    row.price_minor === null || row.price_minor === undefined
-      ? null
-      : Math.round(Number(row.price_minor) || 0),
-    nz(row.url),
-    nz(row.note),
-    nz(row.category_id),
-    Number(row.sort_order) || 0,
-    nz(row.bought_at),
-    nz(row.transaction_id),
-    Boolean(row.is_deleted),
-  ]);
-}
-
-function localBatchFingerprint(b: StatementBatch): string {
-  return JSON.stringify([
-    b.label,
-    nz(b.account),
-    b.from,
-    b.to,
-    b.mode,
-    b.createdCount,
-    b.createdMinor,
-    b.settled.length,
-    nz(b.revertedAt),
-    b.deletedAt !== null,
-  ]);
-}
-
-function cloudBatchFingerprint(row: Record<string, unknown>): string {
-  const settled = Array.isArray(row.settled) ? row.settled : [];
-  return JSON.stringify([
-    String(row.label ?? ""),
-    nz(row.account),
-    String(row.from_date ?? ""),
-    String(row.to_date ?? ""),
-    row.mode === "daily" ? "daily" : "rows",
-    Number(row.created_count) || 0,
-    Math.round(Number(row.created_minor) || 0),
-    settled.length,
-    nz(row.reverted_at),
-    Boolean(row.is_deleted),
-  ]);
-}
-
-function localDeadlineFingerprint(d: Deadline): string {
-  return JSON.stringify([
-    d.taskId,
-    d.label,
-    d.date,
-    nz(d.completedAt),
-    d.order,
-    d.deletedAt !== null,
-  ]);
-}
-
-function cloudDeadlineFingerprint(row: Record<string, unknown>): string {
-  return JSON.stringify([
-    String(row.task_id ?? ""),
-    String(row.label ?? ""),
-    String(row.date ?? ""),
-    nz(row.completed_at),
-    Number(row.sort_order) || 0,
-    Boolean(row.is_deleted),
-  ]);
-}
-
-function localBudgetCategoryFingerprint(c: BudgetCategory): string {
-  return JSON.stringify([
-    c.name.trim(),
-    c.flow,
-    c.color,
-    c.icon,
-    c.builtIn,
-    c.monthlyLimitMinor ?? null,
-  ]);
-}
-
-function cloudBudgetCategoryFingerprint(row: Record<string, unknown>): string {
-  return JSON.stringify([
-    String(row.name ?? "").trim(),
-    row.flow,
-    row.color,
-    row.icon,
-    Boolean(row.built_in),
-    (row.monthly_limit_minor as number) ?? null,
-  ]);
-}
-
-/**
  * What the cloud is believed to already hold, keyed by row id.
  *
  * Every path that learns the cloud's content — a successful upload, a pull, a
@@ -1323,14 +1073,7 @@ async function flushPendingWrites(): Promise<void> {
       for (const batch of chunked(catsToWrite, UPSERT_CHUNK_SIZE)) {
         const { error } = await withTimeout(
           supabase.from("categories").upsert(
-            batch.map((c) => ({
-              id: c.id,
-              user_id: userId,
-              name: c.name,
-              color: c.color,
-              is_deleted: false,
-              updated_at: now,
-            })),
+            batch.map((c) => toCategoryRow(c, userId, now)),
             { onConflict: "id,user_id" },
           ),
           "category upsert",
@@ -1540,51 +1283,7 @@ export function planTaskWrites(input: {
 /* Serialisation                                                       */
 /* ------------------------------------------------------------------ */
 
-/**
- * A task as the cloud stores it.
- *
- * Columns the project turned out not to have are stripped on the way out —
- * PostgREST rejects the entire batch over one unknown key, and a task manager
- * that stops syncing because the user has not re-run a migration is worse than
- * one that syncs everything except an estimate.
- */
-export function serializeTaskForCloud(
-  task: Task,
-  userId: string,
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
-    id: task.id,
-    user_id: userId,
-    title: task.title,
-    description: task.description || null,
-    category_id: task.categoryId || null,
-    parent_id: task.parentId || null,
-    priority: task.priority,
-    status: task.status,
-    tags: task.tags,
-    due_date: task.dueDate || null,
-    all_day: task.allDay,
-    start_time: task.startTime || null,
-    end_time: task.endTime || null,
-    recurrence: task.recurrence || null,
-    estimate_minutes: task.estimateMinutes ?? null,
-    snoozed_until: task.snoozedUntil || null,
-    completed_at: task.completedAt || null,
-    is_deleted: task.deletedAt !== null,
-    created_at: task.createdAt,
-    updated_at: task.updatedAt || new Date().toISOString(),
-  };
-
-  if (task.endDate) {
-    payload.end_date = task.endDate;
-  }
-
-  if (task.deadline) {
-    payload.deadline = task.deadline;
-  }
-
-  return withoutMissingColumns("tasks", payload);
-}
+const serializeTaskForCloud = toTaskRow;
 
 export async function upsertTasksToCloud(tasks: Task[], userId: string) {
   if (!supabase || !userId || tasks.length === 0) return { error: null };
@@ -1661,75 +1360,6 @@ export interface SyncContext {
   liveTaskIds: Set<string>;
 }
 
-/**
- * Columns added after the first release.
- *
- * A user whose Supabase project still runs the original schema.sql has a
- * `transactions` table without these, and PostgREST rejects the whole batch
- * rather than the unknown key. Rather than making sync fail until they run a
- * migration, the write is retried without the column and the omission is
- * remembered for the rest of the session — the statement importer is a local
- * feature that degrades to "this device knows the merchant, the cloud does
- * not", which is a far better outcome than a red sync badge.
- */
-export const OPTIONAL_COLUMNS: Record<string, string[]> = {
-  tasks: ["end_date", "estimate_minutes", "deadline"],
-  transactions: ["merchant", "external_id", "instalments", "import_id"],
-};
-
-const droppedColumns = new Map<string, Set<string>>();
-
-function optionalColumnCount(table: string): number {
-  return (OPTIONAL_COLUMNS[table] ?? []).length;
-}
-
-/** True once this session has stopped sending `column` to `table`. */
-function columnDropped(table: string, column: string): boolean {
-  return droppedColumns.get(table)?.has(column) === true;
-}
-
-/**
- * Give up on the column this error names, if it is one we can live without.
- *
- * Returns whether anything was dropped, so the caller knows a retry is worth
- * making. Only the named column goes: `tasks.end_date` and
- * `tasks.estimate_minutes` ship in the same migration but not necessarily in
- * the same project, and discarding a column that does exist would silently
- * stop syncing a field for the rest of the session.
- */
-function dropOptionalColumn(table: string, error: unknown): boolean {
-  const column = missingOptionalColumn(table, error);
-  if (!column) return false;
-  const gone = droppedColumns.get(table) ?? new Set<string>();
-  gone.add(column);
-  droppedColumns.set(table, gone);
-  console.info(
-    `[tempo sync] public.${table}.${column} is not in this project yet — ` +
-      "syncing without it. Run supabase/schema.sql to restore the field.",
-  );
-  return true;
-}
-
-function withoutMissingColumns(
-  table: string,
-  row: Record<string, unknown>,
-): Record<string, unknown> {
-  const gone = droppedColumns.get(table);
-  if (!gone || gone.size === 0) return row;
-  const copy = { ...row };
-  for (const column of gone) delete copy[column];
-  return copy;
-}
-
-/** Does this error name a column we are allowed to give up on? */
-function missingOptionalColumn(table: string, error: unknown): string | null {
-  const message = (error as { message?: string } | null)?.message ?? "";
-  if (!message) return null;
-  for (const column of OPTIONAL_COLUMNS[table] ?? []) {
-    if (message.includes(column)) return column;
-  }
-  return null;
-}
 
 async function writeCollection<T>(
   spec: CollectionSpec<T>,
@@ -1881,18 +1511,8 @@ const OCCURRENCE_SPEC: CollectionSpec<Occurrence> = {
   // `task_id` and `date` are NOT NULL in the cloud, and an occurrence without
   // them is unreachable locally too: lookups go through `${taskId}::${date}`.
   isUploadable: (o) => Boolean(o.taskId) && Boolean(o.date),
-  toCloud: (o, userId) => ({
-    id: o.id,
-    user_id: userId,
-    task_id: o.taskId,
-    date: o.date,
-    status: o.status,
-    completed_at: o.completedAt,
-    snoozed_until: o.snoozedUntil,
-    is_deleted: false,
-    updated_at: o.updatedAt,
-  }),
-  fromCloud: occurrenceFromCloud,
+  toCloud: toOccurrenceRow,
+  fromCloud: occurrenceFromRow,
 };
 
 /** Mirrors the CHECK constraint on `public.reminders.status`. */
@@ -1910,21 +1530,8 @@ const REMINDER_SPEC: CollectionSpec<Reminder> = {
   localFingerprint: localReminderFingerprint,
   cloudFingerprint: cloudReminderFingerprint,
   isOrphan: (row, ctx) => !ctx.liveTaskIds.has(row.task_id as string),
-  toCloud: (r, userId) => ({
-    id: r.id,
-    user_id: userId,
-    task_id: r.taskId,
-    kind: r.kind,
-    offset_minutes: r.offsetMinutes,
-    remind_at: r.remindAt,
-    status: r.status,
-    snoozed_until: r.snoozedUntil,
-    last_fired_for: r.lastFiredFor,
-    is_deleted: false,
-    created_at: r.createdAt,
-    updated_at: r.updatedAt,
-  }),
-  fromCloud: reminderFromCloud,
+  toCloud: toReminderRow,
+  fromCloud: reminderFromRow,
 };
 
 /** Mirrors the CHECK constraint `flow` carries on both money tables. */
@@ -1942,26 +1549,8 @@ const TRANSACTION_SPEC: CollectionSpec<Transaction> = {
     Boolean(t.date) &&
     Number.isFinite(t.amountMinor) &&
     MONEY_FLOWS.has(t.flow as string),
-  toCloud: (t, userId) => ({
-    id: t.id,
-    user_id: userId,
-    date: t.date,
-    amount_minor: t.amountMinor,
-    flow: t.flow,
-    category_id: t.categoryId,
-    note: t.note || null,
-    recurrence: t.recurrence ?? null,
-    recurrence_source_id: t.recurrenceSourceId ?? null,
-    last_generated_for: t.lastGeneratedFor ?? null,
-    merchant: t.merchant ?? null,
-    external_id: t.externalId ?? null,
-    instalments: t.instalments ?? null,
-    import_id: t.importId ?? null,
-    is_deleted: t.deletedAt !== null,
-    created_at: t.createdAt,
-    updated_at: t.updatedAt,
-  }),
-  fromCloud: transactionFromCloud,
+  toCloud: toTransactionRow,
+  fromCloud: transactionFromRow,
 };
 
 const BUDGET_CATEGORY_SPEC: CollectionSpec<BudgetCategory> = {
@@ -1973,20 +1562,8 @@ const BUDGET_CATEGORY_SPEC: CollectionSpec<BudgetCategory> = {
   cloudFingerprint: cloudBudgetCategoryFingerprint,
   // `name` is NOT NULL and `flow` is the same CHECK constraint.
   isUploadable: (c) => Boolean(c.name) && MONEY_FLOWS.has(c.flow as string),
-  toCloud: (c, userId) => ({
-    id: c.id,
-    user_id: userId,
-    name: c.name,
-    flow: c.flow,
-    color: c.color,
-    icon: c.icon,
-    built_in: c.builtIn,
-    sort_order: c.order,
-    monthly_limit_minor: c.monthlyLimitMinor ?? null,
-    is_deleted: false,
-    updated_at: c.updatedAt,
-  }),
-  fromCloud: budgetCategoryFromCloud,
+  toCloud: toBudgetCategoryRow,
+  fromCloud: budgetCategoryFromRow,
 };
 
 /**
@@ -2005,22 +1582,8 @@ const WISHLIST_SPEC: CollectionSpec<WishlistItem> = {
   cloudFingerprint: cloudWishlistFingerprint,
   // `title` is NOT NULL, and an item with no name is unreachable in the UI too.
   isUploadable: (item) => Boolean(item.title),
-  toCloud: (item, userId) => ({
-    id: item.id,
-    user_id: userId,
-    title: item.title,
-    price_minor: item.priceMinor,
-    url: item.url,
-    note: item.note || null,
-    category_id: item.categoryId,
-    sort_order: item.order,
-    bought_at: item.boughtAt,
-    transaction_id: item.transactionId,
-    is_deleted: item.deletedAt !== null,
-    created_at: item.createdAt,
-    updated_at: item.updatedAt,
-  }),
-  fromCloud: wishlistFromCloud,
+  toCloud: toWishlistRow,
+  fromCloud: wishlistFromRow,
 };
 
 /**
@@ -2038,19 +1601,8 @@ const DEADLINE_SPEC: CollectionSpec<Deadline> = {
   // them takes the whole push down with it.
   isUploadable: (d) => Boolean(d.taskId && d.label && d.date),
   isOrphan: (row, ctx) => !ctx.liveTaskIds.has(row.task_id as string),
-  toCloud: (d, userId) => ({
-    id: d.id,
-    user_id: userId,
-    task_id: d.taskId,
-    label: d.label,
-    date: d.date,
-    completed_at: d.completedAt,
-    sort_order: d.order,
-    is_deleted: d.deletedAt !== null,
-    created_at: d.createdAt,
-    updated_at: d.updatedAt,
-  }),
-  fromCloud: deadlineFromCloud,
+  toCloud: toDeadlineRow,
+  fromCloud: deadlineFromRow,
 };
 
 /**
@@ -2065,149 +1617,14 @@ const BATCH_SPEC: CollectionSpec<StatementBatch> = {
   synced: syncedBatchFingerprints,
   idOf: (b) => b.id,
   updatedAtOf: (b) => b.revertedAt ?? b.importedAt,
-  localFingerprint: localBatchFingerprint,
-  cloudFingerprint: cloudBatchFingerprint,
+  localFingerprint: localStatementBatchFingerprint,
+  cloudFingerprint: cloudStatementBatchFingerprint,
   // `label`, `from_date` and `to_date` are NOT NULL; one bad row would take
   // the whole push down with it.
   isUploadable: (b) => Boolean(b.label && b.from && b.to),
-  toCloud: (b, userId) => ({
-    id: b.id,
-    user_id: userId,
-    label: b.label,
-    account: b.account,
-    imported_at: b.importedAt,
-    from_date: b.from,
-    to_date: b.to,
-    mode: b.mode,
-    created_count: b.createdCount,
-    created_minor: b.createdMinor,
-    settled: b.settled,
-    reverted_at: b.revertedAt,
-    is_deleted: b.deletedAt !== null,
-    updated_at: b.revertedAt ?? b.importedAt,
-  }),
-  fromCloud: batchFromCloud,
+  toCloud: toStatementBatchRow,
+  fromCloud: statementBatchFromRow,
 };
-
-function batchFromCloud(row: Record<string, unknown>): StatementBatch {
-  const at = new Date().toISOString();
-  const importedAt = (row.imported_at as string) ?? at;
-  return {
-    id: row.id as string,
-    label: String(row.label ?? ""),
-    account: (row.account as string) ?? null,
-    importedAt,
-    from: String(row.from_date ?? ""),
-    to: String(row.to_date ?? ""),
-    mode: row.mode === "daily" ? "daily" : "rows",
-    createdCount: Number(row.created_count) || 0,
-    createdMinor: Math.round(Number(row.created_minor) || 0),
-    settled: Array.isArray(row.settled) ? (row.settled as SettledSnapshot[]) : [],
-    revertedAt: (row.reverted_at as string) ?? null,
-    deletedAt: row.is_deleted ? ((row.updated_at as string) ?? importedAt) : null,
-  };
-}
-
-function deadlineFromCloud(row: Record<string, unknown>): Deadline {
-  const at = new Date().toISOString();
-  return {
-    id: row.id as string,
-    taskId: row.task_id as string,
-    // Trimmed here as well as on the way in: another device wrote this.
-    label: normaliseLabel(String(row.label ?? "")) ?? "",
-    date: String(row.date ?? ""),
-    completedAt: (row.completed_at as string) ?? null,
-    order: Number(row.sort_order) || 0,
-    createdAt: (row.created_at as string) ?? at,
-    updatedAt: (row.updated_at as string) ?? at,
-    deletedAt: row.is_deleted ? ((row.updated_at as string) ?? at) : null,
-  };
-}
-
-function wishlistFromCloud(row: Record<string, unknown>): WishlistItem {
-  const at = new Date().toISOString();
-  return {
-    id: row.id as string,
-    title: String(row.title ?? ""),
-    priceMinor:
-      row.price_minor === null || row.price_minor === undefined
-        ? null
-        : Math.round(Number(row.price_minor) || 0),
-    // Checked here as well as on the way out of the file: another device wrote
-    // this, and a link is about to become an href on this one.
-    url: typeof row.url === "string" ? normaliseLink(row.url) : null,
-    note: (row.note as string) ?? "",
-    categoryId: (row.category_id as string) ?? null,
-    order: Number(row.sort_order) || 0,
-    boughtAt: (row.bought_at as string) ?? null,
-    transactionId: (row.transaction_id as string) ?? null,
-    createdAt: (row.created_at as string) ?? at,
-    updatedAt: (row.updated_at as string) ?? at,
-    deletedAt: row.is_deleted ? ((row.updated_at as string) ?? at) : null,
-  };
-}
-
-function occurrenceFromCloud(row: Record<string, unknown>): Occurrence {
-  return {
-    id: row.id as string,
-    taskId: row.task_id as string,
-    date: row.date as string,
-    status: (row.status as Occurrence["status"]) ?? "TODO",
-    completedAt: (row.completed_at as string) ?? null,
-    snoozedUntil: (row.snoozed_until as string) ?? null,
-    updatedAt: (row.updated_at as string) ?? new Date().toISOString(),
-  };
-}
-
-function reminderFromCloud(row: Record<string, unknown>): Reminder {
-  return {
-    id: row.id as string,
-    taskId: row.task_id as string,
-    kind: (row.kind as Reminder["kind"]) ?? "RELATIVE",
-    offsetMinutes: (row.offset_minutes as number) ?? null,
-    remindAt: (row.remind_at as string) ?? null,
-    status: (row.status as Reminder["status"]) ?? "PENDING",
-    snoozedUntil: (row.snoozed_until as string) ?? null,
-    lastFiredFor: (row.last_fired_for as string) ?? null,
-    createdAt: (row.created_at as string) ?? new Date().toISOString(),
-    updatedAt: (row.updated_at as string) ?? new Date().toISOString(),
-  };
-}
-
-function transactionFromCloud(row: Record<string, unknown>): Transaction {
-  return {
-    id: row.id as string,
-    date: row.date as string,
-    amountMinor: Math.round(Number(row.amount_minor) || 0),
-    flow: (row.flow as Transaction["flow"]) ?? "EXPENSE",
-    categoryId: (row.category_id as string) ?? null,
-    note: (row.note as string) ?? "",
-    recurrence: (row.recurrence as Transaction["recurrence"]) ?? null,
-    recurrenceSourceId: (row.recurrence_source_id as string) ?? null,
-    lastGeneratedFor: (row.last_generated_for as string) ?? null,
-    merchant: (row.merchant as string) ?? null,
-    externalId: (row.external_id as string) ?? null,
-    instalments: typeof row.instalments === "number" ? row.instalments : null,
-    importId: (row.import_id as string) ?? null,
-    createdAt: (row.created_at as string) ?? new Date().toISOString(),
-    updatedAt: (row.updated_at as string) ?? new Date().toISOString(),
-    deletedAt: row.is_deleted ? ((row.updated_at as string) ?? null) : null,
-  };
-}
-
-function budgetCategoryFromCloud(row: Record<string, unknown>): BudgetCategory {
-  return {
-    id: row.id as string,
-    name: String(row.name ?? "").trim(),
-    flow: (row.flow as BudgetCategory["flow"]) ?? "EXPENSE",
-    color: (row.color as string) ?? "#64748b",
-    icon: (row.icon as string) ?? "•",
-    builtIn: Boolean(row.built_in),
-    order: Number(row.sort_order) || 0,
-    monthlyLimitMinor: (row.monthly_limit_minor as number) ?? null,
-    updatedAt: (row.updated_at as string) ?? new Date().toISOString(),
-  };
-}
 
 /**
  * Append the activity trail.
@@ -2225,18 +1642,7 @@ async function writeHistory(
   for (const batch of chunked(entries, UPSERT_CHUNK_SIZE)) {
     const { error } = await withTimeout(
       supabase.from("task_history").upsert(
-        batch.map((h) => ({
-          id: h.id,
-          user_id: userId,
-          task_id: h.taskId,
-          at: h.at,
-          kind: h.kind,
-          occurrence_date: h.occurrenceDate,
-          field: h.field,
-          from_value: h.from,
-          to_value: h.to,
-          note: h.note,
-        })),
+        batch.map((h) => toHistoryRow(h, userId)),
         { onConflict: "id,user_id" },
       ),
       "history upsert",
@@ -2258,14 +1664,7 @@ async function writeFocusSessions(
   for (const batch of chunked(sessions, UPSERT_CHUNK_SIZE)) {
     const { error } = await withTimeout(
       supabase.from("focus_sessions").upsert(
-        batch.map((f) => ({
-          id: f.id,
-          user_id: userId,
-          task_id: f.taskId || null,
-          started_at: f.startedAt,
-          duration_sec: f.durationSec,
-          notes: null,
-        })),
+        batch.map((f) => toFocusSessionRow(f, userId)),
         { onConflict: "id,user_id" },
       ),
       "focus upsert",
@@ -2565,14 +1964,7 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       for (const batch of chunked(catsToUpload, UPSERT_CHUNK_SIZE)) {
         const { error } = await withTimeout(
           supabase.from("categories").upsert(
-            batch.map((c) => ({
-              id: c.id,
-              user_id: userId,
-              name: c.name,
-              color: c.color,
-              is_deleted: false,
-              updated_at: now,
-            })),
+            batch.map((c) => toCategoryRow(c, userId, now)),
             { onConflict: "id,user_id" },
           ),
           "category upsert",
@@ -2656,7 +2048,7 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       if (cloudWins) {
         mergedTasks.set(
           localTask.id,
-          taskFromCloud(
+          taskFromRow(
             cloudTask,
             localTask.order,
             localTask.manualOrder ?? null,
@@ -2679,7 +2071,7 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       }
       mergedTasks.set(
         cloudTask.id,
-        taskFromCloud(cloudTask, mergedTasks.size, null),
+        taskFromRow(cloudTask, mergedTasks.size, null),
       );
       downloadedTasks++;
     }
@@ -2945,7 +2337,7 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       syncedDeadlineFingerprints.set(d.id, localDeadlineFingerprint(d));
     }
     for (const b of mergedBatches) {
-      syncedBatchFingerprints.set(b.id, localBatchFingerprint(b));
+      syncedBatchFingerprints.set(b.id, localStatementBatchFingerprint(b));
     }
     for (const session of mergedFocus) syncedFocusIds.add(session.id);
     for (const entry of mergedHistory) syncedHistoryIds.add(entry.id);
@@ -3077,38 +2469,6 @@ function tombstoneIndex(tombstones: Tombstone[]) {
   };
   for (const stone of tombstones) index[stone.kind]?.add(stone.id);
   return index;
-}
-
-function taskFromCloud(
-  row: Record<string, unknown>,
-  order: number,
-  manualOrder: number | null,
-): Task {
-  return {
-    id: row.id as string,
-    title: (row.title as string) ?? "",
-    description: (row.description as string) ?? "",
-    categoryId: (row.category_id as string) ?? null,
-    parentId: (row.parent_id as string) ?? null,
-    priority: (row.priority as Task["priority"]) ?? "NONE",
-    status: (row.status as Task["status"]) ?? "TODO",
-    tags: (row.tags as string[]) ?? [],
-    dueDate: (row.due_date as string) ?? null,
-    endDate: (row.end_date as string) ?? null,
-    deadline: (row.deadline as string) ?? null,
-    allDay: Boolean(row.all_day),
-    startTime: (row.start_time as string) ?? null,
-    endTime: (row.end_time as string) ?? null,
-    recurrence: (row.recurrence as Task["recurrence"]) ?? null,
-    estimateMinutes: (row.estimate_minutes as number) ?? null,
-    snoozedUntil: (row.snoozed_until as string) ?? null,
-    completedAt: (row.completed_at as string) ?? null,
-    deletedAt: row.is_deleted ? ((row.updated_at as string) ?? null) : null,
-    createdAt: (row.created_at as string) ?? new Date().toISOString(),
-    updatedAt: (row.updated_at as string) ?? new Date().toISOString(),
-    order,
-    manualOrder,
-  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -3310,7 +2670,7 @@ function handleRealtimeTaskChange(payload: {
   const { eventType, new: newRecord, old: oldRecord } = payload;
 
   if (eventType === "INSERT" || eventType === "UPDATE") {
-    const task = taskFromCloud(newRecord, 0, null);
+    const task = taskFromRow(newRecord, 0, null);
     const db = useStore.getState().db;
     const existingTask = db.tasks.find((t) => t.id === task.id);
 
@@ -3443,7 +2803,7 @@ function handleRealtimeOccurrenceChange(payload: {
     return;
   }
 
-  const occurrence = occurrenceFromCloud(newRecord);
+  const occurrence = occurrenceFromRow(newRecord);
   syncedOccurrenceFingerprints.set(id, localOccurrenceFingerprint(occurrence));
   useStore.setState((s) => {
     const exists = s.db.occurrences.some((o) => o.id === id);
@@ -3474,7 +2834,7 @@ function handleRealtimeReminderChange(payload: {
     return;
   }
 
-  const reminder = reminderFromCloud(newRecord);
+  const reminder = reminderFromRow(newRecord);
   syncedReminderFingerprints.set(id, localReminderFingerprint(reminder));
   useStore.setState((s) => {
     const exists = s.db.reminders.some((r) => r.id === id);
@@ -3510,7 +2870,7 @@ function handleRealtimeTransactionChange(payload: {
 
   // A soft-deleted transaction is kept: the ledger records what happened, and
   // dropping the row would rewrite a past month with nothing to show for it.
-  const transaction = transactionFromCloud(newRecord);
+  const transaction = transactionFromRow(newRecord);
   syncedTransactionFingerprints.set(
     id,
     localTransactionFingerprint(transaction),
@@ -3550,7 +2910,7 @@ function handleRealtimeBudgetCategoryChange(payload: {
     return;
   }
 
-  const category = budgetCategoryFromCloud(newRecord);
+  const category = budgetCategoryFromRow(newRecord);
   syncedBudgetCategoryFingerprints.set(
     id,
     localBudgetCategoryFingerprint(category),
