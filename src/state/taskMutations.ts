@@ -37,60 +37,61 @@ export function refOf(instance: TaskInstance): InstanceRef {
   };
 }
 
-/**
- * Write a status to the right place: the task itself, or the occurrence row of
- * a recurring series. Callers never need to know which, which is the whole
- * point of `InstanceRef`.
- */
-export function applyStatus(
+/** One occurrence of a repeating task carries its own status row. */
+function applyOccurrenceStatus(
   db: Database,
-  ref: InstanceRef,
+  task: Task,
+  date: LocalDate,
   status: StoredStatus,
+  at: Instant,
+  entry: HistoryEntry,
 ): Database {
-  const task = db.tasks.find((t) => t.id === ref.taskId);
-  if (!task) return db;
+  const id = occurrenceId(task.id, date);
+  const existing = db.occurrences.find((o) => o.id === id);
+  const occurrence: Occurrence = {
+    id,
+    taskId: task.id,
+    date,
+    status,
+    completedAt: status === "COMPLETED" ? at : null,
+    snoozedUntil:
+      status === "COMPLETED" ? null : (existing?.snoozedUntil ?? null),
+    updatedAt: at,
+  };
+  // A habit's first tick starts the plan it hangs off, exactly as a one-off
+  // step's does: the completion lives on the occurrence, but the plan it
+  // belongs to is no less under way.
+  const started =
+    status === "COMPLETED"
+      ? planStartedBy(db, task.id, at)
+      : { tasks: db.tasks, entries: [] };
 
-  const at = nowInstant();
+  return {
+    ...db,
+    tasks: started.tasks,
+    occurrences: existing
+      ? db.occurrences.map((o) => (o.id === id ? occurrence : o))
+      : [...db.occurrences, occurrence],
+    history: [...db.history, entry, ...started.entries],
+  };
+}
+
+/**
+ * Finishing a task finishes what it was made of.
+ *
+ * A parent marked COMPLETED over subtasks that still read TODO is not a record
+ * of anything, and the leftover children would go on surfacing in Today and in
+ * the reminder queue. Reopening is deliberately *not* symmetric: a subtask that
+ * was genuinely done stays done when its parent turns out to need more work.
+ */
+function applyTaskStatus(
+  db: Database,
+  task: Task,
+  status: StoredStatus,
+  at: Instant,
+  entry: HistoryEntry,
+): Database {
   const completedAt = status === "COMPLETED" ? at : null;
-  const entry = historyEntry({
-    taskId: ref.taskId,
-    kind: "STATUS_CHANGED",
-    occurrenceDate: ref.occurrenceDate,
-    field: "status",
-    from: currentStoredStatus(db, ref),
-    to: status,
-  });
-
-  if (task.recurrence && ref.occurrenceDate) {
-    const id = occurrenceId(task.id, ref.occurrenceDate);
-    const existing = db.occurrences.find((o) => o.id === id);
-    const occurrence: Occurrence = {
-      id,
-      taskId: task.id,
-      date: ref.occurrenceDate,
-      status,
-      completedAt,
-      snoozedUntil:
-        status === "COMPLETED" ? null : (existing?.snoozedUntil ?? null),
-      updatedAt: at,
-    };
-    // A habit's first tick starts the plan it hangs off, exactly as a one-off
-    // step's does — the completion lives on the occurrence, but the plan it
-    // belongs to is no less under way.
-    const startedByHabit =
-      status === "COMPLETED"
-        ? planStartedBy(db, task.id, at)
-        : { tasks: db.tasks, entries: [] };
-    return {
-      ...db,
-      tasks: startedByHabit.tasks,
-      occurrences: existing
-        ? db.occurrences.map((o) => (o.id === id ? occurrence : o))
-        : [...db.occurrences, occurrence],
-      history: [...db.history, entry, ...startedByHabit.entries],
-    };
-  }
-
   const next: Task = {
     ...task,
     status,
@@ -98,16 +99,7 @@ export function applyStatus(
     snoozedUntil: status === "COMPLETED" ? null : task.snoozedUntil,
     updatedAt: at,
   };
-
-  // Finishing a task finishes what it was made of. A parent marked COMPLETED
-  // over subtasks that still read TODO is not a record of anything — the two
-  // halves of one task disagreeing about whether it happened — and the leftover
-  // children would go on surfacing in Today and in the reminder queue.
-  //
-  // Reopening is deliberately *not* symmetric: a subtask that was genuinely
-  // done stays done when its parent turns out to need more work.
   const cascade = status === "COMPLETED" ? openDescendants(db, task.id) : [];
-
   const started =
     status === "COMPLETED"
       ? planStartedBy(db, task.id, at)
@@ -137,6 +129,33 @@ export function applyStatus(
       ),
     ],
   };
+}
+
+/**
+ * Write a status to the right place: the task itself, or the occurrence row of
+ * a recurring series. Callers never need to know which.
+ */
+export function applyStatus(
+  db: Database,
+  ref: InstanceRef,
+  status: StoredStatus,
+): Database {
+  const task = db.tasks.find((t) => t.id === ref.taskId);
+  if (!task) return db;
+
+  const at = nowInstant();
+  const entry = historyEntry({
+    taskId: ref.taskId,
+    kind: "STATUS_CHANGED",
+    occurrenceDate: ref.occurrenceDate,
+    field: "status",
+    from: currentStoredStatus(db, ref),
+    to: status,
+  });
+
+  return task.recurrence && ref.occurrenceDate
+    ? applyOccurrenceStatus(db, task, ref.occurrenceDate, status, at, entry)
+    : applyTaskStatus(db, task, status, at, entry);
 }
 
 /**
