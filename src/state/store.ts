@@ -27,7 +27,6 @@ import {
 } from "@/data/namespace";
 import {
   nowInstant,
-  toInstant,
   toLocalDate,
 } from "@/domain/datetime";
 import { historyEntry } from "@/domain/history";
@@ -43,11 +42,8 @@ import {
 import {
   resolveSnooze,
 } from "@/domain/snooze";
-import { normaliseLink, type WishlistItem } from "@/domain/wishlist";
-import { normaliseLabel, type Deadline } from "@/domain/deadline";
 import { NOTE_TAG } from "@/domain/note";
 import {
-  syncDeleteCategoryToCloud,
   syncDeleteTaskToCloud,
   syncTaskToCloud,
 } from "@/sync/storeBridge";
@@ -55,11 +51,16 @@ import { fireConfetti } from "@/lib/confetti";
 import { useUndoStore } from "./undoStore";
 import type { StoreState } from "./storeState";
 import { createMoneySlice } from "./slices/money";
+import { createCategorySlice } from "./slices/categories";
+import { createReminderSlice } from "./slices/reminders";
+import { createFocusSlice } from "./slices/focus";
+import { createDeadlineSlice } from "./slices/deadlines";
+import { createWishlistSlice } from "./slices/wishlist";
 import type {
   TaskPatch,
 } from "./storeTypes";
-import { focusElapsedSec } from "./storeTypes";
 import {
+  appendHistory,
   applyStatus,
   collectSubtree,
   describeSchedule,
@@ -72,13 +73,10 @@ import {
   writeSnoozeUntil,
 } from "./taskMutations";
 import type {
-  Category,
-  FocusSession,
   HistoryEntry,
   InstanceRef,
   LocalDate,
   Occurrence,
-  Reminder,
   Settings,
   StoredStatus,
   Task,
@@ -111,14 +109,6 @@ export const useStore = create<StoreState>((set, get) => {
       return { db };
     });
   };
-
-  const appendHistory = (
-    db: Database,
-    ...entries: HistoryEntry[]
-  ): Database => ({
-    ...db,
-    history: [...db.history, ...entries],
-  });
 
   /**
    * Load one namespace's document into the store.
@@ -182,6 +172,11 @@ export const useStore = create<StoreState>((set, get) => {
 
   return {
     ...createMoneySlice(tools),
+    ...createCategorySlice(tools),
+    ...createReminderSlice(tools),
+    ...createFocusSlice(tools),
+    ...createDeadlineSlice(tools),
+    ...createWishlistSlice(tools),
 
     ready: false,
     db: emptyDatabase(),
@@ -732,288 +727,20 @@ export const useStore = create<StoreState>((set, get) => {
       commit((db) => writeSnoozeUntil(db, ref, null));
     },
 
-    addReminder(input) {
-      const at = nowInstant();
-      const reminder: Reminder = {
-        ...input,
-        id: createId("r"),
-        status: "PENDING",
-        snoozedUntil: null,
-        lastFiredFor: null,
-        createdAt: at,
-        updatedAt: at,
-      };
-      commit((db) =>
-        appendHistory(
-          { ...db, reminders: [...db.reminders, reminder] },
-          historyEntry({ taskId: reminder.taskId, kind: "REMINDER_ADDED" }),
-        ),
-      );
-    },
 
-    removeReminder(reminderId) {
-      commit((db) => {
-        const reminder = db.reminders.find((r) => r.id === reminderId);
-        if (!reminder) return db;
-        return appendHistory(
-          {
-            ...db,
-            reminders: db.reminders.filter((r) => r.id !== reminderId),
-            tombstones: pruneTombstones([
-              ...db.tombstones,
-              tombstone("reminder", reminderId, nowInstant()),
-            ]),
-          },
-          historyEntry({ taskId: reminder.taskId, kind: "REMINDER_REMOVED" }),
-        );
-      });
-    },
 
-    markReminderFired(reminderId, occurrenceDate) {
-      commit((db) => {
-        const reminder = db.reminders.find((r) => r.id === reminderId);
-        if (!reminder) return db;
-        const task = db.tasks.find((t) => t.id === reminder.taskId);
-        const recurring = task?.recurrence != null;
-        const next: Reminder = {
-          ...reminder,
-          // A series keeps its reminder alive for the next occurrence.
-          status: recurring ? "PENDING" : "FIRED",
-          lastFiredFor: occurrenceDate ?? reminder.lastFiredFor,
-          snoozedUntil: null,
-          updatedAt: nowInstant(),
-        };
-        return appendHistory(
-          {
-            ...db,
-            reminders: db.reminders.map((r) =>
-              r.id === reminderId ? next : r,
-            ),
-          },
-          historyEntry({
-            taskId: reminder.taskId,
-            kind: "REMINDER_FIRED",
-            occurrenceDate: occurrenceDate ?? null,
-          }),
-        );
-      });
-    },
 
-    snoozeReminder(reminderId, until) {
-      commit((db) => ({
-        ...db,
-        reminders: db.reminders.map((r) =>
-          r.id === reminderId
-            ? {
-                ...r,
-                snoozedUntil: until,
-                status: "PENDING" as const,
-                updatedAt: nowInstant(),
-              }
-            : r,
-        ),
-      }));
-    },
 
-    dismissReminder(reminderId) {
-      commit((db) => ({
-        ...db,
-        reminders: db.reminders.map((r) =>
-          r.id === reminderId
-            ? { ...r, status: "DISMISSED" as const, updatedAt: nowInstant() }
-            : r,
-        ),
-      }));
-    },
 
-    startFocus(instance) {
-      const state = get();
-      if (state.runningFocus) state.stopFocus();
 
-      const session: FocusSession = {
-        id: createId("f"),
-        taskId: instance.task.id,
-        occurrenceDate: instance.isRecurring ? instance.date : null,
-        startedAt: nowInstant(),
-        endedAt: null,
-        durationSec: 0,
-      };
-      set({
-        runningFocus: {
-          sessionId: session.id,
-          taskId: session.taskId,
-          occurrenceDate: session.occurrenceDate,
-          startedAt: session.startedAt,
-          runStartedAt: session.startedAt,
-          bankedSec: 0,
-        },
-      });
-      commit((db) => {
-        const withSession = {
-          ...db,
-          focusSessions: [...db.focusSessions, session],
-        };
-        // Working on something is the definition of IN_PROGRESS.
-        return instance.storedStatus === "TODO"
-          ? applyStatus(withSession, refOf(instance), "IN_PROGRESS")
-          : withSession;
-      });
-    },
 
-    /**
-     * Stop the clock, keep the session.
-     *
-     * The seconds are banked onto the row as they are, so a paused timer that
-     * never gets resumed — the window closed, the day ended — has still
-     * recorded the work that was done. `endedAt` stays null, which is what
-     * separates a session that is merely paused from one that is finished.
-     */
-    pauseFocus() {
-      const running = get().runningFocus;
-      if (!running?.runStartedAt) return;
-      const bankedSec = focusElapsedSec(running);
-      set({ runningFocus: { ...running, runStartedAt: null, bankedSec } });
-      commit((db) => ({
-        ...db,
-        focusSessions: db.focusSessions.map((s) =>
-          s.id === running.sessionId ? { ...s, durationSec: bankedSec } : s,
-        ),
-      }));
-    },
 
-    resumeFocus() {
-      const running = get().runningFocus;
-      // Already running: resuming would restart this run and lose its seconds.
-      if (!running || running.runStartedAt) return;
-      set({ runningFocus: { ...running, runStartedAt: nowInstant() } });
-    },
 
-    stopFocus() {
-      const running = get().runningFocus;
-      if (!running) return;
-      const endedAt = new Date();
-      const durationSec = focusElapsedSec(running, endedAt.getTime());
-      set({ runningFocus: null });
-      commit((db) =>
-        appendHistory(
-          {
-            ...db,
-            focusSessions: db.focusSessions.map((s) =>
-              s.id === running.sessionId
-                ? { ...s, endedAt: toInstant(endedAt), durationSec }
-                : s,
-            ),
-          },
-          historyEntry({
-            taskId: running.taskId,
-            kind: "FOCUS_LOGGED",
-            occurrenceDate: running.occurrenceDate,
-            note: `Focused for ${Math.max(1, Math.round(durationSec / 60))} min`,
-          }),
-        ),
-      );
-    },
 
-    /*
-     * Every one of these leaves a tombstone behind.
-     *
-     * A session that is merely absent locally is indistinguishable from one
-     * this device has not downloaded yet, so the next sync helpfully hands it
-     * back — which is exactly what deleting a session used to look like. The
-     * tombstone is what makes the deletion a fact the cloud has to honour.
-     */
-    cancelFocus() {
-      const running = get().runningFocus;
-      if (!running) return;
-      set({ runningFocus: null });
-      const at = nowInstant();
-      commit((db) => ({
-        ...db,
-        focusSessions: db.focusSessions.filter(
-          (s) => s.id !== running.sessionId,
-        ),
-        tombstones: pruneTombstones([
-          ...db.tombstones,
-          tombstone("focus", running.sessionId, at),
-        ]),
-      }));
-    },
 
-    deleteFocusSession(sessionId) {
-      const at = nowInstant();
-      if (get().runningFocus?.sessionId === sessionId) set({ runningFocus: null });
-      commit((db) =>
-        db.focusSessions.some((s) => s.id === sessionId)
-          ? {
-              ...db,
-              focusSessions: db.focusSessions.filter((s) => s.id !== sessionId),
-              tombstones: pruneTombstones([
-                ...db.tombstones,
-                tombstone("focus", sessionId, at),
-              ]),
-            }
-          : db,
-      );
-    },
 
-    clearFocusSessions() {
-      set({ runningFocus: null });
-      const at = nowInstant();
-      commit((db) => ({
-        ...db,
-        focusSessions: [],
-        tombstones: pruneTombstones([
-          ...db.tombstones,
-          ...db.focusSessions.map((s) => tombstone("focus", s.id, at)),
-        ]),
-      }));
-    },
 
-    addCategory(name, color) {
-      const trimmed = name.trim();
-      const existing = trimmed
-        ? get().db.categories.find(
-            (c) => c.name.toLowerCase() === trimmed.toLowerCase(),
-          )
-        : null;
-      if (existing) {
-        get().updateCategory(existing.id, { color });
-        return existing;
-      }
-      const category: Category = {
-        id: createId("c"),
-        name: trimmed || "New Category",
-        color,
-        order: get().db.categories.length,
-      };
-      commit((db) => ({ ...db, categories: [...db.categories, category] }));
-      return category;
-    },
 
-    updateCategory(id, patch) {
-      commit((db) => ({
-        ...db,
-        categories: db.categories.map((c) =>
-          c.id === id ? { ...c, ...patch } : c,
-        ),
-      }));
-    },
-
-    removeCategory(id) {
-      const at = nowInstant();
-      commit((db) => ({
-        ...db,
-        categories: db.categories.filter((c) => c.id !== id),
-        tasks: db.tasks.map((t) =>
-          t.categoryId === id ? { ...t, categoryId: null, updatedAt: at } : t,
-        ),
-        tombstones: pruneTombstones([
-          ...db.tombstones,
-          tombstone("category", id, at),
-        ]),
-      }));
-      void syncDeleteCategoryToCloud(id);
-    },
 
     /**
      * Rewrite one parent's sibling order from a list of ids.
@@ -1447,246 +1174,13 @@ export const useStore = create<StoreState>((set, get) => {
       return true;
     },
 
-    addDeadline(draft) {
-      // A checkpoint with no name is a bare date nobody can act on, so an
-      // empty label is refused here rather than stored and hidden later.
-      const label = normaliseLabel(draft.label);
-      if (!label || !draft.date) return null;
 
-      const at = nowInstant();
-      const deadline: Deadline = {
-        id: createId("dl"),
-        taskId: draft.taskId,
-        label,
-        date: draft.date,
-        completedAt: null,
-        // Only ever a tie-breaker between two checkpoints on one day; the list
-        // itself is ordered by date, which is the order dates come in.
-        order: get().db.deadlines.filter((d) => d.taskId === draft.taskId).length,
-        createdAt: at,
-        updatedAt: at,
-        deletedAt: null,
-      };
-      commit((db) =>
-        appendHistory(
-          { ...db, deadlines: [...db.deadlines, deadline] },
-          historyEntry({
-            taskId: deadline.taskId,
-            kind: "DEADLINE_ADDED",
-            field: deadline.label,
-            to: deadline.date,
-          }),
-        ),
-      );
-      return deadline;
-    },
 
-    updateDeadline(id, patch) {
-      const at = nowInstant();
-      const previous = get().db.deadlines.find((d) => d.id === id);
-      if (!previous) return;
-      const label =
-        patch.label === undefined
-          ? previous.label
-          : (normaliseLabel(patch.label) ?? previous.label);
-      const date = patch.date || previous.date;
 
-      commit((db) => {
-        const next = {
-          ...db,
-          deadlines: db.deadlines.map((d) =>
-            d.id === id ? { ...d, ...patch, label, date, updatedAt: at } : d,
-          ),
-        };
-        // Moving a checkpoint is the kind of edit people forget making, so the
-        // trail records the move itself rather than just that something changed.
-        return date === previous.date
-          ? next
-          : appendHistory(
-              next,
-              historyEntry({
-                taskId: previous.taskId,
-                kind: "RESCHEDULED",
-                field: label,
-                from: previous.date,
-                to: date,
-              }),
-            );
-      });
-    },
 
-    setDeadlineMet(id, met) {
-      const at = nowInstant();
-      const previous = get().db.deadlines.find((d) => d.id === id);
-      if (!previous || (previous.completedAt !== null) === met) return;
-      commit((db) => {
-        const next = {
-          ...db,
-          deadlines: db.deadlines.map((d) =>
-            d.id === id ? { ...d, completedAt: met ? at : null, updatedAt: at } : d,
-          ),
-        };
-        return met
-          ? appendHistory(
-              next,
-              historyEntry({
-                taskId: previous.taskId,
-                kind: "DEADLINE_MET",
-                field: previous.label,
-                to: previous.date,
-              }),
-            )
-          : next;
-      });
-    },
 
-    removeDeadline(id) {
-      const at = nowInstant();
-      const previous = get().db.deadlines.find((d) => d.id === id);
-      if (!previous) return;
-      commit((db) =>
-        appendHistory(
-          {
-            ...db,
-            deadlines: db.deadlines.map((d) =>
-              d.id === id ? { ...d, deletedAt: at, updatedAt: at } : d,
-            ),
-          },
-          historyEntry({
-            taskId: previous.taskId,
-            kind: "DEADLINE_REMOVED",
-            field: previous.label,
-            from: previous.date,
-          }),
-        ),
-      );
-      useUndoStore.getState().push("undoneDeadlineRemoved", () => {
-        const at2 = nowInstant();
-        commit((db) => ({
-          ...db,
-          deadlines: db.deadlines.map((d) =>
-            d.id === id ? { ...d, deletedAt: null, updatedAt: at2 } : d,
-          ),
-        }));
-      });
-    },
 
-    addWishlistItem(draft) {
-      const at = nowInstant();
-      const item: WishlistItem = {
-        id: createId("w"),
-        title: draft.title.trim(),
-        priceMinor:
-          typeof draft.priceMinor === "number" && Number.isFinite(draft.priceMinor)
-            ? Math.abs(Math.round(draft.priceMinor))
-            : null,
-        url: normaliseLink(draft.url ?? ""),
-        note: draft.note?.trim() ?? "",
-        categoryId: draft.categoryId ?? null,
-        // Newest first is wrong for a shopping list — the thing you added last
-        // is the thing you are still thinking about — so it goes on the end.
-        order: get().db.wishlist.length,
-        boughtAt: null,
-        transactionId: null,
-        createdAt: at,
-        updatedAt: at,
-        deletedAt: null,
-      };
-      commit((db) => ({ ...db, wishlist: [...db.wishlist, item] }));
-      return item;
-    },
 
-    updateWishlistItem(id, patch) {
-      const at = nowInstant();
-      commit((db) => ({
-        ...db,
-        wishlist: db.wishlist.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                ...patch,
-                title: patch.title === undefined ? item.title : patch.title.trim(),
-                priceMinor:
-                  patch.priceMinor === undefined
-                    ? item.priceMinor
-                    : patch.priceMinor === null
-                      ? null
-                      : Math.abs(Math.round(patch.priceMinor)),
-                url: patch.url === undefined ? item.url : normaliseLink(patch.url ?? ""),
-                updatedAt: at,
-              }
-            : item,
-        ),
-      }));
-    },
-
-    removeWishlistItem(id) {
-      const at = nowInstant();
-      const previous = get().db.wishlist.find((item) => item.id === id);
-      if (!previous) return;
-      commit((db) => ({
-        ...db,
-        wishlist: db.wishlist.map((item) =>
-          item.id === id ? { ...item, deletedAt: at, updatedAt: at } : item,
-        ),
-      }));
-      useUndoStore.getState().push("undoneWishlistRemoved", () => {
-        const at2 = nowInstant();
-        commit((db) => ({
-          ...db,
-          wishlist: db.wishlist.map((item) =>
-            item.id === id ? { ...item, deletedAt: null, updatedAt: at2 } : item,
-          ),
-        }));
-      });
-    },
-
-    buyWishlistItem(id, date) {
-      const item = get().db.wishlist.find((each) => each.id === id);
-      if (!item || item.deletedAt !== null || item.boughtAt !== null) return null;
-      if (item.priceMinor === null || item.priceMinor === 0) return null;
-
-      const transaction = get().addTransaction({
-        date: date ?? toLocalDate(new Date(get().now)),
-        amountMinor: item.priceMinor,
-        flow: "EXPENSE",
-        categoryId: item.categoryId,
-        // The name it was wanted under is the name it is remembered by.
-        note: item.title,
-      });
-
-      const at = nowInstant();
-      commit((db) => ({
-        ...db,
-        wishlist: db.wishlist.map((each) =>
-          each.id === id
-            ? { ...each, boughtAt: at, transactionId: transaction.id, updatedAt: at }
-            : each,
-        ),
-      }));
-
-      // One act, one reversal: the entry goes back out of the ledger and the
-      // item back onto the list. Undoing half of it would leave the budget
-      // charged for something the list still says has not been bought.
-      useUndoStore.getState().push("undoneWishlistBought", () => {
-        const at2 = nowInstant();
-        commit((db) => ({
-          ...db,
-          transactions: db.transactions.map((entry) =>
-            entry.id === transaction.id
-              ? { ...entry, deletedAt: at2, updatedAt: at2 }
-              : entry,
-          ),
-          wishlist: db.wishlist.map((each) =>
-            each.id === id
-              ? { ...each, boughtAt: null, transactionId: null, updatedAt: at2 }
-              : each,
-          ),
-        }));
-      });
-
-      return transaction;
-    },
 
 
 

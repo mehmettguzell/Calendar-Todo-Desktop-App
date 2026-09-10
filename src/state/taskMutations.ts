@@ -24,6 +24,11 @@ import type {
 // Mutations more than one store action needs. Each one takes a `Database` and
 // returns the next one, so nothing here reaches for the store itself.
 
+/** The activity trail is append-only, so writing to it is always the same. */
+export function appendHistory(db: Database, ...entries: HistoryEntry[]): Database {
+  return { ...db, history: [...db.history, ...entries] };
+}
+
 /** Where a mutation lands: the task row, or one occurrence of a series. */
 export function refOf(instance: TaskInstance): InstanceRef {
   return {
