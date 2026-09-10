@@ -1,4 +1,3 @@
-import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import {
   deduplicateBudgetCategories,
@@ -21,7 +20,6 @@ import type {
 } from "@/domain/types";
 import type { HistoryEntry } from "@/domain/types";
 import {
-  budgetCategoryFromRow,
   cloudCategoryFingerprint,
   cloudTaskFingerprint,
   localBudgetCategoryFingerprint,
@@ -33,19 +31,16 @@ import {
   localTaskFingerprint,
   localTransactionFingerprint,
   localWishlistFingerprint,
-  occurrenceFromRow,
-  reminderFromRow,
   taskFromRow,
   toCategoryRow,
-  transactionFromRow,
 } from "@/data/dto";
 import {
-  acceptsRemoteTask,
   BATCH_SPEC,
   beginRemoteApply,
   BUDGET_CATEGORY_SPEC,
   chunked,
   clearPending,
+  configureRealtime,
   configureRetry,
   currentUserId,
   DEADLINE_SPEC,
@@ -56,6 +51,7 @@ import {
   FULL_PASS_INTERVAL_MS,
   getLastFullPassAt,
   getPullCursor,
+  hasRealtimeChannel,
   isApplyingRemoteUpdate,
   isMissingRelation,
   markFullPassDone,
@@ -73,6 +69,7 @@ import {
   scheduleFlush,
   scheduleRetry,
   setPullCursor,
+  setupRealtime,
   type SyncContext,
   syncedBatchFingerprints,
   syncedBudgetCategoryFingerprints,
@@ -86,6 +83,7 @@ import {
   syncedTransactionFingerprints,
   syncedWishlistFingerprints,
   tableAvailable,
+  teardownRealtime,
   TRANSACTION_SPEC,
   UPSERT_CHUNK_SIZE,
   upsertTasksToCloud,
@@ -130,7 +128,6 @@ import {
 
 // withTimeout lives in `@/sync/cloudRequest`, ensureProfileRow in `@/sync/profile`.
 
-let realtimeChannel: RealtimeChannel | null = null;
 let isSyncing = false;
 let isStoreSubscribed = false;
 
@@ -175,6 +172,17 @@ export function initSyncEngine() {
     void syncDifferences();
   };
   configureRetry({ currentUserId, requestSync });
+  // A channel that has just come back missed everything that changed while it
+  // was down, so reconcile — unless a pass has only just finished.
+  configureRealtime({
+    onSubscribed: (userId) => {
+      const recentlySynced =
+        lastReportAt > 0 && Date.now() - lastReportAt < MIN_FULL_SYNC_INTERVAL_MS;
+      if (syncedNamespace === userId && !isSyncing && !recentlySynced) {
+        requestSync();
+      }
+    },
+  });
 
   // Auth drives everything: which local document is open, and which cloud rows
   // are ours. Both have to move together, or one account briefly sees the
@@ -258,7 +266,7 @@ export function initSyncEngine() {
     resetRetryBudget,
     drainQueuedWrites: drainPendingWrites,
     setupRealtime,
-    hasRealtimeChannel: () => realtimeChannel !== null,
+    hasRealtimeChannel,
     requestSync,
   });
 }
@@ -381,14 +389,7 @@ async function startSync(userId: string) {
 }
 
 function stopSync() {
-  if (realtimeChannel && supabase) {
-    supabase.removeChannel(realtimeChannel);
-    realtimeChannel = null;
-  }
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
+  teardownRealtime();
   isSyncing = false;
   syncedNamespace = null;
   resetPullState();
@@ -1188,417 +1189,3 @@ function tombstoneIndex(tombstones: Tombstone[]) {
   return index;
 }
 
-/* ------------------------------------------------------------------ */
-/* Realtime                                                            */
-/* ------------------------------------------------------------------ */
-
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let reconnectDelayMs = 0;
-
-const REALTIME_RECONNECT_BASE_MS = 2_000;
-const REALTIME_RECONNECT_MAX_MS = 60_000;
-
-/**
- * Carries other devices' edits as they happen (spec: a task added on the phone
- * shows up on the desktop without anyone pressing anything).
- *
- * Two things make this trustworthy rather than best-effort. First, every
- * applied event is written to disk — an update that only lived in memory
- * vanished on the next restart and reappeared as a "difference". Second, a
- * dropped channel reconnects and then runs a full reconciliation, because
- * anything that changed while the socket was down was never delivered at all.
- */
-/**
- * Run a realtime handler only for rows that actually came from its table.
- *
- * One channel carries six `postgres_changes` bindings that differ solely by
- * table name. When the server's binding ids and the client's list fall out of
- * step — a reconnect, a binding the project cannot serve — supabase-js fans a
- * payload out to handlers it was never meant for, and a `tasks` row arrives at
- * `handleRealtimeOccurrenceChange`. The mappers below are tolerant by design
- * (`row.task_id as string`, `?? null`), so instead of failing they mint a
- * plausible-looking occurrence with no `taskId` and no `date`. That row is
- * unreachable locally — nothing looks up an occurrence by bare task id — but
- * every later push sends it to a column declared NOT NULL, Postgres rejects
- * the batch, and the whole reconciliation dies. One stray payload is enough to
- * stop sync permanently, which is exactly what happened here.
- *
- * The payload carries the table it came from. Checking it costs nothing.
- */
-function onlyFrom<P>(
-  table: string,
-  handle: (payload: P) => void,
-): (payload: P & { table?: string }) => void {
-  return (payload) => {
-    if (payload.table !== undefined && payload.table !== table) {
-      console.warn(
-        `[tempo sync] realtime payload from "${payload.table}" was delivered to the "${table}" handler — ignored.`,
-      );
-      return;
-    }
-    applyRemote(() => handle(payload));
-  };
-}
-
-function setupRealtime(userId: string) {
-  if (!supabase) return;
-  if (realtimeChannel) {
-    supabase.removeChannel(realtimeChannel);
-    realtimeChannel = null;
-  }
-  useSyncStore.getState().setRealtime("connecting");
-
-  const forUser = { schema: "public", filter: `user_id=eq.${userId}` } as const;
-
-  realtimeChannel = supabase
-    .channel(`user-sync-${userId}`)
-    .on(
-      "postgres_changes",
-      { event: "*", table: "tasks", ...forUser },
-      onlyFrom("tasks", handleRealtimeTaskChange),
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", table: "categories", ...forUser },
-      onlyFrom("categories", handleRealtimeCategoryChange),
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", table: "occurrences", ...forUser },
-      onlyFrom("occurrences", handleRealtimeOccurrenceChange),
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", table: "reminders", ...forUser },
-      onlyFrom("reminders", handleRealtimeReminderChange),
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", table: "transactions", ...forUser },
-      onlyFrom("transactions", handleRealtimeTransactionChange),
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", table: "budget_categories", ...forUser },
-      onlyFrom("budget_categories", handleRealtimeBudgetCategoryChange),
-    )
-    .subscribe((status) => {
-      if (status === "SUBSCRIBED") {
-        reconnectDelayMs = 0;
-        useSyncStore.getState().setRealtime("connected");
-        // Whatever happened while we were not listening was never delivered.
-        // Reconcile on reconnect only if a sync pass has not just completed.
-        const recentlySynced =
-          lastReportAt > 0 &&
-          Date.now() - lastReportAt < MIN_FULL_SYNC_INTERVAL_MS;
-        if (syncedNamespace === userId && !isSyncing && !recentlySynced) {
-          void syncDifferences();
-        }
-        return;
-      }
-      if (
-        status === "CHANNEL_ERROR" ||
-        status === "TIMED_OUT" ||
-        status === "CLOSED"
-      ) {
-        useSyncStore.getState().setRealtime("down");
-        scheduleRealtimeReconnect(userId);
-      }
-    });
-}
-
-function scheduleRealtimeReconnect(userId: string): void {
-  if (reconnectTimer) return;
-  reconnectDelayMs =
-    reconnectDelayMs === 0
-      ? REALTIME_RECONNECT_BASE_MS
-      : Math.min(reconnectDelayMs * 2, REALTIME_RECONNECT_MAX_MS);
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    if (currentUserId() === userId && isOnline()) setupRealtime(userId);
-  }, reconnectDelayMs);
-}
-
-/**
- * Apply a cloud-originated change without echoing it back.
- *
- * The store subscriber cannot tell a remote write from a local one, so the flag
- * is what stops a realtime update from being queued straight back to the server
- * it just came from. The write is persisted here too: an event applied to
- * memory only is lost on the next restart.
- */
-function applyRemote(mutate: () => void): void {
-  beginRemoteApply();
-  try {
-    mutate();
-  } finally {
-    endRemoteApply();
-  }
-  persist(useStore.getState().db);
-}
-
-function handleRealtimeTaskChange(payload: {
-  eventType: string;
-  new: Record<string, unknown>;
-  old: Record<string, unknown>;
-}) {
-  const { eventType, new: newRecord, old: oldRecord } = payload;
-
-  if (eventType === "INSERT" || eventType === "UPDATE") {
-    const task = taskFromRow(newRecord, 0, null);
-    const db = useStore.getState().db;
-    const existingTask = db.tasks.find((t) => t.id === task.id);
-
-    if (
-      !acceptsRemoteTask({
-        remoteUpdatedAt: task.updatedAt,
-        remoteDeleted: task.deletedAt !== null,
-        localUpdatedAt: existingTask?.updatedAt ?? null,
-        tombstoned: db.tombstones.some(
-          (stone) => stone.kind === "task" && stone.id === task.id,
-        ),
-        queued:
-          pendingIds.tasks.has(task.id) || pendingIds.deletedTasks.has(task.id),
-      })
-    ) {
-      return;
-    }
-
-    // A soft delete is a state, not a disappearance: keeping the row is what
-    // lets Trash show it and Restore undo it on this device too.
-    syncedTaskFingerprints.set(task.id, localTaskFingerprint(task));
-
-    useStore.setState((s) => {
-      const existing = s.db.tasks.find((t) => t.id === task.id);
-      if (!existing) {
-        return { db: { ...s.db, tasks: [...s.db.tasks, task] } };
-      }
-      // The remote row does not know this device's manual ordering.
-      const next = {
-        ...task,
-        order: existing.order,
-        manualOrder: existing.manualOrder ?? null,
-      };
-      return {
-        db: {
-          ...s.db,
-          tasks: s.db.tasks.map((t) => (t.id === task.id ? next : t)),
-        },
-      };
-    });
-    return;
-  }
-
-  if (eventType === "DELETE") {
-    const id = oldRecord.id as string;
-    syncedTaskFingerprints.delete(id);
-    useStore.setState((s) => ({
-      db: {
-        ...s.db,
-        tasks: s.db.tasks.filter((t) => t.id !== id),
-        occurrences: s.db.occurrences.filter((o) => o.taskId !== id),
-        reminders: s.db.reminders.filter((r) => r.taskId !== id),
-      },
-    }));
-  }
-}
-
-function handleRealtimeCategoryChange(payload: {
-  eventType: string;
-  new: Record<string, unknown>;
-  old: Record<string, unknown>;
-}) {
-  const { eventType, new: newRecord, old: oldRecord } = payload;
-
-  if (eventType === "INSERT" || eventType === "UPDATE") {
-    if (newRecord.is_deleted) {
-      const id = newRecord.id as string;
-      syncedCategoryFingerprints.delete(id);
-      useStore.setState((s) => ({
-        db: {
-          ...s.db,
-          categories: s.db.categories.filter((c) => c.id !== id),
-          tasks: s.db.tasks.map((t) =>
-            t.categoryId === id ? { ...t, categoryId: null } : t,
-          ),
-        },
-      }));
-      return;
-    }
-
-    const cat: Category = {
-      id: newRecord.id as string,
-      name: String(newRecord.name ?? "").trim(),
-      color: newRecord.color as string,
-      order: 0,
-    };
-
-    syncedCategoryFingerprints.set(cat.id, localCategoryFingerprint(cat));
-
-    useStore.setState((s) => {
-      const existing = s.db.categories.find(
-        (c) =>
-          c.id === cat.id ||
-          c.name.toLowerCase().trim() === cat.name.toLowerCase().trim(),
-      );
-      const nextCategories = existing
-        ? s.db.categories.map((c) =>
-            c.id === existing.id
-              ? { ...c, ...cat, id: existing.id, order: c.order }
-              : c,
-          )
-        : [...s.db.categories, { ...cat, order: s.db.categories.length }];
-      return { db: { ...s.db, categories: nextCategories } };
-    });
-    return;
-  }
-
-  if (eventType === "DELETE") {
-    const id = oldRecord.id as string;
-    syncedCategoryFingerprints.delete(id);
-    useStore.setState((s) => ({
-      db: { ...s.db, categories: s.db.categories.filter((c) => c.id !== id) },
-    }));
-  }
-}
-
-function handleRealtimeOccurrenceChange(payload: {
-  eventType: string;
-  new: Record<string, unknown>;
-  old: Record<string, unknown>;
-}) {
-  const { eventType, new: newRecord, old: oldRecord } = payload;
-  const id = (eventType === "DELETE" ? oldRecord.id : newRecord.id) as string;
-
-  if (eventType === "DELETE" || newRecord?.is_deleted) {
-    syncedOccurrenceFingerprints.delete(id);
-    useStore.setState((s) => ({
-      db: { ...s.db, occurrences: s.db.occurrences.filter((o) => o.id !== id) },
-    }));
-    return;
-  }
-
-  const occurrence = occurrenceFromRow(newRecord);
-  syncedOccurrenceFingerprints.set(id, localOccurrenceFingerprint(occurrence));
-  useStore.setState((s) => {
-    const exists = s.db.occurrences.some((o) => o.id === id);
-    return {
-      db: {
-        ...s.db,
-        occurrences: exists
-          ? s.db.occurrences.map((o) => (o.id === id ? occurrence : o))
-          : [...s.db.occurrences, occurrence],
-      },
-    };
-  });
-}
-
-function handleRealtimeReminderChange(payload: {
-  eventType: string;
-  new: Record<string, unknown>;
-  old: Record<string, unknown>;
-}) {
-  const { eventType, new: newRecord, old: oldRecord } = payload;
-  const id = (eventType === "DELETE" ? oldRecord.id : newRecord.id) as string;
-
-  if (eventType === "DELETE" || newRecord?.is_deleted) {
-    syncedReminderFingerprints.delete(id);
-    useStore.setState((s) => ({
-      db: { ...s.db, reminders: s.db.reminders.filter((r) => r.id !== id) },
-    }));
-    return;
-  }
-
-  const reminder = reminderFromRow(newRecord);
-  syncedReminderFingerprints.set(id, localReminderFingerprint(reminder));
-  useStore.setState((s) => {
-    const exists = s.db.reminders.some((r) => r.id === id);
-    return {
-      db: {
-        ...s.db,
-        reminders: exists
-          ? s.db.reminders.map((r) => (r.id === id ? reminder : r))
-          : [...s.db.reminders, reminder],
-      },
-    };
-  });
-}
-
-function handleRealtimeTransactionChange(payload: {
-  eventType: string;
-  new: Record<string, unknown>;
-  old: Record<string, unknown>;
-}) {
-  const { eventType, new: newRecord, old: oldRecord } = payload;
-  const id = (eventType === "DELETE" ? oldRecord.id : newRecord.id) as string;
-
-  if (eventType === "DELETE") {
-    syncedTransactionFingerprints.delete(id);
-    useStore.setState((s) => ({
-      db: {
-        ...s.db,
-        transactions: s.db.transactions.filter((t) => t.id !== id),
-      },
-    }));
-    return;
-  }
-
-  // A soft-deleted transaction is kept: the ledger records what happened, and
-  // dropping the row would rewrite a past month with nothing to show for it.
-  const transaction = transactionFromRow(newRecord);
-  syncedTransactionFingerprints.set(
-    id,
-    localTransactionFingerprint(transaction),
-  );
-  useStore.setState((s) => {
-    const exists = s.db.transactions.some((t) => t.id === id);
-    return {
-      db: {
-        ...s.db,
-        transactions: exists
-          ? s.db.transactions.map((t) => (t.id === id ? transaction : t))
-          : [...s.db.transactions, transaction],
-      },
-    };
-  });
-}
-
-function handleRealtimeBudgetCategoryChange(payload: {
-  eventType: string;
-  new: Record<string, unknown>;
-  old: Record<string, unknown>;
-}) {
-  const { eventType, new: newRecord, old: oldRecord } = payload;
-  const id = (eventType === "DELETE" ? oldRecord.id : newRecord.id) as string;
-
-  if (eventType === "DELETE" || newRecord?.is_deleted) {
-    syncedBudgetCategoryFingerprints.delete(id);
-    useStore.setState((s) => ({
-      db: {
-        ...s.db,
-        budgetCategories: s.db.budgetCategories.filter((c) => c.id !== id),
-        transactions: s.db.transactions.map((t) =>
-          t.categoryId === id ? { ...t, categoryId: null } : t,
-        ),
-      },
-    }));
-    return;
-  }
-
-  const category = budgetCategoryFromRow(newRecord);
-  syncedBudgetCategoryFingerprints.set(
-    id,
-    localBudgetCategoryFingerprint(category),
-  );
-  useStore.setState((s) => {
-    const exists = s.db.budgetCategories.some((c) => c.id === id);
-    return {
-      db: {
-        ...s.db,
-        budgetCategories: exists
-          ? s.db.budgetCategories.map((c) => (c.id === id ? category : c))
-          : [...s.db.budgetCategories, category],
-      },
-    };
-  });
-}

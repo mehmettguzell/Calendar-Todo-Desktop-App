@@ -19,3 +19,5 @@ export * from "./queue";
 export * from "./account";
 export * from "./cloudWrites";
 export * from "./writeFlush";
+export * from "./realtime";
+export * from "./realtimeApply";
