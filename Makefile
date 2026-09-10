@@ -1,41 +1,60 @@
-# Tempo - build and run shortcuts.
+# Tempo - build and run shortcuts. Works on Linux, macOS and Windows.
 #
-# Requires Node.js and, for anything that produces an exe, the Rust toolchain
-# plus the MSVC build tools and Windows SDK.
+# Requires Node.js and, for anything that produces a binary, the Rust toolchain.
+# Platform build tools: Linux needs webkit2gtk + libappindicator (see README),
+# macOS needs the Xcode command line tools, Windows needs the MSVC build tools
+# and the Windows SDK.
 
-# Pin the shell. Without this, make picks cmd.exe or sh depending on what
-# happens to be on PATH, and recipes that work in one fail in the other.
+# Detect the platform and pin the shell. Without pinning, make picks cmd.exe or
+# sh depending on what happens to be on PATH, and recipes that assume one break
+# under the other.
 ifeq ($(OS),Windows_NT)
-SHELL := cmd.exe
-.SHELLFLAGS := /C
+  SHELL := cmd.exe
+  .SHELLFLAGS := /C
+  PLATFORM := windows
+  RELEASE_BIN := src-tauri/target/release/tempo.exe
+  # PowerShell rather than taskkill, so this behaves the same from cmd and bash.
+  STOP_CMD := powershell -NoProfile -Command "Get-Process tempo -ErrorAction SilentlyContinue | Stop-Process -Force; exit 0"
+  CLEAN_DIST := powershell -NoProfile -Command "Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue; exit 0"
+else
+  UNAME := $(shell uname -s)
+  RELEASE_BIN := src-tauri/target/release/tempo
+  CLEAN_DIST := rm -rf dist
+  ifeq ($(UNAME),Darwin)
+    PLATFORM := macos
+    # `tauri dev` runs the `tempo` bin; a bundled build runs `Tempo.app` (Tempo).
+    STOP_CMD := pkill -x tempo 2>/dev/null; pkill -x Tempo 2>/dev/null; true
+  else
+    PLATFORM := linux
+    STOP_CMD := pkill -x tempo 2>/dev/null; true
+  endif
 endif
 
 .DEFAULT_GOAL := help
 .PHONY: help run exe bundle dev test check install stop clean
 
-RELEASE_EXE := src-tauri/target/release/tempo.exe
-
 help:
-	@echo Tempo - available targets:
-	@echo make run - launch the app with hot reload, best while writing code
-	@echo make exe - build the standalone release exe, closes a running Tempo first
-	@echo make bundle - build the exe plus the MSI and setup.exe installers
-	@echo make dev - run the UI in a browser only, no Rust needed
-	@echo make test - run the test suite
-	@echo make check - typecheck, then run the test suite
+	@echo Tempo - available targets - platform: $(PLATFORM)
+	@echo make run     - launch the app with hot reload, best while writing code
+	@echo make exe     - build the standalone release binary, closes a running Tempo first
+	@echo make bundle  - build the binary plus the platform installers
+	@echo make dev     - run the UI in a browser only, no Rust needed
+	@echo make test    - run the test suite
+	@echo make check   - typecheck, then run the test suite
 	@echo make install - install npm dependencies
-	@echo make stop - close a running Tempo window
-	@echo make clean - delete build output, the next build recompiles from scratch
+	@echo make stop    - close a running Tempo window
+	@echo make clean   - delete build output, the next build recompiles from scratch
 
 # Hot reload: edits to src/ appear in the window without a rebuild.
 run:
 	npm run tauri:dev
 
-# Windows locks a running exe, so the build cannot overwrite it. Your tasks are
-# saved continuously to Documents/calendar, so closing the window loses nothing.
+# A running binary is locked on Windows and can be awkward to overwrite
+# elsewhere, so close it first. Tasks are saved continuously to Documents, so
+# closing the window loses nothing.
 exe: stop
 	npx tauri build --no-bundle
-	@echo Built $(RELEASE_EXE)
+	@echo Built $(RELEASE_BIN)
 
 bundle: stop
 	npx tauri build
@@ -53,10 +72,9 @@ check:
 install:
 	npm install
 
-# PowerShell rather than taskkill, so this behaves the same from cmd and bash.
 stop:
-	@powershell -NoProfile -Command "Get-Process tempo -ErrorAction SilentlyContinue | Stop-Process -Force; exit 0"
+	@$(STOP_CMD)
 
 clean: stop
-	@powershell -NoProfile -Command "Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue; exit 0"
+	@$(CLEAN_DIST)
 	cargo clean --manifest-path src-tauri/Cargo.toml
