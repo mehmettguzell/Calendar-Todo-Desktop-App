@@ -9,3 +9,5 @@ export * from "./syncedState";
 export * from "./pullCursor";
 export * from "./remoteApply";
 export * from "./schemaCapability";
+export * from "./retry";
+export * from "./connectivity";

@@ -12,7 +12,6 @@ import { UNDO_WINDOW_MS, useUndoStore } from "@/state/undoStore";
 import {
   classifySyncError,
   formatErrorMessage,
-  isRetryableSyncFailure,
   type SyncFailureKind,
 } from "@/lib/errors";
 import type {
@@ -74,6 +73,7 @@ import {
   acceptsRemoteTask,
   beginRemoteApply,
   type CollectionSpec,
+  configureRetry,
   endRemoteApply,
   flushDelayMs,
   forgetSyncedState,
@@ -88,7 +88,10 @@ import {
   planReconciliation,
   planTaskWrites,
   resetPullState,
+  resetRetryBudget,
+  retriesAllowed,
   rewound,
+  scheduleRetry,
   setPullCursor,
   syncedBatchFingerprints,
   syncedBudgetCategoryFingerprints,
@@ -103,6 +106,7 @@ import {
   syncedWishlistFingerprints,
   type SyncContext,
   tableAvailable,
+  watchConnectivity,
 } from "@/sync";
 
 /**
@@ -286,6 +290,11 @@ export function initSyncEngine() {
     useSyncStore.getState().setPhase("disabled");
   }
 
+  const requestSync = () => {
+    void syncDifferences();
+  };
+  configureRetry({ currentUserId, requestSync });
+
   // Auth drives everything: which local document is open, and which cloud rows
   // are ours. Both have to move together, or one account briefly sees the
   // other's tasks.
@@ -363,7 +372,14 @@ export function initSyncEngine() {
     void enqueueAccountChange(userId);
   }
 
-  watchConnectivity();
+  watchConnectivity({
+    currentUserId,
+    resetRetryBudget,
+    drainQueuedWrites: drainPendingWrites,
+    setupRealtime,
+    hasRealtimeChannel: () => realtimeChannel !== null,
+    requestSync,
+  });
 }
 
 /** Rows present in `next` that are not the same object as in `prev`. */
@@ -498,170 +514,8 @@ function stopSync() {
   useSyncStore.getState().setRealtime("down");
 }
 
-/* ------------------------------------------------------------------ */
-/* Connectivity                                                        */
-/* ------------------------------------------------------------------ */
-
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
-let retryDelayMs = 0;
-let retryAttempt = 0;
-let retryPausedUntil = 0;
-
-/**
- * A few automatic attempts, then stop and wait for something to change.
- *
- * Doubling backoff covers the failure this design actually expects: a blip that
- * clears itself within a minute or two. Past that, repeating the same request
- * forever is not persistence, it is a background process burning battery and
- * quota against a wall — a signed-out session, an expired token or a cloud
- * project missing a column will fail identically on attempt one and attempt
- * four hundred. So the budget is finite. When it runs out, sync goes quiet and
- * comes back only on a *condition*: the network returns, the window is focused
- * again, the user presses the button, or the cooldown lapses. Nothing is at
- * risk in the meantime — local writes have already succeeded, the ids stay
- * queued, and `syncDifferences` finds the same rows by content whenever it
- * next runs.
- */
-const RETRY_BASE_MS = 5_000;
-const RETRY_MAX_MS = 60_000;
-const MAX_AUTO_RETRIES = 4;
-/** How long a spent budget stays spent before one more attempt is allowed. */
-const RETRY_COOLDOWN_MS = 10 * 60_000;
-
-function publishRetryState(): void {
-  useSyncStore.getState().setRetry(retryAttempt, retryPausedUntil > 0);
-}
-
-/** Stops automatic attempts until a condition revives them. */
-function pauseRetries(): void {
-  if (retryTimer) {
-    clearTimeout(retryTimer);
-    retryTimer = null;
-  }
-  retryPausedUntil = Date.now() + RETRY_COOLDOWN_MS;
-  publishRetryState();
-}
-
-function scheduleRetry(kind: SyncFailureKind): void {
-  if (retryTimer || !currentUserId()) return;
-
-  // Nothing about a schema mismatch or a rejected token improves by asking
-  // again a second later. Those wait for a condition from the start.
-  if (!isRetryableSyncFailure(kind) || retryAttempt >= MAX_AUTO_RETRIES) {
-    pauseRetries();
-    return;
-  }
-
-  retryAttempt += 1;
-  retryDelayMs =
-    retryDelayMs === 0
-      ? RETRY_BASE_MS
-      : Math.min(retryDelayMs * 2, RETRY_MAX_MS);
-  publishRetryState();
-  retryTimer = setTimeout(() => {
-    retryTimer = null;
-    if (currentUserId() && isOnline()) void syncDifferences();
-  }, retryDelayMs);
-}
-
-/**
- * May sync touch the network right now?
- *
- * False only while a spent budget is cooling down. Every caller that answers
- * "no" leaves its work queued rather than dropping it.
- */
-function retriesAllowed(): boolean {
-  if (retryPausedUntil === 0) return true;
-  if (Date.now() >= retryPausedUntil) {
-    // The cooldown lapsed — that is itself the condition. One fresh budget.
-    resetRetryBudget();
-    return true;
-  }
-  return false;
-}
-
-/**
- * Back to a clean slate: no pending attempt, no cooldown, a full budget.
- *
- * Called on success, and on every condition that makes another attempt worth
- * making — the network returning, the window being focused, a sign-in, the
- * user pressing the button.
- */
-function resetRetryBudget(): void {
-  if (retryTimer) {
-    clearTimeout(retryTimer);
-    retryTimer = null;
-  }
-  retryDelayMs = 0;
-  retryAttempt = 0;
-  retryPausedUntil = 0;
-  publishRetryState();
-}
-
-/**
- * Losing the network is not a reason to sign anybody out.
- *
- * Supabase keeps the session in local storage and refreshes it when it can, so
- * an offline app stays signed in and keeps writing locally. When the connection
- * returns, one reconciliation pass catches the cloud up on everything that
- * happened in the meantime — the queue in memory, plus anything an earlier
- * session left behind, which `syncDifferences` finds by comparing content
- * rather than by trusting a list that a restart would have wiped.
- */
-function watchConnectivity(): void {
-  if (typeof window === "undefined") return;
-
-  // The network coming back is the strongest condition of all: whatever the
-  // last four attempts failed on, the world has demonstrably changed.
-  window.addEventListener("online", () => {
-    resetRetryBudget();
-    const id = currentUserId();
-    if (!id) return;
-    console.info("[tempo sync] back online — reconciling");
-    if (!realtimeChannel) setupRealtime(id);
-    void syncDifferences();
-  });
-
-  window.addEventListener("offline", () => {
-    useSyncStore.getState().setPhase("offline");
-    useSyncStore.getState().setRealtime("down");
-  });
-
-  if (typeof document !== "undefined") {
-    let lastVisibilitySyncAt = 0;
-    const VISIBILITY_COOLDOWN_MS = 60_000;
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "visible") {
-        // Leaving is the one moment a gathering window costs something real:
-        // the lid closes mid-window and the edit waits for the next launch to
-        // be reconciled. Send what is queued instead of waiting it out.
-        void drainPendingWrites();
-        return;
-      }
-      const id = currentUserId();
-      if (!id || !isOnline()) return;
-
-      const now = Date.now();
-      const recentlyChecked =
-        now - lastVisibilitySyncAt < VISIBILITY_COOLDOWN_MS;
-      if (recentlyChecked) return;
-
-      // Coming back to a window that has been in the background for a while is
-      // the cheapest moment to notice a dropped channel — and a good moment to
-      // grant a paused retry budget one more run, since minutes have usually
-      // passed and whatever broke may well be fixed.
-      const paused = useSyncStore.getState().autoRetryPaused;
-      if (paused) resetRetryBudget();
-      if (paused || useSyncStore.getState().realtime !== "connected") {
-        lastVisibilitySyncAt = now;
-        setupRealtime(id);
-        void syncDifferences();
-      }
-    });
-  }
-}
-
+// Retry backoff lives in `@/sync/retry`, the connectivity listeners in
+// `@/sync/connectivity`; both are wired from initSyncEngine.
 // The believed-cloud fingerprint maps and the pull cursor live in
 // `@/sync/syncedState` and `@/sync/pullCursor`.
 
