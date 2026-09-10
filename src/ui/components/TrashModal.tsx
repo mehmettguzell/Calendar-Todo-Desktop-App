@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { AlertCircle, RotateCcw, Trash2 } from "lucide-react";
 import { useCategories, useTrashedTasks } from "@/state/selectors";
-import { TRASH_RETENTION_MS, useStore } from "@/state/store";
+import { useStore } from "@/state/store";
+import { TRASH_RETENTION_MS } from "@/state/trashRetention";
 import { useI18n } from "@/lib/i18n";
 import { Modal } from "./primitives";
 
