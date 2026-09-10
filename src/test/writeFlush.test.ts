@@ -58,11 +58,11 @@ describe("a batched write that succeeds", () => {
   });
 
   it("does not send the same unchanged row twice", async () => {
-    useStore.getState().createTask({ title: "Written once" });
+    const task = useStore.getState().createTask({ title: "Written once" });
     await flush();
     const firstPass = supabaseMock.rowsSent("tasks", "upsert").length;
 
-    syncTaskToCloud(useStore.getState().db.tasks[0]);
+    syncTaskToCloud(task);
     await flush();
 
     expect(supabaseMock.rowsSent("tasks", "upsert").length).toBe(firstPass);

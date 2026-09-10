@@ -55,8 +55,10 @@ import {
   beginRemoteApply,
   BUDGET_CATEGORY_SPEC,
   type CollectionSpec,
+  clearAllQueues,
   configureRetry,
   DEADLINE_SPEC,
+  drainQueues,
   endRemoteApply,
   ensureProfileRow,
   flushDelayMs,
@@ -70,9 +72,12 @@ import {
   newestStamp,
   noteRelationMissing,
   OCCURRENCE_SPEC,
+  pendingCount,
+  pendingIds,
   planReconciliation,
   planTaskWrites,
   REMINDER_SPEC,
+  requeue,
   resetPullState,
   resetRetryBudget,
   retriesAllowed,
@@ -206,43 +211,43 @@ export function initSyncEngine() {
 
       // Zustand updates are immutable, so an untouched row keeps its identity:
       // a reference check finds the changed rows without walking their fields.
-      queueChangedById(prevState.db.tasks, state.db.tasks, pendingTaskIds);
+      queueChangedById(prevState.db.tasks, state.db.tasks, pendingIds.tasks);
       queueChangedById(
         prevState.db.categories,
         state.db.categories,
-        pendingCategoryIds,
+        pendingIds.categories,
       );
       queueChangedById(
         prevState.db.occurrences,
         state.db.occurrences,
-        pendingOccurrenceIds,
+        pendingIds.occurrences,
       );
       queueChangedById(
         prevState.db.reminders,
         state.db.reminders,
-        pendingReminderIds,
+        pendingIds.reminders,
       );
       queueChangedById(
         prevState.db.transactions,
         state.db.transactions,
-        pendingTransactionIds,
+        pendingIds.transactions,
       );
       queueChangedById(
         prevState.db.budgetCategories,
         state.db.budgetCategories,
-        pendingBudgetCategoryIds,
+        pendingIds.budgetCategories,
       );
 
       const prevFocusIds = new Set(prevState.db.focusSessions.map((f) => f.id));
       for (const session of state.db.focusSessions) {
-        if (!prevFocusIds.has(session.id)) pendingFocusIds.add(session.id);
+        if (!prevFocusIds.has(session.id)) pendingIds.focus.add(session.id);
       }
 
       // Append-only, so only the new ids are ever interesting.
       if (prevState.db.history !== state.db.history) {
         const prevHistoryIds = new Set(prevState.db.history.map((h) => h.id));
         for (const entry of state.db.history) {
-          if (!prevHistoryIds.has(entry.id)) pendingHistoryIds.add(entry.id);
+          if (!prevHistoryIds.has(entry.id)) pendingIds.history.add(entry.id);
         }
       }
 
@@ -291,30 +296,30 @@ function queueTombstones(prev: Tombstone[], next: Tombstone[]): void {
     if (known.has(`${stone.kind}:${stone.id}`)) continue;
     switch (stone.kind) {
       case "task":
-        pendingTaskIds.delete(stone.id);
-        pendingDeletedTaskIds.add(stone.id);
+        pendingIds.tasks.delete(stone.id);
+        pendingIds.deletedTasks.add(stone.id);
         break;
       case "category":
         // Task categories and budget categories share a tombstone kind but live
         // in different tables. Both queues take the id; whichever table does
         // not have that row simply updates nothing.
-        pendingCategoryIds.delete(stone.id);
-        pendingDeletedCategoryIds.add(stone.id);
-        pendingBudgetCategoryIds.delete(stone.id);
-        pendingDeletedBudgetCategoryIds.add(stone.id);
+        pendingIds.categories.delete(stone.id);
+        pendingIds.deletedCategories.add(stone.id);
+        pendingIds.budgetCategories.delete(stone.id);
+        pendingIds.deletedBudgetCategories.add(stone.id);
         break;
       case "reminder":
-        pendingReminderIds.delete(stone.id);
-        pendingDeletedReminderIds.add(stone.id);
+        pendingIds.reminders.delete(stone.id);
+        pendingIds.deletedReminders.add(stone.id);
         break;
       case "occurrence":
-        pendingOccurrenceIds.delete(stone.id);
-        pendingDeletedOccurrenceIds.add(stone.id);
+        pendingIds.occurrences.delete(stone.id);
+        pendingIds.deletedOccurrences.add(stone.id);
         break;
       case "transaction":
         // Transactions are soft-deleted, so the row itself carries the fact and
         // travels as an ordinary update.
-        pendingTransactionIds.add(stone.id);
+        pendingIds.transactions.add(stone.id);
         break;
       default:
         break;
@@ -436,58 +441,13 @@ function chunked<T>(items: T[], size: number): T[][] {
  * How long the window gathers — the trailing delay and the ceiling that a
  * stream of edits cannot push past — is `flushDelayMs` in `@/sync`.
  */
-const pendingTaskIds = new Set<string>();
-const pendingCategoryIds = new Set<string>();
-const pendingOccurrenceIds = new Set<string>();
-const pendingReminderIds = new Set<string>();
-const pendingTransactionIds = new Set<string>();
-const pendingBudgetCategoryIds = new Set<string>();
-const pendingDeletedTaskIds = new Set<string>();
-const pendingDeletedCategoryIds = new Set<string>();
-const pendingDeletedOccurrenceIds = new Set<string>();
-const pendingDeletedReminderIds = new Set<string>();
-const pendingDeletedBudgetCategoryIds = new Set<string>();
-const pendingFocusIds = new Set<string>();
-const pendingHistoryIds = new Set<string>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 /** When the oldest un-flushed change was queued; drives the ceiling above. */
 let queuedSince: number | null = null;
 let flushInFlight: Promise<void> | null = null;
 
-const ALL_QUEUES = [
-  pendingTaskIds,
-  pendingCategoryIds,
-  pendingOccurrenceIds,
-  pendingReminderIds,
-  pendingTransactionIds,
-  pendingBudgetCategoryIds,
-  pendingDeletedTaskIds,
-  pendingDeletedCategoryIds,
-  pendingDeletedOccurrenceIds,
-  pendingDeletedReminderIds,
-  pendingDeletedBudgetCategoryIds,
-  pendingFocusIds,
-  pendingHistoryIds,
-];
-
-/**
- * Queues the user is actually waiting on.
- *
- * The activity trail is not one of them. It is append-only, nobody is looking
- * at another device for it, and `syncDifferences` uploads every entry the
- * cloud lacks by id — so history rides along with whatever flush happens next
- * instead of paying for a request of its own. That is roughly one HTTP call
- * saved per burst of editing, for a lag no one can perceive on data no one is
- * waiting for.
- */
-const USER_QUEUES = ALL_QUEUES.filter((queue) => queue !== pendingHistoryIds);
-
-function pendingCount(): number {
-  return USER_QUEUES.reduce((total, queue) => total + queue.size, 0);
-}
-
 function clearPending(): void {
-  for (const queue of ALL_QUEUES) queue.clear();
+  clearAllQueues();
   useSyncStore.getState().setPending(0);
 }
 
@@ -557,20 +517,7 @@ async function flushPendingWrites(): Promise<void> {
     return;
   }
 
-  const taskIds = [...pendingTaskIds];
-  const deletedTaskIds = [...pendingDeletedTaskIds];
-  const categoryIds = [...pendingCategoryIds];
-  const deletedCategoryIds = [...pendingDeletedCategoryIds];
-  const occurrenceIds = [...pendingOccurrenceIds];
-  const deletedOccurrenceIds = [...pendingDeletedOccurrenceIds];
-  const reminderIds = [...pendingReminderIds];
-  const deletedReminderIds = [...pendingDeletedReminderIds];
-  const transactionIds = [...pendingTransactionIds];
-  const budgetCategoryIds = [...pendingBudgetCategoryIds];
-  const deletedBudgetCategoryIds = [...pendingDeletedBudgetCategoryIds];
-  const focusIds = [...pendingFocusIds];
-  const historyIds = [...pendingHistoryIds];
-  for (const queue of ALL_QUEUES) queue.clear();
+  const queued = drainQueues();
 
   const db = useStore.getState().db;
   const taskById = new Map(db.tasks.map((t) => [t.id, t]));
@@ -584,7 +531,7 @@ async function flushPendingWrites(): Promise<void> {
     // Categories first: a task row's category_id points at one of them.
     const catsToWrite: Category[] = [];
     const catFingerprints = new Map<string, string>();
-    for (const id of categoryIds) {
+    for (const id of queued.categories) {
       const cat = catById.get(id);
       if (!cat) continue;
       const fp = localCategoryFingerprint(cat);
@@ -610,23 +557,23 @@ async function flushPendingWrites(): Promise<void> {
       }
     }
 
-    if (deletedCategoryIds.length > 0) {
+    if (queued.deletedCategories.length > 0) {
       const { error } = await withTimeout(
         supabase
           .from("categories")
           .update({ is_deleted: true, updated_at: new Date().toISOString() })
-          .in("id", deletedCategoryIds)
+          .in("id", queued.deletedCategories)
           .eq("user_id", userId),
         "category delete",
       );
       if (error) throw error;
-      for (const id of deletedCategoryIds)
+      for (const id of queued.deletedCategories)
         syncedCategoryFingerprints.delete(id);
     }
 
     const plan = planTaskWrites({
-      queued: taskIds,
-      deleted: deletedTaskIds,
+      queued: queued.tasks,
+      deleted: queued.deletedTasks,
       taskById,
       synced: syncedTaskFingerprints,
     });
@@ -653,52 +600,52 @@ async function flushPendingWrites(): Promise<void> {
       );
       if (error) throw error;
     }
-    for (const id of deletedTaskIds) syncedTaskFingerprints.delete(id);
+    for (const id of queued.deletedTasks) syncedTaskFingerprints.delete(id);
 
     await writeCollection(
       OCCURRENCE_SPEC,
-      occurrenceIds
+      queued.occurrences
         .map((id) => occById.get(id))
         .filter((o): o is Occurrence => Boolean(o)),
-      deletedOccurrenceIds,
+      queued.deletedOccurrences,
       userId,
     );
 
     await writeCollection(
       REMINDER_SPEC,
-      reminderIds
+      queued.reminders
         .map((id) => remById.get(id))
         .filter((r): r is Reminder => Boolean(r)),
-      deletedReminderIds,
+      queued.deletedReminders,
       userId,
     );
 
     // Budget categories before transactions: a transaction row points at one.
     await writeCollection(
       BUDGET_CATEGORY_SPEC,
-      budgetCategoryIds
+      queued.budgetCategories
         .map((id) => budgetCatById.get(id))
         .filter((c): c is BudgetCategory => Boolean(c)),
-      deletedBudgetCategoryIds,
+      queued.deletedBudgetCategories,
       userId,
     );
 
     await writeCollection(
       TRANSACTION_SPEC,
-      transactionIds
+      queued.transactions
         .map((id) => txById.get(id))
         .filter((t): t is Transaction => Boolean(t)),
       [],
       userId,
     );
 
-    const pendingFocusSet = new Set(focusIds);
+    const pendingFocusSet = new Set(queued.focus);
     const sessionsToWrite = db.focusSessions.filter(
       (f) => pendingFocusSet.has(f.id) && !syncedFocusIds.has(f.id),
     );
     await writeFocusSessions(sessionsToWrite, userId);
 
-    const pendingHistorySet = new Set(historyIds);
+    const pendingHistorySet = new Set(queued.history);
     await writeHistory(
       db.history.filter(
         (h) =>
@@ -719,21 +666,7 @@ async function flushPendingWrites(): Promise<void> {
   } catch (err) {
     // Re-queue so the next flush (or a manual sync) retries instead of losing
     // the change. Fingerprints were only committed for rows that succeeded.
-    for (const id of taskIds) pendingTaskIds.add(id);
-    for (const id of deletedTaskIds) pendingDeletedTaskIds.add(id);
-    for (const id of categoryIds) pendingCategoryIds.add(id);
-    for (const id of deletedCategoryIds) pendingDeletedCategoryIds.add(id);
-    for (const id of occurrenceIds) pendingOccurrenceIds.add(id);
-    for (const id of deletedOccurrenceIds) pendingDeletedOccurrenceIds.add(id);
-    for (const id of reminderIds) pendingReminderIds.add(id);
-    for (const id of deletedReminderIds) pendingDeletedReminderIds.add(id);
-    for (const id of transactionIds) pendingTransactionIds.add(id);
-    for (const id of budgetCategoryIds) pendingBudgetCategoryIds.add(id);
-    for (const id of deletedBudgetCategoryIds) {
-      pendingDeletedBudgetCategoryIds.add(id);
-    }
-    for (const id of focusIds) pendingFocusIds.add(id);
-    for (const id of historyIds) pendingHistoryIds.add(id);
+    requeue(queued);
 
     const kind = classifySyncError(err);
     useSyncStore.getState().setPending(pendingCount());
@@ -942,38 +875,38 @@ async function writeFocusSessions(
  */
 export function syncTaskToCloud(task: Task): void {
   if (!supabase || !currentUserId()) return;
-  if (task.categoryId) pendingCategoryIds.add(task.categoryId);
-  pendingTaskIds.add(task.id);
+  if (task.categoryId) pendingIds.categories.add(task.categoryId);
+  pendingIds.tasks.add(task.id);
   scheduleFlush();
 }
 
 /** Queues a soft delete (`is_deleted = true`) for the next batched write. */
 export function syncDeleteTaskToCloud(taskId: string): void {
   if (!supabase || !currentUserId()) return;
-  pendingTaskIds.delete(taskId);
-  pendingDeletedTaskIds.add(taskId);
+  pendingIds.tasks.delete(taskId);
+  pendingIds.deletedTasks.add(taskId);
   scheduleFlush();
 }
 
 /** Queues one category for the next batched cloud write. */
 export function syncCategoryToCloud(cat: Category): void {
   if (!supabase || !currentUserId()) return;
-  pendingCategoryIds.add(cat.id);
+  pendingIds.categories.add(cat.id);
   scheduleFlush();
 }
 
 /** Queues a category soft delete for the next batched write. */
 export function syncDeleteCategoryToCloud(categoryId: string): void {
   if (!supabase || !currentUserId()) return;
-  pendingCategoryIds.delete(categoryId);
-  pendingDeletedCategoryIds.add(categoryId);
+  pendingIds.categories.delete(categoryId);
+  pendingIds.deletedCategories.add(categoryId);
   scheduleFlush();
 }
 
 /** Queues one focus session for the next batched cloud write. */
 export function syncFocusSessionToCloud(session: FocusSession): void {
   if (!supabase || !currentUserId()) return;
-  pendingFocusIds.add(session.id);
+  pendingIds.focus.add(session.id);
   scheduleFlush();
 }
 
@@ -1883,7 +1816,7 @@ function handleRealtimeTaskChange(payload: {
           (stone) => stone.kind === "task" && stone.id === task.id,
         ),
         queued:
-          pendingTaskIds.has(task.id) || pendingDeletedTaskIds.has(task.id),
+          pendingIds.tasks.has(task.id) || pendingIds.deletedTasks.has(task.id),
       })
     ) {
       return;
