@@ -157,8 +157,34 @@ async function ensureProfileRow(userId: string): Promise<void> {
 
 let realtimeChannel: RealtimeChannel | null = null;
 let isSyncing = false;
-let isApplyingRemoteUpdate = false;
 let isStoreSubscribed = false;
+
+/**
+ * How many cloud-originated writes are being applied right now.
+ *
+ * A plain boolean was wrong here. `runSyncDifferences` holds this "on" across
+ * its whole await span so its final merge commit is not mistaken for a local
+ * edit — but a realtime event that lands mid-pass runs its own `applyRemote`,
+ * whose `finally` set the boolean back to `false` while the reconciliation was
+ * still running. The merge commit that followed was then seen by the store
+ * subscriber as 149 brand-new local rows and queued straight back to the
+ * server they had just been downloaded from. A depth counter lets the two
+ * nest: the flag only clears once the outermost remote apply is done.
+ */
+let remoteApplyDepth = 0;
+
+export function beginRemoteApply(): void {
+  remoteApplyDepth += 1;
+}
+
+export function endRemoteApply(): void {
+  remoteApplyDepth = Math.max(0, remoteApplyDepth - 1);
+}
+
+/** True while any cloud-originated write (a pass, a realtime event) is applying. */
+export function isApplyingRemoteUpdate(): boolean {
+  return remoteApplyDepth > 0;
+}
 let isEngineInitialized = false;
 let syncedNamespace: string | null = null;
 
@@ -272,7 +298,7 @@ export function initSyncEngine() {
     isStoreSubscribed = true;
     useStore.subscribe((state, prevState) => {
       const userId = currentUserId();
-      if (!supabase || !userId || isApplyingRemoteUpdate) return;
+      if (!supabase || !userId || isApplyingRemoteUpdate()) return;
 
       // Zustand updates are immutable, so an untouched row keeps its identity:
       // a reference check finds the changed rows without walking their fields.
@@ -2425,7 +2451,7 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
 
   useSyncStore.getState().setPhase("syncing");
 
-  isApplyingRemoteUpdate = true;
+  beginRemoteApply();
   let uploadedTasks = 0;
   let downloadedTasks = 0;
   let uploadedCategories = 0;
@@ -2972,7 +2998,7 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
       error: kind,
     };
   } finally {
-    isApplyingRemoteUpdate = false;
+    endRemoteApply();
     // A pass may only end in a phase the user can act on. If something escaped
     // both the try and the catch, "syncing" is still on screen and would stay
     // there forever, so it is settled here rather than left spinning.
@@ -3225,11 +3251,11 @@ function scheduleRealtimeReconnect(userId: string): void {
  * memory only is lost on the next restart.
  */
 function applyRemote(mutate: () => void): void {
-  isApplyingRemoteUpdate = true;
+  beginRemoteApply();
   try {
     mutate();
   } finally {
-    isApplyingRemoteUpdate = false;
+    endRemoteApply();
   }
   persist(useStore.getState().db);
 }
