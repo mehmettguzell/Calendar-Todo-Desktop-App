@@ -474,7 +474,7 @@ export interface ParseOptions {
 }
 
 export function parseStatement(content: string, options: ParseOptions = {}): ParseResult {
-  const text = content.replace(/^﻿/, "");
+  const text = content.replace(/^\uFEFF/, "");
   const isHtml = /<\s*(table|tr|html|body)\b/i.test(text.slice(0, 4000));
 
   if (isHtml) {

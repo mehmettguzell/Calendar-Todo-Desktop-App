@@ -31,7 +31,7 @@ else
 endif
 
 .DEFAULT_GOAL := help
-.PHONY: help run exe bundle dev test check install stop clean
+.PHONY: help run exe bundle dev test lint check install stop clean
 
 help:
 	@echo Tempo - available targets - platform: $(PLATFORM)
@@ -40,7 +40,8 @@ help:
 	@echo make bundle  - build the binary plus the platform installers
 	@echo make dev     - run the UI in a browser only, no Rust needed
 	@echo make test    - run the test suite
-	@echo make check   - typecheck, then run the test suite
+	@echo make lint    - run ESLint (Clean Code size and complexity limits)
+	@echo make check   - typecheck, lint, then run the test suite
 	@echo make install - install npm dependencies
 	@echo make stop    - close a running Tempo window
 	@echo make clean   - delete build output, the next build recompiles from scratch
@@ -65,8 +66,12 @@ dev:
 test:
 	npm test
 
+lint:
+	npm run lint
+
 check:
 	npm run typecheck
+	npm run lint
 	npm test
 
 install:
