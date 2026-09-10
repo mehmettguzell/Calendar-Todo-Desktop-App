@@ -7,6 +7,8 @@ import { nowInstant } from "@/domain/datetime";
 import { historyEntry } from "@/domain/history";
 import { pinOf } from "@/domain/manualOrder";
 import { Task } from "@/domain/types";
+import type { Database } from "@/data/db";
+import type { Instant } from "@/domain/types";
 import type { SliceTools, StoreState } from "../storeState";
 
 // Parent/child structure and the manual order the user drags rows into.
@@ -18,6 +20,49 @@ export type HierarchySlice = Pick<
   | "reorderTasks"
   | "clearManualOrder"
 >;
+
+/** Refusing a descendant as the new parent is what keeps the tree a tree. */
+function canReparent(
+  db: Database,
+  taskId: string,
+  parentId: string | null,
+): boolean {
+  if (parentId === null) return true;
+  const parent = db.tasks.find((t) => t.id === parentId);
+  return Boolean(parent) && !collectSubtree(db.tasks, taskId).includes(parentId);
+}
+
+/**
+ * The moved task, wearing what its new home implies.
+ *
+ * Category is adopted outright — "this belongs to the thesis now" is the whole
+ * reason it was dragged there — but a plan with no category of its own claims
+ * nothing. Priority is only filled in where the task has none: `NONE` is the
+ * absence of an answer, while `LOW` under a `HIGH` plan was somebody's answer
+ * and overwriting it would be the move disagreeing with them.
+ */
+function reparented(
+  db: Database,
+  task: Task,
+  newParent: Task | null,
+  parentId: string | null,
+  at: Instant,
+): Task {
+  const siblings = db.tasks.filter(
+    (t) => (t.parentId ?? null) === parentId && t.id !== task.id,
+  );
+  return {
+    ...task,
+    parentId,
+    categoryId: newParent?.categoryId ?? task.categoryId,
+    priority:
+      task.priority === "NONE" ? (newParent?.priority ?? "NONE") : task.priority,
+    order: siblings.length,
+    // The pin it carried belonged to the list it just left.
+    manualOrder: null,
+    updatedAt: at,
+  };
+}
 
 export function createHierarchySlice({ get, commit }: SliceTools): HierarchySlice {
   return {
@@ -45,75 +90,28 @@ export function createHierarchySlice({ get, commit }: SliceTools): HierarchySlic
       });
     },
     setParent(taskId, parentId) {
-      const before = get().db;
-      const task = before.tasks.find((t) => t.id === taskId);
+      const task = get().db.tasks.find((t) => t.id === taskId);
       if (!task || (task.parentId ?? null) === parentId) return;
-      if (parentId !== null) {
-        const parent = before.tasks.find((t) => t.id === parentId);
-        // Refusing a descendant is what keeps the tree a tree.
-        if (
-          !parent ||
-          collectSubtree(before.tasks, taskId).includes(parentId)
-        ) {
-          return;
-        }
-      }
+      if (!canReparent(get().db, taskId, parentId)) return;
+      const detachedFrom =
+        get().db.tasks.find((t) => t.id === task.parentId)?.title ?? "";
 
       commit((db) => {
-        const siblings = db.tasks.filter(
-          (t) => (t.parentId ?? null) === parentId && t.id !== taskId,
-        );
         const at = nowInstant();
-        /*
-         * Moving a task into a plan moves it into the plan's category — that is
-         * what "this belongs to the thesis now" means, and it is the whole
-         * reason the task was dragged there.
-         *
-         * A plan with no category of its own claims nothing: clearing the
-         * task's category would destroy information to express nothing.
-         */
         const newParent =
           parentId === null
             ? null
             : (db.tasks.find((t) => t.id === parentId) ?? null);
-        const adopted = newParent?.categoryId ?? null;
-        const categoryId = adopted ?? task.categoryId;
-
-        /*
-         * …and into its urgency, but only where the task has none of its own.
-         *
-         * `NONE` is the absence of an answer, not an answer — nothing in the
-         * app sets it deliberately — so filling it in from the plan takes
-         * nothing away. A task that says LOW keeps saying LOW under a HIGH
-         * plan: that one *was* somebody's answer, and overwriting it would be
-         * the move quietly disagreeing with them.
-         */
-        const priority =
-          task.priority === "NONE" ? (newParent?.priority ?? "NONE") : task.priority;
-
-        const next: Task = {
-          ...task,
-          parentId,
-          categoryId,
-          priority,
-          order: siblings.length,
-          // The pin it carried belonged to the list it just left.
-          manualOrder: null,
-          updatedAt: at,
-        };
-
+        const next = reparented(db, task, newParent, parentId, at);
         // Whatever hung below the task comes with it.
         const followers = new Set(
           collectSubtree(db.tasks, taskId).filter(
             (id) =>
               id !== taskId &&
-              db.tasks.find((t) => t.id === id)?.categoryId !== categoryId,
+              db.tasks.find((t) => t.id === id)?.categoryId !== next.categoryId,
           ),
         );
-        const parentTitle =
-          parentId === null
-            ? null
-            : (db.tasks.find((t) => t.id === parentId)?.title ?? "");
+
         return appendHistory(
           {
             ...db,
@@ -121,7 +119,7 @@ export function createHierarchySlice({ get, commit }: SliceTools): HierarchySlic
               t.id === taskId
                 ? next
                 : followers.has(t.id)
-                  ? { ...t, categoryId, updatedAt: at }
+                  ? { ...t, categoryId: next.categoryId, updatedAt: at }
                   : t,
             ),
           },
@@ -130,12 +128,9 @@ export function createHierarchySlice({ get, commit }: SliceTools): HierarchySlic
             kind: "UPDATED",
             field: "parent",
             note:
-              parentTitle === null
-                ? `Detached from "${
-                    before.tasks.find((t) => t.id === task.parentId)?.title ??
-                    ""
-                  }"`
-                : `Filed under "${parentTitle}"`,
+              newParent === null
+                ? `Detached from "${detachedFrom}"`
+                : `Filed under "${newParent.title}"`,
           }),
         );
       });
