@@ -66,7 +66,10 @@ Standing rules for this repo. They override default habits. Decision record:
    function — over-splitting is also complexity.
 
 Enforced by ESLint (`max-lines` 400, `max-lines-per-function` 50, `complexity`):
-**error** under `src/sync/` and `src/data/`, **warn** elsewhere. Run `make lint`.
+**error** under `src/sync/` and the rebuilt `src/data/` layers (`dto/`,
+`supabase/`), **warn** elsewhere. Existing files (`src/data/db.ts`, the views,
+`store.ts`) graduate to **error** when their own refactor pass lands. Run
+`make lint`.
 
 ### How refactors proceed
 
