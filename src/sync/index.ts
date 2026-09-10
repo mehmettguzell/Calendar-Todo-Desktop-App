@@ -21,3 +21,8 @@ export * from "./cloudWrites";
 export * from "./writeFlush";
 export * from "./realtime";
 export * from "./realtimeApply";
+export * from "./cloudSnapshot";
+export * from "./mergeCategories";
+export * from "./mergeTasks";
+export * from "./mergeTrail";
+export * from "./differences";
