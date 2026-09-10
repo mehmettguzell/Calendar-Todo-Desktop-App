@@ -14,7 +14,9 @@ import {
   snapshotOf,
   type StatementBatch,
 } from "@/domain/statementBatch";
-import type { LocalDate } from "@/domain/types";
+import type { ImportDraft } from "@/domain/statementImport";
+import type { Instant, LocalDate } from "@/domain/types";
+import type { BatchInfo } from "../storeTypes";
 import { useUndoStore } from "../undoStore";
 import type { SliceTools, StoreState } from "../storeState";
 
@@ -35,6 +37,64 @@ export type MoneySlice = Pick<
   | "markSpendNudged"
   | "materialiseRecurringTransactions"
 >;
+
+function importedTransaction(
+  draft: ImportDraft,
+  batchId: string,
+  at: Instant,
+): Transaction {
+  return {
+    id: createId("x"),
+    date: draft.date,
+    amountMinor: draft.amountMinor,
+    flow: draft.flow,
+    categoryId: draft.categoryId,
+    note: draft.note,
+    merchant: draft.merchant,
+    externalId: draft.externalId,
+    importId: batchId,
+    recurrence: null,
+    recurrenceSourceId: null,
+    lastGeneratedFor: null,
+    createdAt: at,
+    updatedAt: at,
+    deletedAt: null,
+  };
+}
+
+/**
+ * The import itself, written down.
+ *
+ * The undo toast is seconds long, and importing the same file twice is a
+ * mistake nobody notices in seconds — it shows up when the month's total is
+ * read the next day. The batch is what makes "geri al" still available then,
+ * and it carries the settled rows' previous shape for the same reason.
+ */
+/* eslint-disable-next-line complexity -- defaults for absent fields, not branching */
+function importBatch(input: {
+  batchId: string;
+  batchInfo: BatchInfo | undefined;
+  at: Instant;
+  created: Transaction[];
+  before: Transaction[];
+}): StatementBatch {
+  const { batchId, batchInfo, at, created, before } = input;
+  const dates = [...created, ...before].map((entry) => entry.date).sort();
+  return {
+    id: batchId,
+    label: batchInfo?.label?.trim() || "Ekstre",
+    account: batchInfo?.account ?? null,
+    importedAt: at,
+    from: batchInfo?.from ?? dates[0] ?? at.slice(0, 10),
+    to: batchInfo?.to ?? dates[dates.length - 1] ?? at.slice(0, 10),
+    mode: batchInfo?.mode ?? "rows",
+    createdCount: created.length,
+    createdMinor: created.reduce((sum, entry) => sum + entry.amountMinor, 0),
+    settled: before.map(snapshotOf),
+    revertedAt: null,
+    deletedAt: null,
+  };
+}
 
 export function createMoneySlice({ get, commit }: SliceTools): MoneySlice {
   return {
@@ -262,91 +322,37 @@ export function createMoneySlice({ get, commit }: SliceTools): MoneySlice {
     importTransactions(drafts, merges = [], batchInfo) {
       if (drafts.length === 0 && merges.length === 0) return 0;
 
-      const taken = new Set(
-        get()
-          .db.transactions.filter((t) => t.deletedAt === null && t.externalId)
-          .map((t) => t.externalId as string),
-      );
+      const db = get().db;
       // The preview may have been built minutes ago; the ledger is the
       // authority on what is already in it.
+      const taken = new Set(
+        db.transactions
+          .filter((t) => t.deletedAt === null && t.externalId)
+          .map((t) => t.externalId as string),
+      );
       const fresh = drafts.filter((draft) => !taken.has(draft.externalId));
       // A merge whose fingerprint has since been written by another import is
       // no longer a merge; the row it would settle is already settled.
-      const settling = merges.filter(
-        (merge) => !taken.has(merge.patch.externalId),
-      );
+      const settling = merges.filter((m) => !taken.has(m.patch.externalId));
       if (fresh.length === 0 && settling.length === 0) return 0;
 
       const at = nowInstant();
       const batchId = createId("imp");
-      const created: Transaction[] = fresh.map((draft) => ({
-        id: createId("x"),
-        date: draft.date,
-        amountMinor: draft.amountMinor,
-        flow: draft.flow,
-        categoryId: draft.categoryId,
-        note: draft.note,
-        merchant: draft.merchant,
-        externalId: draft.externalId,
-        importId: batchId,
-        recurrence: null,
-        recurrenceSourceId: null,
-        lastGeneratedFor: null,
-        createdAt: at,
-        updatedAt: at,
-        deletedAt: null,
-      }));
-
+      const created = fresh.map((draft) => importedTransaction(draft, batchId, at));
       /*
-       * The entries this statement settles rather than repeats.
-       *
-       * Their previous shape is kept so undo can put them back exactly as they
-       * were: a merge edits a row the user wrote, and an undo that left the
+       * The previous shape of the rows this statement settles rather than
+       * repeats. A merge edits a row the user wrote, and an undo that left the
        * bank's merchant and fingerprint behind would not be an undo.
        */
-      const patchById = new Map(
-        settling.map((merge) => [merge.entryId, merge.patch]),
-      );
-      const before = new Map(
-        get()
-          .db.transactions.filter((entry) => patchById.has(entry.id))
-          .map((entry) => [entry.id, entry] as const),
-      );
+      const patchById = new Map(settling.map((m) => [m.entryId, m.patch]));
+      const before = db.transactions.filter((entry) => patchById.has(entry.id));
+      const batch = importBatch({ batchId, batchInfo, at, created, before });
 
-      /*
-       * The import itself, written down.
-       *
-       * The undo toast below is seconds long, and importing the same file twice
-       * is a mistake nobody notices in seconds — it shows up when the month's
-       * total is read the next day. The batch is what makes "geri al" still
-       * available then, and it carries the settled rows' previous shape for the
-       * same reason the toast does: undoing a merge has to put a row back, not
-       * take it away.
-       */
-      const dates = [
-        ...created.map((entry) => entry.date),
-        ...[...before.values()].map((entry) => entry.date),
-      ].sort();
-      const batch: StatementBatch = {
-        id: batchId,
-        label: batchInfo?.label?.trim() || "Ekstre",
-        account: batchInfo?.account ?? null,
-        importedAt: at,
-        from: batchInfo?.from ?? dates[0] ?? at.slice(0, 10),
-        to: batchInfo?.to ?? dates[dates.length - 1] ?? at.slice(0, 10),
-        mode: batchInfo?.mode ?? "rows",
-        createdCount: created.length,
-        createdMinor: created.reduce((sum, entry) => sum + entry.amountMinor, 0),
-        settled: [...before.values()].map(snapshotOf),
-        revertedAt: null,
-        deletedAt: null,
-      };
-
-      commit((db) => ({
-        ...db,
-        statementBatches: [...db.statementBatches, batch],
+      commit((next) => ({
+        ...next,
+        statementBatches: [...next.statementBatches, batch],
         transactions: [
-          ...db.transactions.map((entry) => {
+          ...next.transactions.map((entry) => {
             const patch = patchById.get(entry.id);
             return patch ? { ...entry, ...patch, updatedAt: at } : entry;
           }),
@@ -356,8 +362,8 @@ export function createMoneySlice({ get, commit }: SliceTools): MoneySlice {
 
       // A hundred rows landing in the wrong month is exactly the mistake
       // someone wants back immediately, and undoing it row by row is no undo.
-      // One reversal, two doors: the toast now runs exactly what the list in
-      // the budget view runs, so the two can never drift into disagreeing.
+      // One reversal, two doors: the toast runs what the budget view's list
+      // runs, so the two can never drift into disagreeing.
       useUndoStore
         .getState()
         .push("undoneImport", () => void get().revertImport(batchId));
