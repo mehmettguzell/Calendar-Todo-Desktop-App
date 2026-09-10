@@ -23,25 +23,12 @@ import type {
   Tombstone,
 } from "@/domain/types";
 import type { BudgetCategory, Transaction } from "@/domain/money";
-import type { WishlistItem } from "@/domain/wishlist";
-import type { Deadline } from "@/domain/deadline";
-import type { StatementBatch } from "@/domain/statementBatch";
 import type { HistoryEntry } from "@/domain/types";
 import {
   budgetCategoryFromRow,
-  cloudBudgetCategoryFingerprint,
   cloudCategoryFingerprint,
-  cloudDeadlineFingerprint,
-  cloudOccurrenceFingerprint,
-  cloudReminderFingerprint,
-  cloudStatementBatchFingerprint,
   cloudTaskFingerprint,
-  cloudTransactionFingerprint,
-  cloudWishlistFingerprint,
-  deadlineFromRow,
   dropOptionalColumn,
-  transactionFromRow,
-  wishlistFromRow,
   localBudgetCategoryFingerprint,
   localCategoryFingerprint,
   localDeadlineFingerprint,
@@ -54,27 +41,24 @@ import {
   occurrenceFromRow,
   optionalColumnCount,
   reminderFromRow,
-  statementBatchFromRow,
   taskFromRow,
-  toBudgetCategoryRow,
   toCategoryRow,
-  toDeadlineRow,
   toFocusSessionRow,
   toHistoryRow,
-  toOccurrenceRow,
-  toReminderRow,
-  toStatementBatchRow,
   toTaskRow,
-  toTransactionRow,
-  toWishlistRow,
+  transactionFromRow,
   withoutMissingColumns,
 } from "@/data/dto";
 import {
   acceptsRemoteTask,
+  BATCH_SPEC,
   beginRemoteApply,
+  BUDGET_CATEGORY_SPEC,
   type CollectionSpec,
   configureRetry,
+  DEADLINE_SPEC,
   endRemoteApply,
+  ensureProfileRow,
   flushDelayMs,
   forgetSyncedState,
   FULL_PASS_INTERVAL_MS,
@@ -85,8 +69,10 @@ import {
   markFullPassDone,
   newestStamp,
   noteRelationMissing,
+  OCCURRENCE_SPEC,
   planReconciliation,
   planTaskWrites,
+  REMINDER_SPEC,
   resetPullState,
   resetRetryBudget,
   retriesAllowed,
@@ -106,7 +92,11 @@ import {
   syncedWishlistFingerprints,
   type SyncContext,
   tableAvailable,
+  TRANSACTION_SPEC,
+  warnUnsendable,
   watchConnectivity,
+  WISHLIST_SPEC,
+  withTimeout,
 } from "@/sync";
 
 /**
@@ -140,100 +130,14 @@ import {
  * every failure leaves the queue intact so the next attempt retries it.
  */
 
-/** Longest any single request may hold the sync pipeline. */
-const REQUEST_TIMEOUT_MS = 15_000;
-
-/**
- * The id every cloud write is keyed by.
- *
- * `user` is the row from `public.profiles` and can legitimately be null for a
- * while (or forever, if the profile fetch failed), so the auth session is the
- * authoritative fallback. Reading only `user` here silently disabled every
- * write whenever the profile lookup did not land.
- */
+// The id every cloud write is keyed by. `user` (the `public.profiles` row) can
+// be null for a while or forever, so the auth session is the fallback.
 function currentUserId(): string | null {
   const authState = useAuthStore.getState();
   return authState.user?.id ?? authState.session?.user?.id ?? null;
 }
 
-/**
- * Fail a hung request instead of leaving the caller spinning.
- *
- * Supabase requests have no client-side deadline of their own: on a captive
- * portal or a sleeping project they can stay pending for minutes. "Sync with
- * server" must always come back with an answer, even when the answer is that it
- * could not be done.
- */
-async function withTimeout<T>(
-  work: PromiseLike<T>,
-  label: string,
-  ms: number = REQUEST_TIMEOUT_MS,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () =>
-            reject(
-              new Error(`${label} timed out after ${Math.round(ms / 1000)}s`),
-            ),
-          ms,
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-/**
- * `public.tasks.user_id` has a FK onto `public.profiles`, so a missing profile
- * row makes every task write fail with 23503. The signup trigger normally
- * creates it; accounts that predate the trigger need it backfilled.
- */
-const verifiedProfiles = new Set<string>();
-
-async function ensureProfileRow(userId: string): Promise<void> {
-  if (!supabase || verifiedProfiles.has(userId)) return;
-  const authState = useAuthStore.getState();
-  const email = authState.user?.email ?? authState.session?.user?.email ?? "";
-  const fullName =
-    authState.user?.fullName ??
-    (authState.session?.user?.user_metadata?.full_name as string) ??
-    email.split("@")[0] ??
-    "User";
-
-  // Check if profile row already exists first to avoid 403 RLS violation
-  const { data: existing } = await withTimeout(
-    supabase.from("profiles").select("id").eq("id", userId).maybeSingle(),
-    "profile lookup",
-  );
-
-  if (existing) {
-    verifiedProfiles.add(userId);
-    return;
-  }
-
-  const { error } = await withTimeout(
-    supabase.from("profiles").upsert(
-      {
-        id: userId,
-        email,
-        full_name: fullName,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "id" },
-    ),
-    "profile create",
-  );
-  if (error) {
-    console.warn("[tempo sync] Could not ensure profile row:", error.message);
-  } else {
-    verifiedProfiles.add(userId);
-  }
-}
+// withTimeout lives in `@/sync/cloudRequest`, ensureProfileRow in `@/sync/profile`.
 
 let realtimeChannel: RealtimeChannel | null = null;
 let isSyncing = false;
@@ -254,22 +158,8 @@ let syncedNamespace: string | null = null;
  */
 let accountChangeChain: Promise<void> = Promise.resolve();
 
-// Missing-table detection lives in `@/sync/schemaCapability`.
-
-/** Ids already reported as unsendable, so a poisoned row warns once, not hourly. */
-const unsendableRows = new Set<string>();
-
-function warnUnsendable(table: string, id: string): void {
-  // Badge every pass (it is rebuilt); console once (a stuck row would log forever).
-  useSyncStore.getState().noteSkipped({ table, id });
-  const key = `${table}:${id}`;
-  if (unsendableRows.has(key)) return;
-  unsendableRows.add(key);
-  console.warn(
-    `[tempo sync] ${table} row "${id}" is missing required fields and was left out of the push. ` +
-      `It is local-only bookkeeping; the rest of this device still syncs.`,
-  );
-}
+// Missing-table detection lives in `@/sync/schemaCapability`, the skipped-row
+// badge in `@/sync/skippedRows`.
 
 /* ------------------------------------------------------------------ */
 /* Engine lifecycle                                                    */
@@ -989,138 +879,7 @@ async function reconcileCollection<T>(
   return plan.merged;
 }
 
-/**
- * Per-occurrence state for recurring series.
- *
- * Ticking off Monday's run on the phone has to reach the desktop, and the task
- * row cannot carry that: it holds the rule, not the individual days.
- */
-const OCCURRENCE_SPEC: CollectionSpec<Occurrence> = {
-  table: "occurrences",
-  synced: syncedOccurrenceFingerprints,
-  idOf: (o) => o.id,
-  updatedAtOf: (o) => o.updatedAt,
-  localFingerprint: localOccurrenceFingerprint,
-  cloudFingerprint: cloudOccurrenceFingerprint,
-  // State about a task that no longer exists here is orphaned bookkeeping.
-  isOrphan: (row, ctx) => !ctx.liveTaskIds.has(row.task_id as string),
-  // `task_id` and `date` are NOT NULL in the cloud, and an occurrence without
-  // them is unreachable locally too: lookups go through `${taskId}::${date}`.
-  isUploadable: (o) => Boolean(o.taskId) && Boolean(o.date),
-  toCloud: toOccurrenceRow,
-  fromCloud: occurrenceFromRow,
-};
-
-/** Mirrors the CHECK constraint on `public.reminders.status`. */
-const REMINDER_STATUSES = new Set<string>(["PENDING", "FIRED", "DISMISSED"]);
-
-const REMINDER_SPEC: CollectionSpec<Reminder> = {
-  table: "reminders",
-  synced: syncedReminderFingerprints,
-  // `task_id` is NOT NULL and `status` is a CHECK constraint; a reminder that
-  // fails either takes the entire push down with it.
-  isUploadable: (r) =>
-    Boolean(r.taskId) && REMINDER_STATUSES.has(r.status as string),
-  idOf: (r) => r.id,
-  updatedAtOf: (r) => r.updatedAt,
-  localFingerprint: localReminderFingerprint,
-  cloudFingerprint: cloudReminderFingerprint,
-  isOrphan: (row, ctx) => !ctx.liveTaskIds.has(row.task_id as string),
-  toCloud: toReminderRow,
-  fromCloud: reminderFromRow,
-};
-
-/** Mirrors the CHECK constraint `flow` carries on both money tables. */
-const MONEY_FLOWS = new Set<string>(["INCOME", "EXPENSE", "INVESTMENT"]);
-
-const TRANSACTION_SPEC: CollectionSpec<Transaction> = {
-  table: "transactions",
-  synced: syncedTransactionFingerprints,
-  idOf: (t) => t.id,
-  updatedAtOf: (t) => t.updatedAt,
-  localFingerprint: localTransactionFingerprint,
-  cloudFingerprint: cloudTransactionFingerprint,
-  // `date` and `amount_minor` are NOT NULL and `flow` is a CHECK constraint.
-  isUploadable: (t) =>
-    Boolean(t.date) &&
-    Number.isFinite(t.amountMinor) &&
-    MONEY_FLOWS.has(t.flow as string),
-  toCloud: toTransactionRow,
-  fromCloud: transactionFromRow,
-};
-
-const BUDGET_CATEGORY_SPEC: CollectionSpec<BudgetCategory> = {
-  table: "budget_categories",
-  synced: syncedBudgetCategoryFingerprints,
-  idOf: (c) => c.id,
-  updatedAtOf: (c) => c.updatedAt,
-  localFingerprint: localBudgetCategoryFingerprint,
-  cloudFingerprint: cloudBudgetCategoryFingerprint,
-  // `name` is NOT NULL and `flow` is the same CHECK constraint.
-  isUploadable: (c) => Boolean(c.name) && MONEY_FLOWS.has(c.flow as string),
-  toCloud: toBudgetCategoryRow,
-  fromCloud: budgetCategoryFromRow,
-};
-
-/**
- * Things the user means to buy.
- *
- * Syncs like the money tables even though it is not money: a shopping list
- * that only exists on the machine it was typed on is a shopping list you do
- * not have with you in the shop.
- */
-const WISHLIST_SPEC: CollectionSpec<WishlistItem> = {
-  table: "wishlist",
-  synced: syncedWishlistFingerprints,
-  idOf: (item) => item.id,
-  updatedAtOf: (item) => item.updatedAt,
-  localFingerprint: localWishlistFingerprint,
-  cloudFingerprint: cloudWishlistFingerprint,
-  // `title` is NOT NULL, and an item with no name is unreachable in the UI too.
-  isUploadable: (item) => Boolean(item.title),
-  toCloud: toWishlistRow,
-  fromCloud: wishlistFromRow,
-};
-
-/**
- * Task-owned like reminders, so it is dropped by the same rule: a checkpoint
- * whose task is gone is a date belonging to nothing.
- */
-const DEADLINE_SPEC: CollectionSpec<Deadline> = {
-  table: "deadlines",
-  synced: syncedDeadlineFingerprints,
-  idOf: (d) => d.id,
-  updatedAtOf: (d) => d.updatedAt,
-  localFingerprint: localDeadlineFingerprint,
-  cloudFingerprint: cloudDeadlineFingerprint,
-  // `task_id`, `label` and `date` are all NOT NULL; one row failing any of
-  // them takes the whole push down with it.
-  isUploadable: (d) => Boolean(d.taskId && d.label && d.date),
-  isOrphan: (row, ctx) => !ctx.liveTaskIds.has(row.task_id as string),
-  toCloud: toDeadlineRow,
-  fromCloud: deadlineFromRow,
-};
-
-/**
- * What an import did, so undoing it works on whichever device notices.
- *
- * `settled` travels whole, as JSON: it is the previous shape of rows the import
- * stamped, and half of it is no use — an undo that put some fields back would
- * not be an undo.
- */
-const BATCH_SPEC: CollectionSpec<StatementBatch> = {
-  table: "statement_batches",
-  synced: syncedBatchFingerprints,
-  idOf: (b) => b.id,
-  updatedAtOf: (b) => b.revertedAt ?? b.importedAt,
-  localFingerprint: localStatementBatchFingerprint,
-  cloudFingerprint: cloudStatementBatchFingerprint,
-  // `label`, `from_date` and `to_date` are NOT NULL; one bad row would take
-  // the whole push down with it.
-  isUploadable: (b) => Boolean(b.label && b.from && b.to),
-  toCloud: toStatementBatchRow,
-  fromCloud: statementBatchFromRow,
-};
+// The 7 CollectionSpecs live in `@/sync/collectionSpecs`.
 
 /**
  * Append the activity trail.

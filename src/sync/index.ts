@@ -11,3 +11,7 @@ export * from "./remoteApply";
 export * from "./schemaCapability";
 export * from "./retry";
 export * from "./connectivity";
+export * from "./collectionSpecs";
+export * from "./cloudRequest";
+export * from "./skippedRows";
+export * from "./profile";
