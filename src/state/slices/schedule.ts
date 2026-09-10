@@ -21,6 +21,8 @@ import {
 } from "@/domain/types";
 import { fireConfetti } from "@/lib/confetti";
 import { syncTaskToCloud } from "@/sync/storeBridge";
+import type { Database } from "@/data/db";
+import type { Instant, LocalDate } from "@/domain/types";
 import type { SliceTools, StoreState } from "../storeState";
 
 // When a task is due and whether it is done — including per-occurrence status.
@@ -33,6 +35,64 @@ export type ScheduleSlice = Pick<
   | "clearSnooze"
   | "rollOverTo"
 >;
+
+function movedBySnooze(
+  task: Task,
+  reschedule: { date: LocalDate; startTime: string | null },
+): Task {
+  return {
+    ...task,
+    dueDate: reschedule.date,
+    startTime: reschedule.startTime,
+    updatedAt: nowInstant(),
+  };
+}
+
+/** A snoozed task must stop nagging: its reminders wait with it. */
+function waitWithTask(
+  db: Database,
+  taskId: string,
+  until: Instant | null,
+): Database {
+  return {
+    ...db,
+    reminders: db.reminders.map((r) =>
+      r.taskId === taskId
+        ? { ...r, snoozedUntil: until, status: "PENDING" as const }
+        : r,
+    ),
+  };
+}
+
+/** Only unfinished, non-repeating work that is genuinely in the past moves. */
+function rollableTasks(
+  db: Database,
+  taskIds: string[],
+  date: LocalDate,
+): Task[] {
+  const wanted = new Set(taskIds);
+  return db.tasks.filter(
+    (t) =>
+      wanted.has(t.id) &&
+      t.deletedAt === null &&
+      t.recurrence === null &&
+      t.status !== "COMPLETED" &&
+      t.dueDate !== null &&
+      t.dueDate < date,
+  );
+}
+
+function rolledOver(task: Task, date: LocalDate, at: Instant): Task {
+  return {
+    ...task,
+    dueDate: date,
+    // A run that never finished restarts today rather than keeping an end date
+    // that is now behind its own start.
+    endDate: task.endDate && task.endDate < date ? null : (task.endDate ?? null),
+    snoozedUntil: null,
+    updatedAt: at,
+  };
+}
 
 export function createScheduleSlice({ get, commit }: SliceTools): ScheduleSlice {
   return {
@@ -138,12 +198,11 @@ export function createScheduleSlice({ get, commit }: SliceTools): ScheduleSlice 
      * history so the trail shows what happened and why.
      */
     snooze(instance, preset, customTarget) {
-      const { settings } = get().db;
       const now = new Date(get().now);
       const outcome = resolveSnooze(
         instance,
         preset,
-        settings,
+        get().db.settings,
         now,
         customTarget,
       );
@@ -153,7 +212,6 @@ export function createScheduleSlice({ get, commit }: SliceTools): ScheduleSlice 
         const task = db.tasks.find((t) => t.id === instance.task.id);
         if (!task) return db;
 
-        let next = db;
         const entries: HistoryEntry[] = [
           historyEntry({
             taskId: task.id,
@@ -165,13 +223,9 @@ export function createScheduleSlice({ get, commit }: SliceTools): ScheduleSlice 
           }),
         ];
 
+        let next = db;
         if (outcome.reschedule) {
-          const moved: Task = {
-            ...task,
-            dueDate: outcome.reschedule.date,
-            startTime: outcome.reschedule.startTime,
-            updatedAt: nowInstant(),
-          };
+          const moved = movedBySnooze(task, outcome.reschedule);
           entries.push(
             historyEntry({
               taskId: task.id,
@@ -189,21 +243,7 @@ export function createScheduleSlice({ get, commit }: SliceTools): ScheduleSlice 
         }
 
         next = writeSnoozeUntil(next, ref, outcome.until);
-
-        // A snoozed task must stop nagging: its reminders wait with it.
-        next = {
-          ...next,
-          reminders: next.reminders.map((r) =>
-            r.taskId === task.id
-              ? {
-                  ...r,
-                  snoozedUntil: outcome.until,
-                  status: "PENDING" as const,
-                }
-              : r,
-          ),
-        };
-        return appendHistory(next, ...entries);
+        return appendHistory(waitWithTask(next, task.id, outcome.until), ...entries);
       });
     },
     clearSnooze(ref) {
@@ -222,16 +262,7 @@ export function createScheduleSlice({ get, commit }: SliceTools): ScheduleSlice 
      * the anchor would move every future occurrence too.
      */
     rollOverTo(taskIds, date) {
-      const wanted = new Set(taskIds);
-      const eligible = get().db.tasks.filter(
-        (t) =>
-          wanted.has(t.id) &&
-          t.deletedAt === null &&
-          t.recurrence === null &&
-          t.status !== "COMPLETED" &&
-          t.dueDate !== null &&
-          t.dueDate < date,
-      );
+      const eligible = rollableTasks(get().db, taskIds, date);
       if (eligible.length === 0) return 0;
 
       const movedIds = new Set(eligible.map((t) => t.id));
@@ -241,18 +272,7 @@ export function createScheduleSlice({ get, commit }: SliceTools): ScheduleSlice 
         const entries: HistoryEntry[] = [];
         const tasks = db.tasks.map((task) => {
           if (!movedIds.has(task.id)) return task;
-          const moved: Task = {
-            ...task,
-            dueDate: date,
-            // A run that never finished restarts today rather than keeping an
-            // end date that is now behind its own start.
-            endDate:
-              task.endDate && task.endDate < date
-                ? null
-                : (task.endDate ?? null),
-            snoozedUntil: null,
-            updatedAt: at,
-          };
+          const moved = rolledOver(task, date, at);
           entries.push(
             historyEntry({
               taskId: task.id,
