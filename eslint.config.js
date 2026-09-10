@@ -81,6 +81,28 @@ export default tseslint.config(
   },
 
   {
+    // The store has had its refactor pass, so it is held to the standard —
+    // except `max-lines-per-function`, which reads a slice factory (an object
+    // literal of actions) as one enormous function. The methods inside it are
+    // each held to the limit by review, and `authStore`/`selectors` graduate
+    // when their own pass lands.
+    files: [
+      "src/state/store.ts",
+      "src/state/storeState.ts",
+      "src/state/storeTypes.ts",
+      "src/state/taskMutations.ts",
+      "src/state/trashRetention.ts",
+      "src/state/slices/**/*.ts",
+      "src/data/localDocument.ts",
+    ],
+    rules: {
+      "max-lines": ["error", { max: 400, skipBlankLines: true, skipComments: true }],
+      complexity: ["error", 12],
+      "max-lines-per-function": "off",
+    },
+  },
+
+  {
     files: [
       "src/**/*.test.{ts,tsx}",
       "src/test/**/*.{ts,tsx}",
