@@ -41,14 +41,57 @@ export type DocumentSlice = Pick<
   | "resetDatabase"
 >;
 
+/**
+ * The document as it should be held, not as it was found.
+ *
+ * Trashed tasks past the retention window are purged here, and each purge
+ * leaves a tombstone: without one, the next sync sees a row the cloud still
+ * has and this device does not, and helpfully restores it.
+ */
+function cleanedDocument(rawDb: Database, nowMs: number): Database {
+  const lang = rawDb.settings?.language ?? "tr";
+  const { categories, tasks } = deduplicateCategories(
+    rawDb.categories,
+    rawDb.tasks,
+    lang,
+  );
+  const { budgetCategories, transactions } = deduplicateBudgetCategories(
+    rawDb.budgetCategories ?? [],
+    rawDb.transactions ?? [],
+    lang,
+  );
+  const at = new Date(nowMs).toISOString();
+  const cutoff = new Date(nowMs - TRASH_RETENTION_MS).toISOString();
+  const expired = tasks.filter(
+    (t) => t.deletedAt !== null && t.deletedAt < cutoff,
+  );
+
+  return {
+    ...rawDb,
+    categories,
+    tasks: tasks.filter((t) => t.deletedAt === null || t.deletedAt >= cutoff),
+    budgetCategories,
+    transactions,
+    tombstones: pruneTombstones(
+      [
+        ...(rawDb.tombstones ?? []),
+        ...expired.map((t) => tombstone("task", t.id, at)),
+      ],
+      new Date(nowMs),
+    ),
+  };
+}
+
+/** Did loading change anything? Then the file on disk is behind. */
+function repaired(rawDb: Database, cleaned: Database): boolean {
+  return (
+    cleaned.tasks.length !== rawDb.tasks.length ||
+    cleaned.categories.length !== rawDb.categories.length ||
+    cleaned.budgetCategories.length !== (rawDb.budgetCategories?.length ?? 0)
+  );
+}
+
 export function createDocumentSlice({ set, get, commit }: SliceTools): DocumentSlice {
-  /**
-   * Load one namespace's document into the store.
-   *
-   * Trashed tasks past the retention window are purged here, and each purge
-   * leaves a tombstone: without one, the next sync sees a row the cloud still
-   * has and this device does not, and helpfully restores it.
-   */
   const openNamespace = async (namespace: string): Promise<Database> => {
     const repository = openDocumentRepository(namespace);
     const loaded = await repository.load().catch((error) => {
@@ -56,49 +99,15 @@ export function createDocumentSlice({ set, get, commit }: SliceTools): DocumentS
       return null;
     });
     const rawDb = loaded ?? emptyDatabase();
-    const lang = rawDb.settings?.language ?? "tr";
-    const { categories: cleanCategories, tasks: cleanTasks } =
-      deduplicateCategories(rawDb.categories, rawDb.tasks, lang);
-    const { budgetCategories: cleanBudgetCategories, transactions: cleanTransactions } =
-      deduplicateBudgetCategories(rawDb.budgetCategories ?? [], rawDb.transactions ?? [], lang);
     const nowMs = Date.now();
-    const at = new Date(nowMs).toISOString();
-    const cutoff = new Date(nowMs - TRASH_RETENTION_MS).toISOString();
-
-    const expired = cleanTasks.filter(
-      (t) => t.deletedAt !== null && t.deletedAt < cutoff,
-    );
-    const validTasks = cleanTasks.filter(
-      (t) => t.deletedAt === null || t.deletedAt >= cutoff,
-    );
-
-    const db: Database = {
-      ...rawDb,
-      categories: cleanCategories,
-      tasks: validTasks,
-      budgetCategories: cleanBudgetCategories,
-      transactions: cleanTransactions,
-      tombstones: pruneTombstones(
-        [
-          ...(rawDb.tombstones ?? []),
-          ...expired.map((t) => tombstone("task", t.id, at)),
-        ],
-        new Date(nowMs),
-      ),
-    };
+    const db = cleanedDocument(rawDb, nowMs);
 
     set({ db, namespace, ready: true, now: nowMs });
     setActiveNamespace(namespace);
-    if (
-      !loaded ||
-      expired.length > 0 ||
-      cleanCategories.length !== rawDb.categories.length ||
-      cleanBudgetCategories.length !== (rawDb.budgetCategories?.length ?? 0)
-    ) {
-      persist(db);
-    }
+    if (!loaded || repaired(rawDb, db)) persist(db);
     return db;
   };
+
   return {
 
     async hydrate() {

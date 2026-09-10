@@ -11,7 +11,7 @@ import { nowInstant } from "@/domain/datetime";
 import { historyEntry } from "@/domain/history";
 import { NOTE_TAG } from "@/domain/note";
 import { representativeInstance } from "@/domain/task";
-import { InstanceRef } from "@/domain/types";
+import type { Instant, InstanceRef, Task } from "@/domain/types";
 import { fireConfetti } from "@/lib/confetti";
 import type { SliceTools, StoreState } from "../storeState";
 
@@ -23,6 +23,43 @@ export type BulkSlice = Pick<
   | "bulkDeleteTasks"
   | "convertToNote"
 >;
+
+/** Everything a note gives up, kept whole so undo can hand it all back. */
+function scheduleOf(task: Task) {
+  return {
+    tags: task.tags,
+    dueDate: task.dueDate,
+    endDate: task.endDate ?? null,
+    deadline: task.deadline ?? null,
+    recurrence: task.recurrence,
+    startTime: task.startTime,
+    endTime: task.endTime,
+    allDay: task.allDay,
+  };
+}
+
+function asNote(db: Database, taskId: string, at: Instant): Database {
+  return {
+    ...db,
+    tasks: db.tasks.map((t) =>
+      t.id === taskId
+        ? {
+            ...t,
+            tags: [...t.tags.filter((tag) => tag !== NOTE_TAG), NOTE_TAG],
+            dueDate: null,
+            endDate: null,
+            deadline: null,
+            recurrence: null,
+            startTime: null,
+            endTime: null,
+            allDay: true,
+            updatedAt: at,
+          }
+        : t,
+    ),
+    reminders: db.reminders.filter((r) => r.taskId !== taskId),
+  };
+}
 
 export function createBulkSlice({ get, commit }: SliceTools): BulkSlice {
   return {
@@ -101,22 +138,11 @@ export function createBulkSlice({ get, commit }: SliceTools): BulkSlice {
         return false;
       }
       // Refused rather than fudged: nothing renders the children of a note.
-      const hasSubtasks = db.tasks.some(
-        (t) => t.parentId === taskId && t.deletedAt === null,
-      );
-      if (hasSubtasks) return false;
+      if (db.tasks.some((t) => t.parentId === taskId && t.deletedAt === null)) {
+        return false;
+      }
 
-      const at = nowInstant();
-      const before = {
-        tags: task.tags,
-        dueDate: task.dueDate,
-        endDate: task.endDate ?? null,
-        deadline: task.deadline ?? null,
-        recurrence: task.recurrence,
-        startTime: task.startTime,
-        endTime: task.endTime,
-        allDay: task.allDay,
-      };
+      const before = scheduleOf(task);
       /*
        * The reminders go with the schedule they were set against.
        *
@@ -128,43 +154,21 @@ export function createBulkSlice({ get, commit }: SliceTools): BulkSlice {
       const dropped = db.reminders.filter((r) => r.taskId === taskId);
 
       commit((next) =>
-        appendHistory(
-          {
-            ...next,
-            tasks: next.tasks.map((t) =>
-              t.id === taskId
-                ? {
-                    ...t,
-                    tags: [...t.tags.filter((tag) => tag !== NOTE_TAG), NOTE_TAG],
-                    dueDate: null,
-                    endDate: null,
-                    deadline: null,
-                    recurrence: null,
-                    startTime: null,
-                    endTime: null,
-                    allDay: true,
-                    updatedAt: at,
-                  }
-                : t,
-            ),
-            reminders: next.reminders.filter((r) => r.taskId !== taskId),
-          },
-          historyEntry({
-            taskId,
-            kind: "UPDATED",
-            field: "type",
-            from: "task",
-            to: "note",
-          }),
-        ),
+        appendHistory(asNote(next, taskId, nowInstant()), historyEntry({
+          taskId,
+          kind: "UPDATED",
+          field: "type",
+          from: "task",
+          to: "note",
+        })),
       );
 
       useUndoStore.getState().push("undoneConvertedToNote", () => {
-        const at2 = nowInstant();
+        const at = nowInstant();
         commit((next) => ({
           ...next,
           tasks: next.tasks.map((t) =>
-            t.id === taskId ? { ...t, ...before, updatedAt: at2 } : t,
+            t.id === taskId ? { ...t, ...before, updatedAt: at } : t,
           ),
           reminders: [
             ...next.reminders.filter((r) => r.taskId !== taskId),
