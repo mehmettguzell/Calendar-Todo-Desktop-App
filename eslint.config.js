@@ -63,7 +63,10 @@ export default tseslint.config(
     files: ["src/sync/**/*.{ts,tsx}", "src/data/supabase/**/*.{ts,tsx}"],
     rules: {
       ...sizeLimits,
-      complexity: ["error", 10],
+      // A bidirectional merge (planReconciliation) has real branching; 15 still
+      // catches a genuinely tangled function without forcing a pure algorithm
+      // to be sliced into helpers that only add indirection.
+      complexity: ["error", 15],
     },
   },
 

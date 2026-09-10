@@ -3,7 +3,7 @@ import {
   planReconciliation,
   type CollectionSpec,
   type SyncContext,
-} from "@/state/syncEngine";
+} from "@/sync";
 
 /**
  * The rule two devices agree on (DECISIONS.md §11).

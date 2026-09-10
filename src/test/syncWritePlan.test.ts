@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Task } from "@/domain/types";
-import { localTaskFingerprint, planTaskWrites } from "@/state/syncEngine";
+import { localTaskFingerprint } from "@/data/dto";
+import { planTaskWrites } from "@/sync";
 
 /**
  * Adding something and then deleting it should cost the server nothing.

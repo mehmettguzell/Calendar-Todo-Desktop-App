@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { newestStamp, rewound } from "@/state/syncEngine";
+import { newestStamp, rewound } from "@/sync";
 
 /**
  * The watermark that decides which cloud rows a pass asks for.

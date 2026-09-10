@@ -70,14 +70,16 @@ import {
   toWishlistRow,
   withoutMissingColumns,
 } from "@/data/dto";
-
-export {
-  cloudTaskFingerprint,
-  localTaskFingerprint,
-  OPTIONAL_COLUMNS,
-} from "@/data/dto";
-/** @deprecated moved to `@/data/dto` as `toTaskRow`; kept for existing tests. */
-export { toTaskRow as serializeTaskForCloud } from "@/data/dto";
+import {
+  acceptsRemoteTask,
+  type CollectionSpec,
+  flushDelayMs,
+  newestStamp,
+  planReconciliation,
+  planTaskWrites,
+  rewound,
+  type SyncContext,
+} from "@/sync";
 
 /**
  * ============================================================================
@@ -775,35 +777,11 @@ let pullCursor: PullCursor | null = null;
 let lastFullPassAt = 0;
 
 /**
- * How far the watermark is rewound before it is used.
- *
- * `updated_at` is written by whichever device made the edit, from its own
- * clock. A machine running two minutes slow would stamp its edits below a
- * watermark taken from a machine running on time, and `gte` would step
- * straight over them. Rewinding costs a few rows re-read per pass and buys
- * back that entire class of missed edit.
- */
-const CLOCK_SKEW_ALLOWANCE_MS = 2 * 60_000;
-
-/**
  * Incremental reads are a saving, not a source of truth. Whatever they miss —
  * a hard-deleted focus row, an edit from a device with a badly wrong clock —
  * is repaired the next time the whole account is read, so that has a deadline.
  */
 const FULL_PASS_INTERVAL_MS = 15 * 60_000;
-
-/**
- * Rewind a watermark by the skew allowance, at the moment it becomes a query.
- *
- * Never stored rewound: a stored-and-rewound cursor is rewound again on the
- * next pass, and walks steadily backwards until it is fetching everything.
- */
-export function rewound(stamp: string | null): string | null {
-  if (!stamp) return null;
-  const ms = new Date(stamp).getTime();
-  if (Number.isNaN(ms)) return null;
-  return new Date(ms - CLOCK_SKEW_ALLOWANCE_MS).toISOString();
-}
 
 function forgetSyncedState() {
   syncedTaskFingerprints.clear();
@@ -831,47 +809,10 @@ function forgetSyncedState() {
  * a short window turns that burst into a single batched upsert — and because a
  * fingerprint check runs before anything is sent, a mutation that did not
  * actually change a synced field costs no request at all.
+ *
+ * How long the window gathers — the trailing delay and the ceiling that a
+ * stream of edits cannot push past — is `flushDelayMs` in `@/sync`.
  */
-/**
- * How long changes gather before one batched write goes up.
- *
- * A ceiling, not a rate: with nothing changing, no timer is armed and no
- * request is made.
- *
- * Measured against a real document rather than guessed: 677 edits over five
- * days, and 72 of one day's 117 gaps between consecutive edits were under two
- * seconds. People work in bursts — tick, tick, retype the title, drag it a day
- * — so the window is what decides how many requests those bursts become. That
- * document costs 537 writes at 600ms, ~420 at 2.5s, and 186 at 30s.
- *
- * Thirty seconds is where that curve has flattened: the same document costs
- * 537 writes at 600ms, ~420 at 2.5s, 186 at 5s and 121 at 30s, and past there
- * the line is nearly level — a longer window buys single-digit savings for
- * minutes of lag. So this is the cheapest window worth having, which is what
- * it was picked to be.
- *
- * What the lag costs is bounded on both ends. Nothing is at stake in the delay
- * itself: the local write already succeeded, `visibilitychange` drains the
- * queue the moment the window goes away — closing the lid, switching apps,
- * walking to the other machine — and `syncDifferences` finds by content
- * whatever a crash inside the window would have skipped. The case it does cost
- * is two devices open side by side, where an edit can now sit half a minute
- * before the other one hears about it.
- */
-const FLUSH_DELAY_MS = 30_000;
-/**
- * How long a continuous stream of edits may hold the queue back.
- *
- * The delay below is a *trailing* one: every new change pushes it out again, so
- * a request never leaves while the user is still typing. On its own that starves
- * — someone writing a long note would sync nothing for as long as they wrote —
- * so the first queued change also starts this ceiling, and once it passes the
- * flush goes regardless of what is still being typed.
- *
- * Four times the window, as it has always been: a ceiling equal to the window
- * would fire on every burst and there would be no window.
- */
-const FLUSH_MAX_WAIT_MS = 120_000;
 const pendingTaskIds = new Set<string>();
 const pendingCategoryIds = new Set<string>();
 const pendingOccurrenceIds = new Set<string>();
@@ -959,46 +900,6 @@ function scheduleFlush() {
       undoOfferExpiresAt: offer ? offer.at + UNDO_WINDOW_MS : null,
     }),
   );
-}
-
-/**
- * How long the queue waits before it goes out.
- *
- * Three rules, in order of who wins:
- *
- * 1. **The trailing delay.** Every new change pushes it out again, so a
- *    request never leaves mid-burst.
- * 2. **A live undo offer holds the queue.** An undo toast is a statement that
- *    the change is not final, and it once stood three seconds longer than the
- *    delay. So the ordinary "change it, look at it, take it back" spent two
- *    round trips: one to write the edit and one to write it away again, for a
- *    document that ends exactly where it started. Every other device watched
- *    the value flicker to something nobody chose. Waiting for the offer to
- *    lapse collapses the pair into nothing — the reversal puts the row back to
- *    the fingerprint the cloud already holds, so the flush finds nothing to
- *    write. The gathering window now outlasts the toast on its own, so this
- *    rule currently never binds; it stays because the two numbers are set for
- *    unrelated reasons and either can move.
- * 3. **The ceiling wins over both.** A stream of edits, or a toast replaced by
- *    the next toast, must not postpone the write forever.
- *
- * A pure function of three numbers, because a pacing rule that can only be
- * exercised by holding a real Supabase connection open for eight seconds is a
- * rule nobody tests.
- */
-export function flushDelayMs(input: {
-  now: number;
-  /** When the oldest un-flushed change was queued. */
-  queuedSince: number;
-  /** When the standing undo offer lapses, or null if none stands. */
-  undoOfferExpiresAt: number | null;
-}): number {
-  const { now, queuedSince, undoOfferExpiresAt } = input;
-  const undoHold =
-    undoOfferExpiresAt === null ? 0 : undoOfferExpiresAt - now;
-  const wait = Math.max(FLUSH_DELAY_MS, undoHold);
-  const remainingCap = FLUSH_MAX_WAIT_MS - (now - queuedSince);
-  return Math.max(0, Math.min(wait, remainingCap));
 }
 
 /** Lets callers (e.g. a manual sync) wait for queued writes to land first. */
@@ -1224,61 +1125,6 @@ async function flushPendingWrites(): Promise<void> {
   }
 }
 
-/**
- * What a flush should actually send about the tasks it has queued.
- *
- * Three answers, and the third is the one that was missing: some rows should
- * be dropped entirely rather than written.
- *
- * Adding a task and then thinking better of it is among the most common things
- * anyone does here, and it used to cost two requests — an upsert carrying a
- * row whose only content was `is_deleted`, and an insert carrying that row's
- * history. The server had never seen the task, so the first request built a
- * tombstone for something that never existed and the second explained what had
- * happened to it.
- *
- * `synced` is the record of what has actually been written, so "not in
- * `synced`" means the cloud has never heard of this id. A row that is already
- * in the trash and was never written has nothing to say to anyone; if it is
- * ever restored, it will not match a stored fingerprint and the next flush
- * picks it up then.
- *
- * A pure function of four values, because a rule about *not* making a request
- * cannot be observed by watching requests.
- */
-export function planTaskWrites(input: {
-  /** Ids the queue holds. */
-  queued: string[];
-  /** Ids queued as purges (a tombstone, not a soft delete). */
-  deleted: string[];
-  taskById: Map<string, Task>;
-  /** id -> the fingerprint last written to the cloud. */
-  synced: ReadonlyMap<string, string>;
-}): { upsert: string[]; markDeleted: string[]; forget: Set<string> } {
-  const { queued, deleted, taskById, synced } = input;
-  const purged = new Set(deleted);
-
-  const forget = new Set<string>();
-  for (const id of [...queued, ...deleted]) {
-    if (synced.has(id)) continue;
-    const task = taskById.get(id);
-    // A purge leaves no row behind at all, so `taskById` may not have it.
-    if (!task || task.deletedAt !== null) forget.add(id);
-  }
-
-  const upsert: string[] = [];
-  for (const id of queued) {
-    if (purged.has(id) || forget.has(id)) continue;
-    const task = taskById.get(id);
-    if (!task) continue;
-    if (synced.get(id) === localTaskFingerprint(task)) continue;
-    upsert.push(id);
-  }
-
-  const markDeleted = deleted.filter((id) => !forget.has(id));
-  return { upsert, markDeleted, forget };
-}
-
 /* ------------------------------------------------------------------ */
 /* Serialisation                                                       */
 /* ------------------------------------------------------------------ */
@@ -1325,42 +1171,10 @@ export async function upsertTasksToCloud(tasks: Task[], userId: string) {
 }
 
 /**
- * One description of how a collection crosses the wire.
- *
- * Occurrences, reminders, transactions and budget categories all sync the same
- * way — compare by content, resolve by `updated_at`, soft-delete rather than
- * remove. Writing that logic four times is four places for it to drift, so the
- * differences between them live in these tables of functions and the logic
- * lives once.
+ * `CollectionSpec`, `SyncContext` and the pure `planReconciliation` decision
+ * live in `@/sync/reconcile`; `writeCollection` and `reconcileCollection` are
+ * the I/O half that applies that decision.
  */
-export interface CollectionSpec<T> {
-  table: string;
-  idOf(row: T): string;
-  localFingerprint(row: T): string;
-  cloudFingerprint(row: Record<string, unknown>): string;
-  updatedAtOf(row: T): string;
-  toCloud(row: T, userId: string): Record<string, unknown>;
-  fromCloud(row: Record<string, unknown>): T;
-  /** Cloud rows that reference something this device no longer has. */
-  isOrphan?(row: Record<string, unknown>, context: SyncContext): boolean;
-  /**
-   * Whether a local row is structurally fit to be sent.
-   *
-   * A row that violates a NOT NULL or CHECK constraint is rejected by Postgres
-   * for the whole batch, so one corrupt row stops every other collection from
-   * syncing too — and keeps doing so on every retry, forever. Dropping it from
-   * the push instead keeps the damage to the row that is actually broken.
-   */
-  isUploadable?(row: T): boolean;
-  /** What the cloud is believed to hold, so unchanged rows are never re-sent. */
-  synced: Map<string, string>;
-}
-
-export interface SyncContext {
-  liveTaskIds: Set<string>;
-}
-
-
 async function writeCollection<T>(
   spec: CollectionSpec<T>,
   rows: T[],
@@ -1425,57 +1239,6 @@ async function writeCollection<T>(
     if (error) throw error;
     for (const id of deletedIds) spec.synced.delete(id);
   }
-}
-
-/**
- * Decide what the merged collection should be. Pure — no I/O.
- *
- * Same rule as tasks: compare by content, and when the two sides genuinely
- * differ let the greater `updated_at` win, with ties going to the cloud so
- * every device reaches the same answer.
- *
- * Kept separate from the write so the rule can be tested as a rule, without a
- * network in the way. It is the part most likely to be wrong and hardest to
- * notice when it is.
- */
-export function planReconciliation<T>(
-  spec: CollectionSpec<T>,
-  local: T[],
-  cloud: { data: Record<string, unknown>[] | null },
-  tombstoned: Set<string>,
-  context: SyncContext,
-): { merged: T[]; toUpload: T[]; unchanged: boolean } {
-  if (!cloud.data) return { merged: local, toUpload: [], unchanged: true };
-
-  const merged = new Map(local.map((row) => [spec.idOf(row), row]));
-  const toUpload: T[] = [];
-  const cloudById = new Map(cloud.data.map((row) => [row.id as string, row]));
-
-  for (const localRow of local) {
-    const id = spec.idOf(localRow);
-    const cloudRow = cloudById.get(id);
-    if (!cloudRow) {
-      toUpload.push(localRow);
-      continue;
-    }
-    if (spec.cloudFingerprint(cloudRow) === spec.localFingerprint(localRow))
-      continue;
-
-    const cloudWins =
-      new Date(cloudRow.updated_at as string).getTime() >=
-      new Date(spec.updatedAtOf(localRow)).getTime();
-    if (cloudWins) merged.set(id, spec.fromCloud(cloudRow));
-    else toUpload.push(localRow);
-  }
-
-  for (const cloudRow of cloud.data) {
-    const id = cloudRow.id as string;
-    if (merged.has(id) || cloudRow.is_deleted || tombstoned.has(id)) continue;
-    if (spec.isOrphan?.(cloudRow, context)) continue;
-    merged.set(id, spec.fromCloud(cloudRow));
-  }
-
-  return { merged: Array.from(merged.values()), toUpload, unchanged: false };
 }
 
 /** Apply `planReconciliation`, pushing whatever the local side won. */
@@ -2400,21 +2163,6 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
   }
 }
 
-/** The latest value of `column` across these rows, or the watermark we had. */
-export function newestStamp(
-  rows: Record<string, unknown>[],
-  column: string,
-  fallback: string | null,
-): string | null {
-  let newest = fallback;
-  for (const row of rows) {
-    const value = row[column];
-    if (typeof value !== "string") continue;
-    if (newest === null || value > newest) newest = value;
-  }
-  return newest;
-}
-
 /**
  * Narrow a select to rows touched since the last successful pull.
  *
@@ -2618,48 +2366,6 @@ function applyRemote(mutate: () => void): void {
     endRemoteApply();
   }
   persist(useStore.getState().db);
-}
-
-/**
- * Whether a row arriving on the realtime channel may overwrite what is here.
- *
- * Every write this device makes comes straight back to it as an echo, because
- * the channel does not distinguish "someone else changed this" from "you did".
- * Two of those echoes used to do real damage:
- *
- * - Emptying the Trash purges the rows here and sends `is_deleted = true` to
- *   the cloud. The echo of that update arrived as a row this device no longer
- *   had, and the handler dutifully re-inserted it — the task reappeared in the
- *   Trash, undeleted, which is exactly what the user reported.
- * - An edit made while the previous write was still in flight was overwritten
- *   by that older write's echo, so a task moved to tomorrow quietly moved back.
- *
- * Hence the order below: a purge here is a decision and outranks anything the
- * cloud says; a queued local write is newer than any echo by construction; and
- * otherwise the ordinary rule applies — last write wins on `updated_at`, ties
- * to the cloud (DECISIONS.md §11).
- */
-export function acceptsRemoteTask(input: {
-  remoteUpdatedAt: string;
-  remoteDeleted: boolean;
-  /** `null` when this device has no such row. */
-  localUpdatedAt: string | null;
-  tombstoned: boolean;
-  queued: boolean;
-}): boolean {
-  if (input.tombstoned) return false;
-  if (input.queued) return false;
-  // Nothing to show and nothing to restore: a trashed row this device does not
-  // have is either its own purge coming home or another device deleting
-  // something already gone from here.
-  if (input.localUpdatedAt === null && input.remoteDeleted) return false;
-  if (
-    input.localUpdatedAt !== null &&
-    input.localUpdatedAt > input.remoteUpdatedAt
-  ) {
-    return false;
-  }
-  return true;
 }
 
 function handleRealtimeTaskChange(payload: {
