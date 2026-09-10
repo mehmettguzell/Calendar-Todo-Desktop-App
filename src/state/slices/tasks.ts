@@ -22,7 +22,10 @@ import {
   syncDeleteTaskToCloud,
   syncTaskToCloud,
 } from "@/sync/storeBridge";
+import type { Database } from "@/data/db";
+import type { Instant } from "@/domain/types";
 import type { SliceTools, StoreState } from "../storeState";
+import type { TaskDraft, TaskPatch } from "../storeTypes";
 
 // The task row itself: making one, changing it, and its trip through Trash.
 export type TaskSlice = Pick<
@@ -35,54 +38,156 @@ export type TaskSlice = Pick<
   | "purgeTask"
 >;
 
+/**
+ * Fields whose change is worth a trail entry on its own.
+ *
+ * `deadline` is not folded into the schedule summary: moving a task is not the
+ * same act as changing what it has to be finished by, and §5 asks for both.
+ */
+const TRACKED_FIELDS = [
+  "title",
+  "description",
+  "priority",
+  "categoryId",
+  "recurrence",
+  "estimateMinutes",
+  "tags",
+  "deadline",
+] as const;
+
+function scheduleMoved(task: Task, patch: TaskPatch): boolean {
+  return (
+    ("dueDate" in patch && patch.dueDate !== task.dueDate) ||
+    ("endDate" in patch && patch.endDate !== task.endDate) ||
+    ("startTime" in patch && patch.startTime !== task.startTime) ||
+    ("endTime" in patch && patch.endTime !== task.endTime) ||
+    ("allDay" in patch && patch.allDay !== task.allDay)
+  );
+}
+
+function editHistory(
+  task: Task,
+  patch: TaskPatch,
+  note: string | undefined,
+): HistoryEntry[] {
+  const taskId = task.id;
+  const entries: HistoryEntry[] = [];
+  if (scheduleMoved(task, patch)) {
+    entries.push(
+      historyEntry({
+        taskId,
+        kind: "RESCHEDULED",
+        field: "schedule",
+        from: describeSchedule(task),
+        to: describeSchedule({ ...task, ...patch }),
+      }),
+    );
+  }
+  for (const field of TRACKED_FIELDS) {
+    if (!(field in patch)) continue;
+    const from = serialise(task[field]);
+    const to = serialise(patch[field]);
+    if (from === to) continue;
+    entries.push(historyEntry({ taskId, kind: "UPDATED", field, from, to }));
+  }
+  if (note) entries.push(historyEntry({ taskId, kind: "UPDATED", note }));
+  return entries;
+}
+
+/**
+ * A subtask sits in its parent's category, so re-filing a plan re-files its
+ * steps. Only tasks that actually disagree are touched, which keeps this a
+ * no-op — and off the sync queue — for every other edit.
+ */
+function categoryCascade(
+  db: Database,
+  task: Task,
+  next: Task,
+  patch: TaskPatch,
+): Set<string> {
+  if (!("categoryId" in patch) || patch.categoryId === task.categoryId) {
+    return new Set<string>();
+  }
+  return new Set(
+    collectSubtree(db.tasks, task.id).filter(
+      (id) =>
+        id !== task.id &&
+        db.tasks.find((t) => t.id === id)?.categoryId !== next.categoryId,
+    ),
+  );
+}
+
+function cascadeHistory(
+  db: Database,
+  cascade: Set<string>,
+  categoryId: string | null,
+): HistoryEntry[] {
+  return [...cascade].map((taskId) =>
+    historyEntry({
+      taskId,
+      kind: "UPDATED",
+      field: "categoryId",
+      from: serialise(db.tasks.find((t) => t.id === taskId)?.categoryId ?? null),
+      to: serialise(categoryId),
+    }),
+  );
+}
+
+/**
+ * A new task from a draft, with a parent's answers standing in for the fields
+ * the one-line composer never asks about.
+ *
+ * Priority and category are inherited because a step of an urgent plan filed
+ * under "Tez" is urgent and filed under "Tez" — asking for the same fact twice
+ * is how steps ended up looking like the least pressing thing on the list.
+ */
+/* eslint-disable-next-line complexity -- a flat defaulting map, not branching logic */
+function buildTask(
+  draft: TaskDraft,
+  context: { parent: Task | null; order: number; at: Instant },
+): Task {
+  const { parent, order, at } = context;
+  return {
+    id: createId("t"),
+    title: draft.title.trim(),
+    description: draft.description ?? "",
+    status: "TODO",
+    priority: draft.priority ?? parent?.priority ?? "NONE",
+    dueDate: draft.dueDate ?? null,
+    endDate: draft.endDate ?? null,
+    deadline: draft.deadline ?? null,
+    allDay: draft.allDay ?? true,
+    startTime: draft.startTime ?? null,
+    endTime: draft.endTime ?? null,
+    categoryId: draft.categoryId ?? parent?.categoryId ?? null,
+    tags: draft.tags ?? [],
+    parentId: draft.parentId ?? null,
+    recurrence: draft.recurrence ?? null,
+    estimateMinutes: draft.estimateMinutes ?? null,
+    snoozedUntil: null,
+    order,
+    manualOrder: null,
+    createdAt: at,
+    updatedAt: at,
+    completedAt: null,
+    deletedAt: null,
+  };
+}
+
 export function createTaskSlice({ get, commit }: SliceTools): TaskSlice {
   return {
     createTask(draft) {
-      const at = nowInstant();
-      const siblings = get().db.tasks.filter(
-        (t) => t.parentId === (draft.parentId ?? null),
-      );
-      const parent = draft.parentId
-        ? (get().db.tasks.find((t) => t.id === draft.parentId) ?? null)
-        : null;
-      const task: Task = {
-        id: createId("t"),
-        title: draft.title.trim(),
-        description: draft.description ?? "",
-        status: "TODO",
-        // How urgent a step is, is how urgent the thing it is a step of is —
-        // until somebody says otherwise. Steps are added from a one-line box
-        // with no priority field on it, so they were all born NONE: put on
-        // today, a step of an urgent plan arrived in the list looking like the
-        // least pressing thing on it, and there was nowhere in the flow that
-        // added the step to say different.
-        priority: draft.priority ?? parent?.priority ?? "NONE",
-        dueDate: draft.dueDate ?? null,
-        endDate: draft.endDate ?? null,
-        deadline: draft.deadline ?? null,
-        allDay: draft.allDay ?? true,
-        startTime: draft.startTime ?? null,
-        endTime: draft.endTime ?? null,
-        // A subtask belongs to whatever its parent belongs to, unless the
-        // caller says otherwise. Filing a step under "Tez" and then having to
-        // pick the category again is asking for the same fact twice.
-        categoryId: draft.categoryId ?? parent?.categoryId ?? null,
-        tags: draft.tags ?? [],
-        parentId: draft.parentId ?? null,
-        recurrence: draft.recurrence ?? null,
-        estimateMinutes: draft.estimateMinutes ?? null,
-        snoozedUntil: null,
-        order: siblings.length,
-        manualOrder: null,
-        createdAt: at,
-        updatedAt: at,
-        completedAt: null,
-        deletedAt: null,
-      };
+      const db = get().db;
+      const parentId = draft.parentId ?? null;
+      const task = buildTask(draft, {
+        parent: parentId ? (db.tasks.find((t) => t.id === parentId) ?? null) : null,
+        order: db.tasks.filter((t) => t.parentId === parentId).length,
+        at: nowInstant(),
+      });
 
-      commit((db) =>
+      commit((next) =>
         appendHistory(
-          { ...db, tasks: [...db.tasks, task] },
+          { ...next, tasks: [...next.tasks, task] },
           historyEntry({
             taskId: task.id,
             kind: "CREATED",
@@ -148,87 +253,13 @@ export function createTaskSlice({ get, commit }: SliceTools): TaskSlice {
         const task = db.tasks.find((t) => t.id === taskId);
         if (!task) return db;
 
-        const entries: HistoryEntry[] = [];
-        const scheduleChanged =
-          ("dueDate" in patch && patch.dueDate !== task.dueDate) ||
-          ("endDate" in patch && patch.endDate !== task.endDate) ||
-          ("startTime" in patch && patch.startTime !== task.startTime) ||
-          ("endTime" in patch && patch.endTime !== task.endTime) ||
-          ("allDay" in patch && patch.allDay !== task.allDay);
-
-        if (scheduleChanged) {
-          entries.push(
-            historyEntry({
-              taskId,
-              kind: "RESCHEDULED",
-              field: "schedule",
-              from: describeSchedule(task),
-              to: describeSchedule({ ...task, ...patch }),
-            }),
-          );
-        }
-
-        const tracked = [
-          "title",
-          "description",
-          "priority",
-          "categoryId",
-          "recurrence",
-          "estimateMinutes",
-          "tags",
-          // Not folded into `scheduleChanged` above: moving a task is not the
-          // same act as changing what it has to be finished by, and §5 asks
-          // for the history to keep both rather than one summary of the two.
-          "deadline",
-        ] as const;
-        for (const field of tracked) {
-          if (!(field in patch)) continue;
-          const before = serialise(task[field]);
-          const after = serialise(patch[field]);
-          if (before === after) continue;
-          entries.push(
-            historyEntry({
-              taskId,
-              kind: "UPDATED",
-              field,
-              from: before,
-              to: after,
-            }),
-          );
-        }
-        if (note) entries.push(historyEntry({ taskId, kind: "UPDATED", note }));
-
         const at = nowInstant();
         const next = { ...task, ...patch, updatedAt: at };
-
-        /*
-         * A subtask sits in its parent's category, so re-filing a plan re-files
-         * its steps. Only tasks that actually disagree are touched, which keeps
-         * this a no-op for every other edit and stops it from churning
-         * `updatedAt` — and therefore the sync — on a whole subtree.
-         */
-        const cascade =
-          "categoryId" in patch && patch.categoryId !== task.categoryId
-            ? new Set(
-                collectSubtree(db.tasks, taskId).filter(
-                  (id) =>
-                    id !== taskId &&
-                    db.tasks.find((t) => t.id === id)?.categoryId !== next.categoryId,
-                ),
-              )
-            : new Set<string>();
-
-        for (const id of cascade) {
-          entries.push(
-            historyEntry({
-              taskId: id,
-              kind: "UPDATED",
-              field: "categoryId",
-              from: serialise(db.tasks.find((t) => t.id === id)?.categoryId ?? null),
-              to: serialise(next.categoryId ?? null),
-            }),
-          );
-        }
+        const cascade = categoryCascade(db, task, next, patch);
+        const entries = [
+          ...editHistory(task, patch, note),
+          ...cascadeHistory(db, cascade, next.categoryId ?? null),
+        ];
 
         return appendHistory(
           {
