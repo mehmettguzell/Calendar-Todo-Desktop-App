@@ -9,7 +9,8 @@ import {
   handleRealtimeTransactionChange,
   type RealtimeRowChange,
 } from "./realtimeApply";
-import { persist, useStore } from "@/state/store";
+import { persist } from "@/data/localDocument";
+import { useStore } from "@/state/store";
 import { isOnline, useSyncStore } from "@/state/syncStore";
 import { currentUserId } from "./account";
 import { beginRemoteApply, endRemoteApply } from "./remoteApply";

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { ANONYMOUS_NAMESPACE, anonymousClaimedBy } from "@/data/namespace";
-import { flushPersist, useStore } from "@/state/store";
+import { flushPersist } from "@/data/localDocument";
+import { useStore } from "@/state/store";
 
 /**
  * Two people, one machine.

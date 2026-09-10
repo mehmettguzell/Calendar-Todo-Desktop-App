@@ -2,6 +2,14 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import { createRepository } from "@/data/createRepository";
 import {
+  adoptRepository,
+  currentRepository,
+  flushPersist,
+  openDocumentRepository,
+  persist,
+  persistNow,
+} from "@/data/localDocument";
+import {
   deduplicateBudgetCategories,
   deduplicateCategories,
   emptyDatabase,
@@ -17,7 +25,6 @@ import {
   namespaceFor,
   setActiveNamespace,
 } from "@/data/namespace";
-import type { Repository } from "@/data/repository";
 import {
   addDaysLocal,
   daysBetween,
@@ -463,20 +470,6 @@ interface StoreState {
   resetDatabase(): Promise<void>;
 }
 
-let repository: Repository | null = null;
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingSave: { repo: Repository; db: Database } | null = null;
-
-/**
- * How long writes are coalesced before touching the disk.
- *
- * The whole document is rewritten on every save, so a burst of edits — a drag
- * across ten rows, a plan template creating five subtasks — must cost one write
- * rather than ten. Anything longer than a keystroke gap is wasted latency;
- * anything much longer risks losing more work to a crash.
- */
-const SAVE_DEBOUNCE_MS = 400;
-
 /**
  * How long a trashed task stays recoverable before it is purged for good.
  *
@@ -493,68 +486,6 @@ const SAVE_DEBOUNCE_MS = 400;
  * until the next visit is the cheapest one that still catches the real mistake.
  */
 export const TRASH_RETENTION_MS = 24 * 60 * 60 * 1000;
-
-/** Debounced write-behind: the UI never waits on the disk. */
-export function persist(db: Database) {
-  if (!repository) return;
-  pendingSave = { repo: repository, db };
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    void flushPersist();
-  }, SAVE_DEBOUNCE_MS);
-}
-
-/**
- * Write anything still queued, right now.
- *
- * Called when the window is hidden or closing: a debounced write that never
- * fires is indistinguishable, to the user, from an edit that never happened.
- */
-export async function flushPersist(): Promise<void> {
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = null;
-  }
-  const queued = pendingSave;
-  pendingSave = null;
-  if (!queued) return;
-  await queued.repo
-    .save(queued.db)
-    .catch((error) => console.error("[tempo] save failed", error));
-}
-
-if (typeof document !== "undefined") {
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") void flushPersist();
-  });
-}
-if (typeof window !== "undefined") {
-  window.addEventListener("pagehide", () => void flushPersist());
-}
-
-/** The namespace every cloud write and local save is currently bound to. */
-export function currentNamespace(): string {
-  return repository?.namespace ?? ANONYMOUS_NAMESPACE;
-}
-
-/**
- * Write immediately, cancelling any pending debounced write.
- *
- * Used by destructive actions: after "reset everything" the file on disk must
- * already be empty, because the next thing the user does may well be to close
- * the app — and a queued write holding the *old* document would then land on
- * top of the reset, or never land at all.
- */
-async function persistNow(db: Database): Promise<void> {
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = null;
-  }
-  pendingSave = null;
-  if (!repository) return;
-  await repository.save(db);
-}
 
 export const useStore = create<StoreState>((set, get) => {
   /** Every mutation goes through here, so nothing can skip history or persistence. */
@@ -582,7 +513,7 @@ export const useStore = create<StoreState>((set, get) => {
    * has and this device does not, and helpfully restores it.
    */
   const openNamespace = async (namespace: string): Promise<Database> => {
-    repository = createRepository(namespace);
+    const repository = openDocumentRepository(namespace);
     const loaded = await repository.load().catch((error) => {
       console.error("[tempo] load failed", error);
       return null;
@@ -654,12 +585,13 @@ export const useStore = create<StoreState>((set, get) => {
      */
     async switchAccount(userId) {
       const target = namespaceFor(userId);
-      if (repository && repository.namespace === target) return;
+      const open = currentRepository();
+      if (open?.namespace === target) return;
 
       // The document on screen belongs to the namespace we are leaving.
       await flushPersist();
 
-      const previous = repository;
+      const previous = open;
       if (
         userId &&
         previous?.namespace === ANONYMOUS_NAMESPACE &&
@@ -671,7 +603,7 @@ export const useStore = create<StoreState>((set, get) => {
           const incoming = createRepository(target);
           const existing = await incoming.load().catch(() => null);
           if (!existing || existing.tasks.length === 0) {
-            repository = incoming;
+            adoptRepository(incoming);
             await incoming.save(carried);
             markAnonymousClaimed(userId);
             await previous.clear().catch(() => undefined);

@@ -18,7 +18,8 @@ import {
   localTransactionFingerprint,
   localWishlistFingerprint,
 } from "@/data/dto";
-import { persist, useStore } from "@/state/store";
+import { persist } from "@/data/localDocument";
+import { useStore } from "@/state/store";
 import { isOnline, useSyncStore } from "@/state/syncStore";
 import { currentUserId } from "./account";
 import {
