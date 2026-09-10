@@ -30,19 +30,31 @@ Take option 1.
   cover the rare server-side-only logic.
 - The `controller / service / entity / dto / repository` separation is applied
   **client-side**, per the table in `CONTEXT.md` § Engineering standards.
-- `state/syncEngine.ts` is split into `src/sync/`: `fingerprint/`, `queue`,
-  `flushSchedule`, `writePlan`, `reconcile`, `pull`, `realtime`, `retry`,
-  `connectivity`, `schemaCapability`, `lifecycle`, `index`.
-- `src/sync/` does not import any Zustand store. It receives `LocalDocumentPort`,
-  `AuthPort` and `StatusPort`; wiring happens once, in `sync/lifecycle.ts`.
-- Shared mutable sync state (queues, timers, watermarks, retry budget, the
-  believed-cloud-state map) lives on a `SyncContext` object passed to functions.
-  No `SyncEngine` class.
+- `state/syncEngine.ts` is dissolved into `src/sync/`. As built: `account`,
+  `queue`, `writeFlush`, `cloudWrites`, `cloudRequest`, `collectionSpecs`,
+  `writePlan`, `flushSchedule`, `reconcile`, `cloudSnapshot`, `differences`,
+  `mergeCategories`, `mergeTasks`, `mergeTrail`, `pullCursor`, `watermark`,
+  `realtime`, `realtimeApply`, `remoteEcho`, `remoteApply`, `retry`,
+  `connectivity`, `schemaCapability`, `skippedRows`, `profile`, `syncedState`,
+  `storeBridge`, `lifecycle`, `index`.
+- Shared mutable sync state stays module-level, but each piece is owned by one
+  module (`queue`, `syncedState`, `pullCursor`, `retry`, `realtime`) rather
+  than pooled in one file. No `SyncEngine` class, and no `SyncContext` object:
+  a context threaded through thirty call sites would have been ceremony, not
+  clarity.
 - Cloud rows get explicit DTO types (`src/data/dto/`) with `to*Row` / `from*Row`
   mappers; fingerprints and the write plan consume the mappers instead of
   hand-ordering fields.
 - Import paths change from `@/state/syncEngine` to `@/sync` with no
   compatibility shim; tests are updated in the same pass.
+
+### Not done yet: the port boundary
+
+`src/sync/` still imports the Zustand stores directly (`useStore`,
+`useAuthStore`, `useSyncStore`). Only `retry`, `connectivity` and `realtime`
+take injected dependencies. `LocalDocumentPort` / `AuthPort` / `StatusPort`
+remain the intended end state; inverting the remaining call sites is its own
+pass, tracked separately from this split.
 
 ## Consequences
 
