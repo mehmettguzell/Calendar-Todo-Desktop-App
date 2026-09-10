@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toInstance } from "@/domain/task";
 import type { Task } from "@/domain/types";
 import { EMPTY_FILTERS, splitDay, useInstancesInRange } from "@/state/selectors";
-import { focusElapsedSec, useStore } from "@/state/store";
+import { useStore } from "@/state/store";
+import { focusElapsedSec } from "@/state/storeTypes";
 
 /**
  * Stepping away from a task is not the same as finishing with it.

@@ -18,7 +18,8 @@ import { CATEGORY_COLORS } from "@/data/db";
 import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
 import { useCategories } from "@/state/selectors";
-import { useNow, useStore, type TaskDraft } from "@/state/store";
+import { useNow, useStore } from "@/state/store";
+import type { TaskDraft } from "@/state/storeTypes";
 import { Field, Switch } from "@/ui/components/primitives";
 import { RecurrenceEditor } from "./RecurrenceEditor";
 
