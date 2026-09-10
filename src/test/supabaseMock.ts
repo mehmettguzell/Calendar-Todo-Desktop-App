@@ -90,12 +90,22 @@ export interface SupabaseMock {
   respond(responder: Responder): void;
   reset(): void;
   channels: string[];
+  /** Deliver a `postgres_changes` payload to whatever bound to that table. */
+  emit(table: string, payload: RealtimeRowPayload): void;
+}
+
+export interface RealtimeRowPayload {
+  eventType: "INSERT" | "UPDATE" | "DELETE";
+  table?: string;
+  new: Record<string, unknown>;
+  old: Record<string, unknown>;
 }
 
 export function createSupabaseMock(): SupabaseMock {
   const calls: SupabaseCall[] = [];
   const failing = new Map<string, { message: string; code?: string }>();
   const channels: string[] = [];
+  const bindings: { table: string; handle: (p: RealtimeRowPayload) => void }[] = [];
   let responder: Responder = () => undefined;
 
   const answer = (call: SupabaseCall): CallOutcome => {
@@ -132,8 +142,18 @@ export function createSupabaseMock(): SupabaseMock {
     channel(name: string) {
       channels.push(name);
       const channel = {
-        on: () => channel,
-        subscribe: () => channel,
+        on: (
+          _event: string,
+          filter: { table: string },
+          handle: (p: RealtimeRowPayload) => void,
+        ) => {
+          bindings.push({ table: filter.table, handle });
+          return channel;
+        },
+        subscribe: (onStatus?: (status: string) => void) => {
+          onStatus?.("SUBSCRIBED");
+          return channel;
+        },
         unsubscribe: () => Promise.resolve("ok"),
       };
       return channel;
@@ -154,9 +174,15 @@ export function createSupabaseMock(): SupabaseMock {
     respond: (next) => {
       responder = next;
     },
+    emit: (table, payload) => {
+      for (const binding of bindings) {
+        if (binding.table === table) binding.handle({ table, ...payload });
+      }
+    },
     reset: () => {
       calls.length = 0;
       channels.length = 0;
+      bindings.length = 0;
       failing.clear();
       responder = () => undefined;
     },
