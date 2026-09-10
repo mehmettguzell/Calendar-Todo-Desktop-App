@@ -3,7 +3,7 @@ import {
   beginRemoteApply,
   endRemoteApply,
   isApplyingRemoteUpdate,
-} from "@/state/syncEngine";
+} from "@/sync";
 
 /**
  * The regression this guards.

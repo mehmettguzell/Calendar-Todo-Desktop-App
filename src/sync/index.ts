@@ -5,3 +5,7 @@ export * from "./writePlan";
 export * from "./flushSchedule";
 export * from "./watermark";
 export * from "./remoteEcho";
+export * from "./syncedState";
+export * from "./pullCursor";
+export * from "./remoteApply";
+export * from "./schemaCapability";

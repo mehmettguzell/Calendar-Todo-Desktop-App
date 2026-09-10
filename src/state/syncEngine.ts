@@ -72,13 +72,37 @@ import {
 } from "@/data/dto";
 import {
   acceptsRemoteTask,
+  beginRemoteApply,
   type CollectionSpec,
+  endRemoteApply,
   flushDelayMs,
+  forgetSyncedState,
+  FULL_PASS_INTERVAL_MS,
+  getLastFullPassAt,
+  getPullCursor,
+  isApplyingRemoteUpdate,
+  isMissingRelation,
+  markFullPassDone,
   newestStamp,
+  noteRelationMissing,
   planReconciliation,
   planTaskWrites,
+  resetPullState,
   rewound,
+  setPullCursor,
+  syncedBatchFingerprints,
+  syncedBudgetCategoryFingerprints,
+  syncedCategoryFingerprints,
+  syncedDeadlineFingerprints,
+  syncedFocusIds,
+  syncedHistoryIds,
+  syncedOccurrenceFingerprints,
+  syncedReminderFingerprints,
+  syncedTaskFingerprints,
+  syncedTransactionFingerprints,
+  syncedWishlistFingerprints,
   type SyncContext,
+  tableAvailable,
 } from "@/sync";
 
 /**
@@ -211,32 +235,6 @@ let realtimeChannel: RealtimeChannel | null = null;
 let isSyncing = false;
 let isStoreSubscribed = false;
 
-/**
- * How many cloud-originated writes are being applied right now.
- *
- * A plain boolean was wrong here. `runSyncDifferences` holds this "on" across
- * its whole await span so its final merge commit is not mistaken for a local
- * edit — but a realtime event that lands mid-pass runs its own `applyRemote`,
- * whose `finally` set the boolean back to `false` while the reconciliation was
- * still running. The merge commit that followed was then seen by the store
- * subscriber as 149 brand-new local rows and queued straight back to the
- * server they had just been downloaded from. A depth counter lets the two
- * nest: the flag only clears once the outermost remote apply is done.
- */
-let remoteApplyDepth = 0;
-
-export function beginRemoteApply(): void {
-  remoteApplyDepth += 1;
-}
-
-export function endRemoteApply(): void {
-  remoteApplyDepth = Math.max(0, remoteApplyDepth - 1);
-}
-
-/** True while any cloud-originated write (a pass, a realtime event) is applying. */
-export function isApplyingRemoteUpdate(): boolean {
-  return remoteApplyDepth > 0;
-}
 let isEngineInitialized = false;
 let syncedNamespace: string | null = null;
 
@@ -252,44 +250,13 @@ let syncedNamespace: string | null = null;
  */
 let accountChangeChain: Promise<void> = Promise.resolve();
 
-/* ------------------------------------------------------------------ */
-/* Optional cloud tables                                               */
-/* ------------------------------------------------------------------ */
-
-/**
- * Whether a table the schema migration adds is actually present.
- *
- * A user who has not run the latest SQL must still be able to sync everything
- * else, so a missing table downgrades that one feature rather than taking the
- * whole pass down with it. Missing *columns* are handled the same way, by
- * `OPTIONAL_COLUMNS` further down.
- */
-const availableTables = new Map<string, boolean>();
-
-function isMissingRelation(
-  error: { code?: string; message?: string } | null,
-): boolean {
-  if (!error) return false;
-  const message = error.message ?? "";
-  // PGRST204 is the *column* case ("Could not find the 'x' column of 'y' in
-  // the schema cache") and reads almost identically to the table one. Treating
-  // it as a missing table would quietly disable syncing a whole collection
-  // over one column, so it is excluded here and handled as an optional column.
-  if (error.code === "PGRST204" || /column/i.test(message)) return false;
-  // 42P01 undefined_table, PGRST205 unknown relation in the PostgREST cache.
-  return (
-    error.code === "42P01" ||
-    error.code === "PGRST205" ||
-    /does not exist|schema cache/i.test(message)
-  );
-}
+// Missing-table detection lives in `@/sync/schemaCapability`.
 
 /** Ids already reported as unsendable, so a poisoned row warns once, not hourly. */
 const unsendableRows = new Set<string>();
 
 function warnUnsendable(table: string, id: string): void {
-  // The badge is rebuilt every pass, so it is told each time; the console is
-  // told once, because a stuck row would otherwise log on every retry forever.
+  // Badge every pass (it is rebuilt); console once (a stuck row would log forever).
   useSyncStore.getState().noteSkipped({ table, id });
   const key = `${table}:${id}`;
   if (unsendableRows.has(key)) return;
@@ -298,20 +265,6 @@ function warnUnsendable(table: string, id: string): void {
     `[tempo sync] ${table} row "${id}" is missing required fields and was left out of the push. ` +
       `It is local-only bookkeeping; the rest of this device still syncs.`,
   );
-}
-
-/** Records that a table is absent so later passes stop asking for it. */
-function noteRelationMissing(table: string): void {
-  if (availableTables.get(table) !== false) {
-    console.info(
-      `[tempo sync] public.${table} is not in this project yet — run supabase/schema.sql to sync it.`,
-    );
-  }
-  availableTables.set(table, false);
-}
-
-function tableAvailable(table: string): boolean {
-  return availableTables.get(table) !== false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -541,8 +494,7 @@ function stopSync() {
   }
   isSyncing = false;
   syncedNamespace = null;
-  pullCursor = null;
-  lastFullPassAt = 0;
+  resetPullState();
   useSyncStore.getState().setRealtime("down");
 }
 
@@ -710,9 +662,8 @@ function watchConnectivity(): void {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Fingerprints                                                        */
-/* ------------------------------------------------------------------ */
+// The believed-cloud fingerprint maps and the pull cursor live in
+// `@/sync/syncedState` and `@/sync/pullCursor`.
 
 /** Largest number of rows sent to PostgREST in a single request. */
 const UPSERT_CHUNK_SIZE = 500;
@@ -723,78 +674,6 @@ function chunked<T>(items: T[], size: number): T[][] {
     out.push(items.slice(i, i + size));
   }
   return out;
-}
-
-/**
- * What the cloud is believed to already hold, keyed by row id.
- *
- * Every path that learns the cloud's content — a successful upload, a pull, a
- * realtime event — records the fingerprint here. Anything whose fingerprint is
- * unchanged is skipped rather than re-sent, so a store mutation that touches
- * one task costs one row on the wire instead of the whole table.
- */
-const syncedTaskFingerprints = new Map<string, string>();
-const syncedCategoryFingerprints = new Map<string, string>();
-const syncedOccurrenceFingerprints = new Map<string, string>();
-const syncedReminderFingerprints = new Map<string, string>();
-const syncedTransactionFingerprints = new Map<string, string>();
-const syncedBudgetCategoryFingerprints = new Map<string, string>();
-const syncedWishlistFingerprints = new Map<string, string>();
-const syncedDeadlineFingerprints = new Map<string, string>();
-const syncedBatchFingerprints = new Map<string, string>();
-const syncedFocusIds = new Set<string>();
-/**
- * The activity trail is append-only (spec section 5.5): an entry is never
- * rewritten, so ids alone are the whole diff and no fingerprint is needed.
- */
-const syncedHistoryIds = new Set<string>();
-
-/**
- * How far the last successful pull got, per table.
- *
- * A full pass downloads the whole account, which is the only way to answer
- * "does the cloud have a row this device is missing, or the other way round?".
- * Once that question has been answered for this session, the next passes only
- * need what changed since — which on a slow connection is the difference
- * between a few rows and the entire account, every time the window regains
- * focus.
- *
- * Deliberately not persisted. A cursor that outlives the process is a cursor
- * that can be wrong about a sync that never finished, and the cost of being
- * wrong is a silently missing row. Restarting the app costs one full pass and
- * buys certainty.
- */
-interface PullCursor {
-  userId: string;
-  /** Max `updated_at` seen. Re-fetched inclusively; re-applying a row is a no-op. */
-  tasks: string | null;
-  categories: string | null;
-  /** Focus rows never change after insert, so `created_at` is the watermark. */
-  focus: string | null;
-}
-
-let pullCursor: PullCursor | null = null;
-let lastFullPassAt = 0;
-
-/**
- * Incremental reads are a saving, not a source of truth. Whatever they miss —
- * a hard-deleted focus row, an edit from a device with a badly wrong clock —
- * is repaired the next time the whole account is read, so that has a deadline.
- */
-const FULL_PASS_INTERVAL_MS = 15 * 60_000;
-
-function forgetSyncedState() {
-  syncedTaskFingerprints.clear();
-  syncedCategoryFingerprints.clear();
-  syncedOccurrenceFingerprints.clear();
-  syncedReminderFingerprints.clear();
-  syncedTransactionFingerprints.clear();
-  syncedBudgetCategoryFingerprints.clear();
-  syncedWishlistFingerprints.clear();
-  syncedDeadlineFingerprints.clear();
-  syncedBatchFingerprints.clear();
-  syncedFocusIds.clear();
-  syncedHistoryIds.clear();
 }
 
 /* ------------------------------------------------------------------ */
@@ -1634,10 +1513,12 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
      * only a full set can answer "the cloud is missing this row", so the
      * branches that upload on that basis are skipped below when `incremental`.
      */
-    const fullPassDue = Date.now() - lastFullPassAt >= FULL_PASS_INTERVAL_MS;
+    const cursor = getPullCursor();
+    const fullPassDue =
+      Date.now() - getLastFullPassAt() >= FULL_PASS_INTERVAL_MS;
     const incremental =
-      pullCursor !== null && pullCursor.userId === userId && !fullPassDue;
-    const since = incremental ? pullCursor : null;
+      cursor !== null && cursor.userId === userId && !fullPassDue;
+    const since = incremental ? cursor : null;
 
     // 1. Fetch cloud data — everything, or everything new
     const [
@@ -2114,13 +1995,13 @@ async function runSyncDifferences(): Promise<SyncDifferenceReport> {
      * written in that gap. A fetch that returned nothing keeps the previous
      * watermark rather than resetting it.
      */
-    pullCursor = {
+    setPullCursor({
       userId,
       tasks: newestStamp(cloudTasksRaw, "updated_at", since?.tasks ?? null),
       categories: newestStamp(cloudCatsRaw, "updated_at", since?.categories ?? null),
       focus: newestStamp(cloudFocusRaw, "created_at", since?.focus ?? null),
-    };
-    if (!incremental) lastFullPassAt = Date.now();
+    });
+    if (!incremental) markFullPassDone(Date.now());
 
     useSyncStore.getState().markSynced();
     useSyncStore.getState().setPending(pendingCount());
