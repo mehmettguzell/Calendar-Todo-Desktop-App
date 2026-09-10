@@ -1,10 +1,5 @@
-/**
- * Cross-device sync.
- *
- * The pure, testable rules live in their own modules here; `syncEngine.ts` (the
- * stateful orchestrator — queue, retry, realtime, lifecycle) is folded in as
- * the split continues.
- */
+// Cross-device sync. Pure rules live here; the stateful orchestrator
+// (syncEngine.ts) folds in as the split continues.
 export * from "./reconcile";
 export * from "./writePlan";
 export * from "./flushSchedule";

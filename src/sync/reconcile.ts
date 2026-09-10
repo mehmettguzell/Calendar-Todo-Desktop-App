@@ -1,19 +1,7 @@
-/**
- * The decision half of the reconciler. Pure — no I/O.
- *
- * Occurrences, reminders, transactions, budget categories, wishlist, deadlines
- * and statement batches all reconcile the same way: compare by content, and
- * when the two sides genuinely differ let the greater `updated_at` win, with
- * ties going to the cloud so every device reaches the same answer. The rule is
- * kept separate from the write precisely so it can be tested as a rule, without
- * a network in the way — it is the part most likely to be wrong and hardest to
- * notice when it is.
- */
+// The decision half of the reconciler, pure so the rule can be tested as a
+// rule. Row-level last-write-wins on `updated_at`, ties to the cloud. DECISIONS.md §11.
 
-/**
- * One description of how a collection crosses the wire. The differences between
- * the tables live in these tables of functions; the logic lives once.
- */
+// How one collection crosses the wire; the per-table differences live here.
 export interface CollectionSpec<T> {
   table: string;
   idOf(row: T): string;
@@ -24,14 +12,8 @@ export interface CollectionSpec<T> {
   fromCloud(row: Record<string, unknown>): T;
   /** Cloud rows that reference something this device no longer has. */
   isOrphan?(row: Record<string, unknown>, context: SyncContext): boolean;
-  /**
-   * Whether a local row is structurally fit to be sent.
-   *
-   * A row that violates a NOT NULL or CHECK constraint is rejected by Postgres
-   * for the whole batch, so one corrupt row stops every other collection from
-   * syncing too — and keeps doing so on every retry, forever. Dropping it from
-   * the push instead keeps the damage to the row that is actually broken.
-   */
+  // Structurally fit to send? One row that breaks a NOT NULL / CHECK fails the
+  // whole batch, so a broken row is dropped rather than retried forever.
   isUploadable?(row: T): boolean;
   /** What the cloud is believed to hold, so unchanged rows are never re-sent. */
   synced: Map<string, string>;

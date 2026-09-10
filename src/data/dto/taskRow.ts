@@ -2,12 +2,8 @@ import type { Task } from "@/domain/types";
 import { canonicalRecurrence, nz, nzInstant } from "./rowValues";
 import { columnDropped, withoutMissingColumns } from "./optionalColumns";
 
-/**
- * A task as `public.tasks` stores it.
- *
- * Device-local fields (`order`, `manualOrder`) are absent by design: where a
- * row sits on one screen is not a fact about the task.
- */
+// A task as `public.tasks` stores it. Device-local `order`/`manualOrder` are
+// absent by design.
 export interface TaskRow {
   id: string;
   user_id: string;
@@ -33,12 +29,7 @@ export interface TaskRow {
   updated_at: string;
 }
 
-/**
- * The payload an upsert sends. Columns the project turned out not to have are
- * stripped here — PostgREST rejects the whole batch over one unknown key, and a
- * task manager that stops syncing because a migration was skipped is worse than
- * one that syncs everything except an estimate.
- */
+// The upsert payload, minus any column this project turned out not to have.
 export function toTaskRow(task: Task, userId: string): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     id: task.id,
@@ -106,13 +97,8 @@ export function taskFromRow(
   };
 }
 
-/**
- * A stable digest of every field the sync engine writes to the cloud.
- *
- * Two rows with the same fingerprint are identical as far as sync is concerned.
- * `created_at` and `updated_at` are excluded: `updated_at` is the conflict
- * tie-breaker, not part of the content.
- */
+// Digest of every synced field. Equal fingerprints => nothing to send.
+// `updated_at` is excluded — it is the conflict tie-breaker, not content.
 function taskFingerprint(fields: unknown[]): string {
   return JSON.stringify(fields);
 }

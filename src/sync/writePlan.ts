@@ -1,20 +1,8 @@
 import type { Task } from "@/domain/types";
 import { localTaskFingerprint } from "@/data/dto";
 
-/**
- * What a flush should actually send about the tasks it has queued.
- *
- * Three answers, and the third is the one that is easy to miss: some rows
- * should be dropped entirely rather than written. Adding a task and then
- * thinking better of it used to cost two requests — an upsert carrying a row
- * whose only content was `is_deleted`, and an insert carrying that row's
- * history — for a task the server had never seen.
- *
- * `synced` is the record of what has actually been written, so "not in
- * `synced`" means the cloud has never heard of this id. A pure function of four
- * values, because a rule about *not* making a request cannot be observed by
- * watching requests.
- */
+// What a flush sends per queued task: upsert, mark-deleted, or forget (created
+// and trashed before the cloud saw it). `synced` = ids the cloud already knows.
 export function planTaskWrites(input: {
   /** Ids the queue holds. */
   queued: string[];
@@ -31,7 +19,6 @@ export function planTaskWrites(input: {
   for (const id of [...queued, ...deleted]) {
     if (synced.has(id)) continue;
     const task = taskById.get(id);
-    // A purge leaves no row behind at all, so `taskById` may not have it.
     if (!task || task.deletedAt !== null) forget.add(id);
   }
 

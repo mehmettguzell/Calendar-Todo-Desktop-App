@@ -1,8 +1,4 @@
-/**
- * DTO layer: the Supabase row shapes and the mappers between them and the
- * domain entities. Nothing here does I/O; it is the translation the gateways
- * and the sync services share.
- */
+// Supabase row shapes and their mappers to/from domain entities. No I/O.
 export * from "./rowValues";
 export * from "./optionalColumns";
 export * from "./taskRow";
