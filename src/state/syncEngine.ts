@@ -8,7 +8,6 @@ import {
 import { useAuthStore } from "@/state/authStore";
 import { persist, useStore } from "@/state/store";
 import { isOnline, useSyncStore } from "@/state/syncStore";
-import { UNDO_WINDOW_MS, useUndoStore } from "@/state/undoStore";
 import {
   classifySyncError,
   formatErrorMessage,
@@ -17,18 +16,14 @@ import {
 import type {
   Category,
   FocusSession,
-  Occurrence,
-  Reminder,
   Task,
   Tombstone,
 } from "@/domain/types";
-import type { BudgetCategory, Transaction } from "@/domain/money";
 import type { HistoryEntry } from "@/domain/types";
 import {
   budgetCategoryFromRow,
   cloudCategoryFingerprint,
   cloudTaskFingerprint,
-  dropOptionalColumn,
   localBudgetCategoryFingerprint,
   localCategoryFingerprint,
   localDeadlineFingerprint,
@@ -39,29 +34,24 @@ import {
   localTransactionFingerprint,
   localWishlistFingerprint,
   occurrenceFromRow,
-  optionalColumnCount,
   reminderFromRow,
   taskFromRow,
   toCategoryRow,
-  toFocusSessionRow,
-  toHistoryRow,
-  toTaskRow,
   transactionFromRow,
-  withoutMissingColumns,
 } from "@/data/dto";
 import {
   acceptsRemoteTask,
   BATCH_SPEC,
   beginRemoteApply,
   BUDGET_CATEGORY_SPEC,
-  type CollectionSpec,
-  clearAllQueues,
+  chunked,
+  clearPending,
   configureRetry,
+  currentUserId,
   DEADLINE_SPEC,
-  drainQueues,
+  drainPendingWrites,
   endRemoteApply,
   ensureProfileRow,
-  flushDelayMs,
   forgetSyncedState,
   FULL_PASS_INTERVAL_MS,
   getLastFullPassAt,
@@ -74,16 +64,16 @@ import {
   OCCURRENCE_SPEC,
   pendingCount,
   pendingIds,
-  planReconciliation,
-  planTaskWrites,
+  reconcileCollection,
   REMINDER_SPEC,
-  requeue,
   resetPullState,
   resetRetryBudget,
   retriesAllowed,
   rewound,
+  scheduleFlush,
   scheduleRetry,
   setPullCursor,
+  type SyncContext,
   syncedBatchFingerprints,
   syncedBudgetCategoryFingerprints,
   syncedCategoryFingerprints,
@@ -95,13 +85,15 @@ import {
   syncedTaskFingerprints,
   syncedTransactionFingerprints,
   syncedWishlistFingerprints,
-  type SyncContext,
   tableAvailable,
   TRANSACTION_SPEC,
-  warnUnsendable,
+  UPSERT_CHUNK_SIZE,
+  upsertTasksToCloud,
   watchConnectivity,
   WISHLIST_SPEC,
   withTimeout,
+  writeFocusSessions,
+  writeHistory,
 } from "@/sync";
 
 /**
@@ -135,12 +127,6 @@ import {
  * every failure leaves the queue intact so the next attempt retries it.
  */
 
-// The id every cloud write is keyed by. `user` (the `public.profiles` row) can
-// be null for a while or forever, so the auth session is the fallback.
-function currentUserId(): string | null {
-  const authState = useAuthStore.getState();
-  return authState.user?.id ?? authState.session?.user?.id ?? null;
-}
 
 // withTimeout lives in `@/sync/cloudRequest`, ensureProfileRow in `@/sync/profile`.
 
@@ -414,453 +400,9 @@ function stopSync() {
 // The believed-cloud fingerprint maps and the pull cursor live in
 // `@/sync/syncedState` and `@/sync/pullCursor`.
 
-/** Largest number of rows sent to PostgREST in a single request. */
-const UPSERT_CHUNK_SIZE = 500;
-
-function chunked<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    out.push(items.slice(i, i + size));
-  }
-  return out;
-}
-
-/* ------------------------------------------------------------------ */
-/* Write queue                                                         */
-/* ------------------------------------------------------------------ */
-
-/**
- * Local mutations are coalesced instead of fired one request per row.
- *
- * Bulk actions (complete-all, drag reorder, a category rename cascading over
- * its tasks) used to emit one HTTP upsert per affected task. Collecting ids for
- * a short window turns that burst into a single batched upsert — and because a
- * fingerprint check runs before anything is sent, a mutation that did not
- * actually change a synced field costs no request at all.
- *
- * How long the window gathers — the trailing delay and the ceiling that a
- * stream of edits cannot push past — is `flushDelayMs` in `@/sync`.
- */
-let flushTimer: ReturnType<typeof setTimeout> | null = null;
-/** When the oldest un-flushed change was queued; drives the ceiling above. */
-let queuedSince: number | null = null;
-let flushInFlight: Promise<void> | null = null;
-
-function clearPending(): void {
-  clearAllQueues();
-  useSyncStore.getState().setPending(0);
-}
-
-/**
- * Send the queue once the edits stop, not once they start.
- *
- * The timer used to be set by the first change and left alone, so a burst of
- * editing fired a request five seconds in — mid-sentence, with more of the same
- * field still to come, and every keystroke after it queued for a second round.
- * Restarting it on each change means one request per edit rather than one per
- * five seconds of thinking, and `FLUSH_MAX_WAIT_MS` keeps a long stream from
- * postponing the write forever.
- */
-function scheduleFlush() {
-  useSyncStore.getState().setPending(pendingCount());
-
-  const now = Date.now();
-  if (queuedSince === null) queuedSince = now;
-
-  const offer = useUndoStore.getState().pending;
-  if (flushTimer) clearTimeout(flushTimer);
-  flushTimer = setTimeout(
-    () => {
-      flushTimer = null;
-      queuedSince = null;
-      flushInFlight = flushPendingWrites().finally(() => {
-        flushInFlight = null;
-      });
-    },
-    flushDelayMs({
-      now,
-      queuedSince,
-      undoOfferExpiresAt: offer ? offer.at + UNDO_WINDOW_MS : null,
-    }),
-  );
-}
-
-/** Lets callers (e.g. a manual sync) wait for queued writes to land first. */
-async function drainPendingWrites(): Promise<void> {
-  if (flushTimer) {
-    clearTimeout(flushTimer);
-    flushTimer = null;
-    queuedSince = null;
-    flushInFlight = flushPendingWrites().finally(() => {
-      flushInFlight = null;
-    });
-  }
-  if (flushInFlight) await flushInFlight;
-}
-
-async function flushPendingWrites(): Promise<void> {
-  const userId = currentUserId();
-  if (!supabase || !userId) {
-    clearPending();
-    return;
-  }
-  if (!isOnline()) {
-    // Nothing is lost: the ids stay queued and `syncDifferences` would find the
-    // same rows by content even if this process never runs again.
-    useSyncStore.getState().setPhase("offline");
-    return;
-  }
-  // Same reasoning while the retry budget is spent: keep editing, keep queuing,
-  // just stop calling a server that has said no four times in a row.
-  if (!retriesAllowed()) {
-    useSyncStore.getState().setPending(pendingCount());
-    return;
-  }
-
-  const queued = drainQueues();
-
-  const db = useStore.getState().db;
-  const taskById = new Map(db.tasks.map((t) => [t.id, t]));
-  const catById = new Map(db.categories.map((c) => [c.id, c]));
-  const occById = new Map(db.occurrences.map((o) => [o.id, o]));
-  const remById = new Map(db.reminders.map((r) => [r.id, r]));
-  const txById = new Map(db.transactions.map((t) => [t.id, t]));
-  const budgetCatById = new Map(db.budgetCategories.map((c) => [c.id, c]));
-
-  try {
-    // Categories first: a task row's category_id points at one of them.
-    const catsToWrite: Category[] = [];
-    const catFingerprints = new Map<string, string>();
-    for (const id of queued.categories) {
-      const cat = catById.get(id);
-      if (!cat) continue;
-      const fp = localCategoryFingerprint(cat);
-      if (syncedCategoryFingerprints.get(id) === fp) continue;
-      catsToWrite.push(cat);
-      catFingerprints.set(id, fp);
-    }
-    if (catsToWrite.length > 0) {
-      const now = new Date().toISOString();
-      for (const batch of chunked(catsToWrite, UPSERT_CHUNK_SIZE)) {
-        const { error } = await withTimeout(
-          supabase.from("categories").upsert(
-            batch.map((c) => toCategoryRow(c, userId, now)),
-            { onConflict: "id,user_id" },
-          ),
-          "category upsert",
-        );
-        if (error) throw error;
-        for (const c of batch) {
-          const fp = catFingerprints.get(c.id);
-          if (fp) syncedCategoryFingerprints.set(c.id, fp);
-        }
-      }
-    }
-
-    if (queued.deletedCategories.length > 0) {
-      const { error } = await withTimeout(
-        supabase
-          .from("categories")
-          .update({ is_deleted: true, updated_at: new Date().toISOString() })
-          .in("id", queued.deletedCategories)
-          .eq("user_id", userId),
-        "category delete",
-      );
-      if (error) throw error;
-      for (const id of queued.deletedCategories)
-        syncedCategoryFingerprints.delete(id);
-    }
-
-    const plan = planTaskWrites({
-      queued: queued.tasks,
-      deleted: queued.deletedTasks,
-      taskById,
-      synced: syncedTaskFingerprints,
-    });
-
-    if (plan.upsert.length > 0) {
-      const tasksToWrite = plan.upsert
-        .map((id) => taskById.get(id))
-        .filter((t): t is Task => Boolean(t));
-      const { error } = await upsertTasksToCloud(tasksToWrite, userId);
-      if (error) throw error;
-      for (const task of tasksToWrite) {
-        syncedTaskFingerprints.set(task.id, localTaskFingerprint(task));
-      }
-    }
-
-    if (plan.markDeleted.length > 0) {
-      const { error } = await withTimeout(
-        supabase
-          .from("tasks")
-          .update({ is_deleted: true, updated_at: new Date().toISOString() })
-          .in("id", plan.markDeleted)
-          .eq("user_id", userId),
-        "task delete",
-      );
-      if (error) throw error;
-    }
-    for (const id of queued.deletedTasks) syncedTaskFingerprints.delete(id);
-
-    await writeCollection(
-      OCCURRENCE_SPEC,
-      queued.occurrences
-        .map((id) => occById.get(id))
-        .filter((o): o is Occurrence => Boolean(o)),
-      queued.deletedOccurrences,
-      userId,
-    );
-
-    await writeCollection(
-      REMINDER_SPEC,
-      queued.reminders
-        .map((id) => remById.get(id))
-        .filter((r): r is Reminder => Boolean(r)),
-      queued.deletedReminders,
-      userId,
-    );
-
-    // Budget categories before transactions: a transaction row points at one.
-    await writeCollection(
-      BUDGET_CATEGORY_SPEC,
-      queued.budgetCategories
-        .map((id) => budgetCatById.get(id))
-        .filter((c): c is BudgetCategory => Boolean(c)),
-      queued.deletedBudgetCategories,
-      userId,
-    );
-
-    await writeCollection(
-      TRANSACTION_SPEC,
-      queued.transactions
-        .map((id) => txById.get(id))
-        .filter((t): t is Transaction => Boolean(t)),
-      [],
-      userId,
-    );
-
-    const pendingFocusSet = new Set(queued.focus);
-    const sessionsToWrite = db.focusSessions.filter(
-      (f) => pendingFocusSet.has(f.id) && !syncedFocusIds.has(f.id),
-    );
-    await writeFocusSessions(sessionsToWrite, userId);
-
-    const pendingHistorySet = new Set(queued.history);
-    await writeHistory(
-      db.history.filter(
-        (h) =>
-          pendingHistorySet.has(h.id) &&
-          !syncedHistoryIds.has(h.id) &&
-          // The trail of a task that was created and trashed before it
-          // ever reached the cloud describes a row nothing over there has.
-          !plan.forget.has(h.taskId),
-      ),
-      userId,
-    );
-
-    useSyncStore.getState().setPending(pendingCount());
-    if (useSyncStore.getState().phase !== "syncing") {
-      useSyncStore.getState().setPhase("idle");
-    }
-    resetRetryBudget();
-  } catch (err) {
-    // Re-queue so the next flush (or a manual sync) retries instead of losing
-    // the change. Fingerprints were only committed for rows that succeeded.
-    requeue(queued);
-
-    const kind = classifySyncError(err);
-    useSyncStore.getState().setPending(pendingCount());
-    useSyncStore.getState().setPhase(isOnline() ? "error" : "offline", kind);
-    // Full detail to the console only: the message can name tables, columns
-    // and constraints, which is not the user's business.
-    console.warn(
-      `[tempo sync] batched write failed (${kind}):`,
-      formatErrorMessage(err),
-    );
-    scheduleRetry(kind);
-  }
-}
-
 /* ------------------------------------------------------------------ */
 /* Serialisation                                                       */
 /* ------------------------------------------------------------------ */
-
-const serializeTaskForCloud = toTaskRow;
-
-export async function upsertTasksToCloud(tasks: Task[], userId: string) {
-  if (!supabase || !userId || tasks.length === 0) return { error: null };
-  const client = supabase;
-
-  const send = (batch: Task[]) =>
-    withTimeout(
-      client.from("tasks").upsert(
-        batch.map((t) => serializeTaskForCloud(t, userId)),
-        { onConflict: "id,user_id" },
-      ),
-      "task upsert",
-    );
-
-  // PostgREST has a request-size ceiling, so a large first sync must go up in
-  // slices rather than as one giant body.
-  for (const batch of chunked(tasks, UPSERT_CHUNK_SIZE)) {
-    let res = await send(batch);
-
-    // Each round trip names at most one unknown column, so give up on it and
-    // try again — bounded by how many columns are optional in the first place.
-    for (let i = 0; res.error && i < optionalColumnCount("tasks"); i += 1) {
-      if (!dropOptionalColumn("tasks", res.error)) break;
-      res = await send(batch);
-    }
-
-    if (
-      res.error &&
-      (res.error.message.includes("profiles") || res.error.code === "23503")
-    ) {
-      await ensureProfileRow(userId);
-      res = await send(batch);
-    }
-
-    if (res.error) return res;
-  }
-
-  return { error: null };
-}
-
-/**
- * `CollectionSpec`, `SyncContext` and the pure `planReconciliation` decision
- * live in `@/sync/reconcile`; `writeCollection` and `reconcileCollection` are
- * the I/O half that applies that decision.
- */
-async function writeCollection<T>(
-  spec: CollectionSpec<T>,
-  rows: T[],
-  deletedIds: string[],
-  userId: string,
-): Promise<void> {
-  if (!supabase || !tableAvailable(spec.table)) return;
-
-  const changed = rows.filter(
-    (row) => spec.synced.get(spec.idOf(row)) !== spec.localFingerprint(row),
-  );
-  const toWrite = spec.isUploadable
-    ? changed.filter((row) => {
-        if (spec.isUploadable!(row)) return true;
-        warnUnsendable(spec.table, spec.idOf(row));
-        return false;
-      })
-    : changed;
-
-  for (const batch of chunked(toWrite, UPSERT_CHUNK_SIZE)) {
-    const send = () =>
-      withTimeout(
-        supabase!.from(spec.table).upsert(
-          batch.map((row) =>
-            withoutMissingColumns(spec.table, spec.toCloud(row, userId)),
-          ),
-          { onConflict: "id,user_id" },
-        ),
-        `${spec.table} upsert`,
-      );
-
-    let { error } = await send();
-
-    for (let i = 0; error && i < optionalColumnCount(spec.table); i += 1) {
-      if (!dropOptionalColumn(spec.table, error)) break;
-      ({ error } = await send());
-    }
-
-    if (isMissingRelation(error)) {
-      noteRelationMissing(spec.table);
-      return;
-    }
-    if (error) throw error;
-    for (const row of batch) {
-      spec.synced.set(spec.idOf(row), spec.localFingerprint(row));
-    }
-  }
-
-  if (deletedIds.length > 0) {
-    const { error } = await withTimeout(
-      supabase
-        .from(spec.table)
-        .update({ is_deleted: true, updated_at: new Date().toISOString() })
-        .in("id", deletedIds)
-        .eq("user_id", userId),
-      `${spec.table} delete`,
-    );
-    if (isMissingRelation(error)) {
-      noteRelationMissing(spec.table);
-      return;
-    }
-    if (error) throw error;
-    for (const id of deletedIds) spec.synced.delete(id);
-  }
-}
-
-/** Apply `planReconciliation`, pushing whatever the local side won. */
-async function reconcileCollection<T>(
-  spec: CollectionSpec<T>,
-  local: T[],
-  cloud: { data: Record<string, unknown>[] | null },
-  tombstoned: Set<string>,
-  context: SyncContext,
-  userId: string,
-): Promise<T[]> {
-  const plan = planReconciliation(spec, local, cloud, tombstoned, context);
-  if (plan.unchanged) return local;
-  await writeCollection(spec, plan.toUpload, [], userId);
-  return plan.merged;
-}
-
-// The 7 CollectionSpecs live in `@/sync/collectionSpecs`.
-
-/**
- * Append the activity trail.
- *
- * Immutable by contract, so this only ever inserts. Nothing here can conflict,
- * which is why it needs none of the reconciliation the other tables do.
- */
-async function writeHistory(
-  entries: HistoryEntry[],
-  userId: string,
-): Promise<void> {
-  if (!supabase || entries.length === 0 || !tableAvailable("task_history"))
-    return;
-
-  for (const batch of chunked(entries, UPSERT_CHUNK_SIZE)) {
-    const { error } = await withTimeout(
-      supabase.from("task_history").upsert(
-        batch.map((h) => toHistoryRow(h, userId)),
-        { onConflict: "id,user_id" },
-      ),
-      "history upsert",
-    );
-    if (isMissingRelation(error)) {
-      noteRelationMissing("task_history");
-      return;
-    }
-    if (error) throw error;
-    for (const h of batch) syncedHistoryIds.add(h.id);
-  }
-}
-
-async function writeFocusSessions(
-  sessions: FocusSession[],
-  userId: string,
-): Promise<void> {
-  if (!supabase || sessions.length === 0) return;
-  for (const batch of chunked(sessions, UPSERT_CHUNK_SIZE)) {
-    const { error } = await withTimeout(
-      supabase.from("focus_sessions").upsert(
-        batch.map((f) => toFocusSessionRow(f, userId)),
-        { onConflict: "id,user_id" },
-      ),
-      "focus upsert",
-    );
-    if (error) throw error;
-    for (const f of batch) syncedFocusIds.add(f.id);
-  }
-}
 
 /* ------------------------------------------------------------------ */
 /* Queue entry points used by the store                                */
