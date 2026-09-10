@@ -33,33 +33,19 @@ import {
 import { historyEntry } from "@/domain/history";
 import { pinOf } from "@/domain/manualOrder";
 import { createId, occurrenceId } from "@/domain/ids";
-import { copySubtree, type CopyTarget } from "@/domain/copy";
+import {
+  copySubtree,
+} from "@/domain/copy";
 import {
   representativeInstance,
   toInstance,
 } from "@/domain/task";
-import { resolveSnooze, type SnoozePresetId } from "@/domain/snooze";
-import type {
-  BudgetCategory,
-  MoneyFlow,
-  Transaction,
-} from "@/domain/money";
 import {
-  BUDGET_CATEGORY_COLORS,
-  CATEGORY_CATALOGUE,
-  dueRecurringTransactions,
-  type CategoryKey,
-} from "@/domain/money";
+  resolveSnooze,
+} from "@/domain/snooze";
 import { normaliseLink, type WishlistItem } from "@/domain/wishlist";
 import { normaliseLabel, type Deadline } from "@/domain/deadline";
 import { NOTE_TAG } from "@/domain/note";
-import { isLive as batchIsLive } from "@/domain/statementBatch";
-import type { ImportDraft, ImportMerge } from "@/domain/statementImport";
-import {
-  restorePatch,
-  snapshotOf,
-  type StatementBatch,
-} from "@/domain/statementBatch";
 import {
   syncDeleteCategoryToCloud,
   syncDeleteTaskToCloud,
@@ -67,17 +53,10 @@ import {
 } from "@/sync/storeBridge";
 import { fireConfetti } from "@/lib/confetti";
 import { useUndoStore } from "./undoStore";
+import type { StoreState } from "./storeState";
+import { createMoneySlice } from "./slices/money";
 import type {
-  BatchInfo,
-  DeadlineDraft,
-  DeadlinePatch,
-  RunningFocus,
-  TaskDraft,
   TaskPatch,
-  TransactionDraft,
-  TransactionPatch,
-  WishlistDraft,
-  WishlistPatch,
 } from "./storeTypes";
 import { focusElapsedSec } from "./storeTypes";
 import {
@@ -105,237 +84,6 @@ import type {
   Task,
   TaskInstance,
 } from "@/domain/types";
-
-interface StoreState {
-  ready: boolean;
-  db: Database;
-  /** Which account's local document is loaded. See `data/namespace.ts`. */
-  namespace: string;
-  /** Ticks once a minute so derived statuses (OVERDUE) stay honest. */
-  now: number;
-  runningFocus: RunningFocus | null;
-
-  hydrate(): Promise<void>;
-  /** Swap the whole local document for the one belonging to `userId`. */
-  switchAccount(userId: string | null): Promise<void>;
-  tick(): void;
-
-  createTask(draft: TaskDraft): Task;
-  /**
-   * Copy a task — with its subtasks — onto another day.
-   *
-   * Returns the new root task, or `null` when the source is gone.
-   */
-  duplicateTask(taskId: string, target?: CopyTarget): Task | null;
-  updateTask(taskId: string, patch: TaskPatch, note?: string): void;
-  deleteTask(taskId: string): void;
-  restoreTask(taskId: string): void;
-  purgeTask(taskId: string): void;
-
-  setStatus(ref: InstanceRef, status: StoredStatus): void;
-  toggleComplete(instance: TaskInstance): void;
-  reschedule(
-    taskId: string,
-    dueDate: LocalDate | null,
-    startTime?: string | null,
-  ): void;
-  snooze(
-    instance: TaskInstance,
-    preset: SnoozePresetId,
-    customTarget?: Date,
-  ): void;
-  clearSnooze(ref: InstanceRef): void;
-
-  addReminder(
-    reminder: Omit<
-      Reminder,
-      | "id"
-      | "createdAt"
-      | "updatedAt"
-      | "status"
-      | "snoozedUntil"
-      | "lastFiredFor"
-    >,
-  ): void;
-  removeReminder(reminderId: string): void;
-  markReminderFired(reminderId: string, occurrenceDate: LocalDate | null): void;
-  snoozeReminder(reminderId: string, until: string): void;
-  dismissReminder(reminderId: string): void;
-
-  startFocus(instance: TaskInstance): void;
-  /** Stop the clock without ending the session. */
-  pauseFocus(): void;
-  /** Start it again where it left off. */
-  resumeFocus(): void;
-  stopFocus(): void;
-  cancelFocus(): void;
-  /** Drop one recorded session. */
-  deleteFocusSession(sessionId: string): void;
-  clearFocusSessions(): void;
-
-  addCategory(name: string, color: string): Category;
-  updateCategory(
-    id: string,
-    patch: Partial<Pick<Category, "name" | "color">>,
-  ): void;
-  removeCategory(id: string): void;
-
-  /**
-   * File an existing task under a parent, or set it loose again.
-   *
-   * Deliberately outside `TaskPatch`: a parent link carries invariants a blind
-   * patch cannot see. A task may not be filed under its own descendant — that
-   * would cut the whole subtree loose from every view at once — and the moved
-   * row takes the last place among its new siblings rather than landing on an
-   * `order` one of them already holds.
-   */
-  setParent(taskId: string, parentId: string | null): void;
-
-  /**
-   * Promote a task to a plan of its own.
-   *
-   * A plan is a top-level task tagged `plan` with no schedule of its own — its
-   * steps carry the dates. So this detaches the task from any parent and drops
-   * its times: leaving either behind would make a plan that the Plans view
-   * cannot list and the calendar still draws.
-   */
-  makePlan(taskId: string): void;
-
-  reorderSubtasks(parentId: string, orderedIds: string[]): void;
-
-  /**
-   * Record a drag inside one list.
-   *
-   * `orderedIds` is the whole list as it now reads on screen and `movedId` the
-   * row the user actually dragged. Only that row — and rows already pinned by
-   * an earlier drag — take a pin, so priority keeps sorting everything the user
-   * has never touched.
-   */
-  reorderTasks(orderedIds: string[], movedId: string): void;
-
-  /** Let the named tasks sort themselves again. */
-  clearManualOrder(taskIds: string[]): void;
-
-  /** Pull unfinished, past-due tasks onto a new date. Returns how many moved. */
-  rollOverTo(taskIds: string[], date: LocalDate): number;
-
-  /* Bulk ------------------------------------------------------------ */
-  /**
-   * The same edit across several tasks.
-   *
-   * Routed through `updateTask` one by one rather than written as one sweep:
-   * an edit to fifty tasks has to leave the same history, the same category
-   * cascade onto subtasks and the same sync as fifty single edits, or a bulk
-   * action becomes a second way to change a task that behaves differently
-   * from the first.
-   */
-  bulkUpdateTasks(taskIds: string[], patch: TaskPatch): void;
-  /** Complete or reopen several tasks at once. */
-  bulkSetStatus(taskIds: string[], status: StoredStatus): void;
-  /**
-   * Trash several tasks — each with everything beneath it — as one act.
-   *
-   * One commit and one undo offer, because that is what the user did. Fifty
-   * separate deletes would leave fifty history-identical rows and an undo that
-   * only reached the last of them.
-   */
-  bulkDeleteTasks(taskIds: string[]): void;
-
-  /* Budget ---------------------------------------------------------- */
-  addTransaction(draft: TransactionDraft): Transaction;
-  updateTransaction(id: string, patch: TransactionPatch): void;
-  deleteTransaction(id: string): void;
-  restoreTransaction(id: string): void;
-  /** Find a budget category by name, or create it. Names are the identity. */
-  ensureBudgetCategory(name: string, flow: MoneyFlow): BudgetCategory;
-  /**
-   * Create the categories a statement needs, in the app's language.
-   *
-   * Returns the key -> id map the import then files its rows under.
-   */
-  ensureCategoriesForKeys(keys: CategoryKey[]): Record<string, string>;
-  /**
-   * Write a confirmed statement import.
-   *
-   * Returns how many entries were created. Entries whose `externalId` is
-   * already in the ledger are skipped here as well as in the plan, so a stale
-   * preview can never double a month.
-   */
-  /**
-   * Turn a task into a note, or report why it cannot become one.
-   *
-   * The inverse of what the note panel does by dropping one tag, but not its
-   * mirror image: a note has none of the things a task can carry, so the ones
-   * that would be left dangling are cleared here rather than hidden. Returns
-   * `false` without changing anything when the task has subtasks — those would
-   * keep a parent that no list shows, which is data quietly disappearing.
-   */
-  convertToNote(taskId: string): boolean;
-
-  importTransactions(
-    drafts: ImportDraft[],
-    merges?: ImportMerge[],
-    batch?: BatchInfo,
-  ): number;
-  /**
-   * Put the ledger back the way it was before one import.
-   *
-   * Returns how many entries moved. Safe to call on a batch that has already
-   * been reverted, or whose rows the user has since edited or deleted by hand:
-   * every step below checks what is actually there rather than what the import
-   * left behind.
-   */
-  revertImport(batchId: string): number;
-
-  /* Wishlist -------------------------------------------------------- */
-  /* Deadlines: the dated checkpoints a task is broken into. */
-  addDeadline(draft: DeadlineDraft): Deadline | null;
-  updateDeadline(id: string, patch: DeadlinePatch): void;
-  /** Ticks a checkpoint off, or puts it back. */
-  setDeadlineMet(id: string, met: boolean): void;
-  removeDeadline(id: string): void;
-
-  addWishlistItem(draft: WishlistDraft): WishlistItem;
-  updateWishlistItem(id: string, patch: WishlistPatch): void;
-  /** Take it off the list. Soft, like everything else, and undoable. */
-  removeWishlistItem(id: string): void;
-  /**
-   * The moment a wish becomes money.
-   *
-   * Writes an ordinary ledger entry — the wishlist has no totals of its own
-   * and never touches the budget until this is called — and marks the item
-   * bought rather than deleting it, because "did I already buy this?" is a
-   * question a shopping list has to be able to answer.
-   *
-   * Returns the entry it created, or `null` when there was nothing to buy:
-   * the item is gone, already bought, or has no price to charge.
-   */
-  buyWishlistItem(id: string, date?: LocalDate): Transaction | null;
-
-  /** Remember that today's spending prompt has been shown. */
-  markSpendNudged(date: LocalDate): void;
-  updateBudgetCategory(
-    id: string,
-    patch: Partial<
-      Pick<
-        BudgetCategory,
-        "name" | "color" | "icon" | "flow" | "monthlyLimitMinor"
-      >
-    >,
-  ): void;
-  removeBudgetCategory(id: string): void;
-  /**
-   * Turn every repeating entry that has come due into a real one.
-   * Returns how many were created.
-   */
-  materialiseRecurringTransactions(through: LocalDate): number;
-
-  updateSettings(patch: Partial<Settings>): void;
-
-  clearHistory(): void;
-  emptyTrash(): void;
-  resetDatabase(): Promise<void>;
-}
 
 /**
  * How long a trashed task stays recoverable before it is purged for good.
@@ -430,7 +178,11 @@ export const useStore = create<StoreState>((set, get) => {
     return db;
   };
 
+  const tools = { set, get, commit };
+
   return {
+    ...createMoneySlice(tools),
+
     ready: false,
     db: emptyDatabase(),
     namespace: ANONYMOUS_NAMESPACE,
@@ -1518,185 +1270,12 @@ export const useStore = create<StoreState>((set, get) => {
 
     /* Budget ---------------------------------------------------------- */
 
-    addTransaction(draft) {
-      const at = nowInstant();
-      const transaction: Transaction = {
-        id: createId("x"),
-        date: draft.date,
-        // The sign lives in `flow`, never in the number: a negative "expense"
-        // would quietly become income in every total.
-        amountMinor: Math.abs(Math.round(draft.amountMinor)),
-        flow: draft.flow,
-        categoryId: draft.categoryId,
-        note: draft.note?.trim() ?? "",
-        recurrence: draft.recurrence ?? null,
-        recurrenceSourceId: null,
-        lastGeneratedFor: null,
-        account: draft.account?.trim() || null,
-        merchant: draft.merchant?.trim() || null,
-        origin: draft.origin ?? "manual",
-        externalId: draft.externalId ?? null,
-        // One charge is not a plan: anything under two months is stored as the
-        // ordinary purchase it is, so no view has to special-case "1/1".
-        instalments:
-          draft.instalments && draft.instalments > 1
-            ? Math.trunc(draft.instalments)
-            : null,
-        // Nothing typed or pushed is confirmed. Only a statement can say what
-        // a purchase finally cost.
-        confirmedAt: null,
-        createdAt: at,
-        updatedAt: at,
-        deletedAt: null,
-      };
-      commit((db) => ({
-        ...db,
-        transactions: [...db.transactions, transaction],
-      }));
-      return transaction;
-    },
 
-    updateTransaction(id, patch) {
-      commit((db) => ({
-        ...db,
-        transactions: db.transactions.map((t) =>
-          t.id === id
-            ? {
-                ...t,
-                ...patch,
-                amountMinor:
-                  patch.amountMinor === undefined
-                    ? t.amountMinor
-                    : Math.abs(Math.round(patch.amountMinor)),
-                updatedAt: nowInstant(),
-              }
-            : t,
-        ),
-      }));
-    },
 
-    /**
-     * Soft delete, like a task.
-     *
-     * A month's totals are a record of what happened. Erasing a row outright
-     * would silently rewrite last month's number with no way to notice.
-     */
-    deleteTransaction(id) {
-      const at = nowInstant();
-      commit((db) => ({
-        ...db,
-        transactions: db.transactions.map((t) =>
-          t.id === id ? { ...t, deletedAt: at, updatedAt: at } : t,
-        ),
-      }));
-      useUndoStore
-        .getState()
-        .push("undoneTransactionDeleted", () => get().restoreTransaction(id));
-    },
 
-    restoreTransaction(id) {
-      const at = nowInstant();
-      commit((db) => ({
-        ...db,
-        transactions: db.transactions.map((t) =>
-          t.id === id ? { ...t, deletedAt: null, updatedAt: at } : t,
-        ),
-      }));
-    },
 
-    /**
-     * The "enum that grows".
-     *
-     * A category the user types is looked up by name first, so typing "Kahve"
-     * twice files both entries under one label instead of creating a second
-     * identical row. What they type once becomes a permanent choice for them.
-     */
-    ensureBudgetCategory(name, flow) {
-      const trimmed = name.trim();
-      const existing = trimmed
-        ? get().db.budgetCategories.find(
-            (c) => c.name.toLowerCase() === trimmed.toLowerCase(),
-          )
-        : null;
-      if (existing) return existing;
 
-      const all = get().db.budgetCategories;
-      const category: BudgetCategory = {
-        id: createId("b"),
-        name: trimmed || "Diğer",
-        flow,
-        color:
-          BUDGET_CATEGORY_COLORS[all.length % BUDGET_CATEGORY_COLORS.length] ??
-          "#64748b",
-        icon: flow === "INCOME" ? "💰" : flow === "INVESTMENT" ? "📈" : "🏷️",
-        builtIn: false,
-        order: all.length,
-        updatedAt: nowInstant(),
-      };
-      commit((db) => ({
-        ...db,
-        budgetCategories: [...db.budgetCategories, category],
-      }));
-      return category;
-    },
 
-    updateBudgetCategory(id, patch) {
-      commit((db) => ({
-        ...db,
-        budgetCategories: db.budgetCategories.map((c) =>
-          c.id === id
-            ? {
-                ...c,
-                ...patch,
-                name: (patch.name ?? c.name).trim(),
-                updatedAt: nowInstant(),
-              }
-            : c,
-        ),
-      }));
-    },
-
-    /** Transactions filed under it keep their history, minus the label. */
-    removeBudgetCategory(id) {
-      const at = nowInstant();
-      const removed = get().db.budgetCategories.find((c) => c.id === id);
-      const filedUnderIt = get()
-        .db.transactions.filter((t) => t.categoryId === id)
-        .map((t) => t.id);
-      commit((db) => ({
-        ...db,
-        budgetCategories: db.budgetCategories.filter((c) => c.id !== id),
-        transactions: db.transactions.map((t) =>
-          t.categoryId === id ? { ...t, categoryId: null, updatedAt: at } : t,
-        ),
-        tombstones: pruneTombstones([
-          ...db.tombstones,
-          tombstone("category", id, at),
-        ]),
-      }));
-
-      if (removed) {
-        // Putting the label back is not enough — the entries that were filed
-        // under it have to find their way home too.
-        const orphaned = new Set(filedUnderIt);
-        useUndoStore.getState().push("undoneCategoryRemoved", () => {
-          const at2 = nowInstant();
-          commit((db) => ({
-            ...db,
-            budgetCategories: [
-              ...db.budgetCategories,
-              { ...removed, updatedAt: at2 },
-            ],
-            transactions: db.transactions.map((t) =>
-              orphaned.has(t.id) ? { ...t, categoryId: id, updatedAt: at2 } : t,
-            ),
-            tombstones: db.tombstones.filter(
-              (stone) => !(stone.kind === "category" && stone.id === id),
-            ),
-          }));
-        });
-      }
-    },
 
     /**
      * Move unfinished work forward instead of letting it rot in the past.
@@ -1783,201 +1362,8 @@ export const useStore = create<StoreState>((set, get) => {
       return movedIds.size;
     },
 
-    ensureCategoriesForKeys(keys) {
-      const language = get().db.settings.language ?? "tr";
-      const mapping: Record<string, string> = {};
 
-      for (const key of keys) {
-        const entry = CATEGORY_CATALOGUE[key];
-        if (!entry) continue;
-        // Both spellings count as "already there": a document started in
-        // English holds "Groceries", and adding "Market" beside it would split
-        // the very total the import exists to build.
-        const wanted = [entry.tr, entry.en].map((name) =>
-          name.toLocaleLowerCase("tr"),
-        );
-        const existing = get().db.budgetCategories.find((category) =>
-          wanted.includes(category.name.trim().toLocaleLowerCase("tr")),
-        );
-        if (existing) {
-          mapping[key] = existing.id;
-          continue;
-        }
 
-        const at = nowInstant();
-        const created: BudgetCategory = {
-          id: createId("b"),
-          name: language === "tr" ? entry.tr : entry.en,
-          flow: entry.flow,
-          color: entry.color,
-          icon: entry.icon,
-          // Created by the import, so the user may delete it like their own.
-          builtIn: false,
-          order: get().db.budgetCategories.length,
-          updatedAt: at,
-        };
-        commit((db) => ({
-          ...db,
-          budgetCategories: [...db.budgetCategories, created],
-        }));
-        mapping[key] = created.id;
-      }
-      return mapping;
-    },
-
-    /**
-     * Write a confirmed statement import.
-     *
-     * One commit for the whole file: a statement is a hundred rows, and a
-     * hundred separate writes would be a hundred renders and a hundred disk
-     * flushes for what the user experienced as a single action.
-     */
-    importTransactions(drafts, merges = [], batchInfo) {
-      if (drafts.length === 0 && merges.length === 0) return 0;
-
-      const taken = new Set(
-        get()
-          .db.transactions.filter((t) => t.deletedAt === null && t.externalId)
-          .map((t) => t.externalId as string),
-      );
-      // The preview may have been built minutes ago; the ledger is the
-      // authority on what is already in it.
-      const fresh = drafts.filter((draft) => !taken.has(draft.externalId));
-      // A merge whose fingerprint has since been written by another import is
-      // no longer a merge; the row it would settle is already settled.
-      const settling = merges.filter(
-        (merge) => !taken.has(merge.patch.externalId),
-      );
-      if (fresh.length === 0 && settling.length === 0) return 0;
-
-      const at = nowInstant();
-      const batchId = createId("imp");
-      const created: Transaction[] = fresh.map((draft) => ({
-        id: createId("x"),
-        date: draft.date,
-        amountMinor: draft.amountMinor,
-        flow: draft.flow,
-        categoryId: draft.categoryId,
-        note: draft.note,
-        merchant: draft.merchant,
-        externalId: draft.externalId,
-        importId: batchId,
-        recurrence: null,
-        recurrenceSourceId: null,
-        lastGeneratedFor: null,
-        createdAt: at,
-        updatedAt: at,
-        deletedAt: null,
-      }));
-
-      /*
-       * The entries this statement settles rather than repeats.
-       *
-       * Their previous shape is kept so undo can put them back exactly as they
-       * were: a merge edits a row the user wrote, and an undo that left the
-       * bank's merchant and fingerprint behind would not be an undo.
-       */
-      const patchById = new Map(
-        settling.map((merge) => [merge.entryId, merge.patch]),
-      );
-      const before = new Map(
-        get()
-          .db.transactions.filter((entry) => patchById.has(entry.id))
-          .map((entry) => [entry.id, entry] as const),
-      );
-
-      /*
-       * The import itself, written down.
-       *
-       * The undo toast below is seconds long, and importing the same file twice
-       * is a mistake nobody notices in seconds — it shows up when the month's
-       * total is read the next day. The batch is what makes "geri al" still
-       * available then, and it carries the settled rows' previous shape for the
-       * same reason the toast does: undoing a merge has to put a row back, not
-       * take it away.
-       */
-      const dates = [
-        ...created.map((entry) => entry.date),
-        ...[...before.values()].map((entry) => entry.date),
-      ].sort();
-      const batch: StatementBatch = {
-        id: batchId,
-        label: batchInfo?.label?.trim() || "Ekstre",
-        account: batchInfo?.account ?? null,
-        importedAt: at,
-        from: batchInfo?.from ?? dates[0] ?? at.slice(0, 10),
-        to: batchInfo?.to ?? dates[dates.length - 1] ?? at.slice(0, 10),
-        mode: batchInfo?.mode ?? "rows",
-        createdCount: created.length,
-        createdMinor: created.reduce((sum, entry) => sum + entry.amountMinor, 0),
-        settled: [...before.values()].map(snapshotOf),
-        revertedAt: null,
-        deletedAt: null,
-      };
-
-      commit((db) => ({
-        ...db,
-        statementBatches: [...db.statementBatches, batch],
-        transactions: [
-          ...db.transactions.map((entry) => {
-            const patch = patchById.get(entry.id);
-            return patch ? { ...entry, ...patch, updatedAt: at } : entry;
-          }),
-          ...created,
-        ],
-      }));
-
-      // A hundred rows landing in the wrong month is exactly the mistake
-      // someone wants back immediately, and undoing it row by row is no undo.
-      // One reversal, two doors: the toast now runs exactly what the list in
-      // the budget view runs, so the two can never drift into disagreeing.
-      useUndoStore
-        .getState()
-        .push("undoneImport", () => void get().revertImport(batchId));
-
-      return created.length + settling.length;
-    },
-
-    revertImport(batchId) {
-      const db = get().db;
-      const batch = db.statementBatches.find((b) => b.id === batchId);
-      if (!batch || !batchIsLive(batch)) return 0;
-
-      const at = nowInstant();
-      const snapshots = new Map(batch.settled.map((snap) => [snap.id, snap]));
-      let touched = 0;
-
-      commit((next) => ({
-        ...next,
-        statementBatches: next.statementBatches.map((b) =>
-          b.id === batchId ? { ...b, revertedAt: at } : b,
-        ),
-        transactions: next.transactions.map((entry) => {
-          /*
-           * Rows this import created go back to deleted — soft, so they are in
-           * the trash rather than gone, and skipped when the user has already
-           * removed them by hand.
-           */
-          if (entry.importId === batchId) {
-            if (entry.deletedAt !== null) return entry;
-            touched += 1;
-            return { ...entry, deletedAt: at, updatedAt: at };
-          }
-
-          /*
-           * Rows it stamped go back to what they were. `deletedAt` is
-           * deliberately not restored: if the user has thrown one away since,
-           * un-deleting it here would resurrect a row they meant to be rid of.
-           */
-          const snap = snapshots.get(entry.id);
-          if (!snap || entry.deletedAt !== null) return entry;
-          touched += 1;
-          return { ...entry, ...restorePatch(snap), updatedAt: at };
-        }),
-      }));
-
-      return touched;
-    },
 
     convertToNote(taskId) {
       const db = get().db;
@@ -2302,66 +1688,7 @@ export const useStore = create<StoreState>((set, get) => {
       return transaction;
     },
 
-    markSpendNudged(date) {
-      commit((db) => ({
-        ...db,
-        settings: { ...db.settings, lastSpendNudgeOn: date },
-      }));
-    },
 
-    /**
-     * Catch the budget up on everything its templates owe.
-     *
-     * Run on open rather than on a timer: the app may have been closed for a
-     * month, and the answer has to be the same either way. Producing them one
-     * at a time through the same code path an ordinary entry takes means a
-     * generated entry is in no way special — it can be edited, deleted or
-     * recategorised like any other.
-     */
-    materialiseRecurringTransactions(through) {
-      const due = dueRecurringTransactions(get().db.transactions, through);
-      if (due.length === 0) return 0;
-
-      const at = nowInstant();
-      const created: Transaction[] = due.map(({ source, date }) => ({
-        id: createId("x"),
-        date,
-        amountMinor: source.amountMinor,
-        flow: source.flow,
-        categoryId: source.categoryId,
-        note: source.note,
-        // The copy is a plain entry: only the template carries the rule, so a
-        // generated entry can never start generating entries of its own.
-        recurrence: null,
-        recurrenceSourceId: source.id,
-        lastGeneratedFor: null,
-        createdAt: at,
-        updatedAt: at,
-        deletedAt: null,
-      }));
-
-      // Remember how far each template has got, or the next run repeats itself.
-      const advancedTo = new Map<string, LocalDate>();
-      for (const { source, date } of due) {
-        const current = advancedTo.get(source.id);
-        if (!current || date > current) advancedTo.set(source.id, date);
-      }
-
-      commit((db) => ({
-        ...db,
-        transactions: [
-          ...db.transactions.map((t) => {
-            const mark = advancedTo.get(t.id);
-            return mark === undefined
-              ? t
-              : { ...t, lastGeneratedFor: mark, updatedAt: at };
-          }),
-          ...created,
-        ],
-      }));
-
-      return created.length;
-    },
 
     updateSettings(patch) {
       commit((db) => ({ ...db, settings: { ...db.settings, ...patch } }));
