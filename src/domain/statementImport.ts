@@ -165,24 +165,51 @@ export interface PlanOptions {
   matchWindowDays?: number;
 }
 
-export function buildImportPlan(
-  lines: StatementLine[],
-  skipped: SkippedRow[],
-  existing: Transaction[],
+/**
+ * Which budget category this line belongs to.
+ *
+ * What kind of movement it is outranks the shop: a card payment is a transfer
+ * whatever the descriptor says. The fallback is the one the user picked in the
+ * preview, so an unknown shop is filed rather than left loose.
+ */
+function fileUnder(
+  line: StatementLine,
+  merchant: ReturnType<typeof identifyMerchant>,
   categories: BudgetCategory[],
-  source: StatementSource,
-  options: PlanOptions = {},
-): ImportPlan {
-  const live = existing.filter((entry) => entry.deletedAt === null);
-  const byExternalId = new Map<string, Transaction>();
-  for (const entry of live) {
-    if (entry.externalId) byExternalId.set(entry.externalId, entry);
-  }
+  options: PlanOptions,
+): { categoryKey: CategoryKey | null; categoryId: string | null } {
+  const categoryKey =
+    KIND_CATEGORY[line.kind] ??
+    merchant.categoryKey ??
+    options.fallbackCategoryKey ??
+    null;
+  const category = categoryKey ? resolveCategory(categoryKey, categories) : null;
+  return { categoryKey, categoryId: category?.id ?? null };
+}
 
+interface RowsBuilt {
+  rows: ImportRow[];
+  missingCategories: Set<CategoryKey>;
+  unknownMerchants: Set<string>;
+}
+
+/**
+ * One row per statement line, with the merchant named and a category guessed.
+ *
+ * `occurrence` is what keeps two identical purchases on the same day apart:
+ * without it they share a fingerprint and the second looks like a duplicate of
+ * the first.
+ */
+function buildRows(
+  lines: StatementLine[],
+  byExternalId: Map<string, Transaction>,
+  categories: BudgetCategory[],
+  options: PlanOptions,
+): RowsBuilt {
   const seen = new Map<string, number>();
   const rows: ImportRow[] = [];
-  const missing = new Set<CategoryKey>();
-  const unknown = new Set<string>();
+  const missingCategories = new Set<CategoryKey>();
+  const unknownMerchants = new Set<string>();
 
   for (const line of lines) {
     const merchant = identifyMerchant(line.description);
@@ -192,22 +219,16 @@ export function buildImportPlan(
 
     const externalId = externalIdFor(line, merchant.name, occurrence);
     const alreadyImported = byExternalId.get(externalId);
-
-    const categoryKey =
-      KIND_CATEGORY[line.kind] ??
-      merchant.categoryKey ??
-      options.fallbackCategoryKey ??
-      null;
-    const category = categoryKey ? resolveCategory(categoryKey, categories) : null;
-    if (categoryKey && !category) missing.add(categoryKey);
-    if (merchant.confidence === "none") unknown.add(merchant.name);
+    const { categoryKey, categoryId } = fileUnder(line, merchant, categories, options);
+    if (categoryKey && !categoryId) missingCategories.add(categoryKey);
+    if (merchant.confidence === "none") unknownMerchants.add(merchant.name);
 
     rows.push({
       line,
       merchant,
       externalId,
       categoryKey,
-      categoryId: category?.id ?? null,
+      categoryId,
       status: alreadyImported ? "duplicate" : "new",
       existingId: alreadyImported?.id ?? null,
       match: null,
@@ -215,16 +236,22 @@ export function buildImportPlan(
       include: !alreadyImported && includeByDefault(line.kind),
     });
   }
+  return { rows, missingCategories, unknownMerchants };
+}
 
-  /*
-   * Everything that is not already in the ledger by fingerprint is offered to
-   * the reconciler, which looks for the entry the user (or their bank's
-   * notification mail) already wrote for this purchase.
-   *
-   * Allocation happens across the whole file at once rather than row by row:
-   * two identical purchases in the same week would otherwise both claim the
-   * first entry that fitted. See `reconcile`.
-   */
+/**
+ * Offer everything new to the reconciler, which looks for the entry the user (or
+ * their bank's notification mail) already wrote for this purchase.
+ *
+ * Allocation happens across the whole file at once rather than row by row: two
+ * identical purchases in the same week would otherwise both claim the first
+ * entry that fitted. See `reconcile`.
+ */
+function claimExistingEntries(
+  rows: ImportRow[],
+  live: Transaction[],
+  options: PlanOptions,
+): void {
   const claimable = rows.filter((row) => row.status === "new");
   const matches = matchRows(
     claimable.map((row) => ({
@@ -252,33 +279,55 @@ export function buildImportPlan(
     row.status = "similar";
     row.existingId = match.entry.id;
     row.match = match;
-    // Merging is the right default: the entry exists because the user logged
-    // the purchase, and the statement is here to confirm it, not to repeat it.
-    // Unless the amounts merely round to each other, which is a guess, and a
+    // Merging is the right default: the entry exists because the user logged the
+    // purchase, and the statement is here to confirm it, not to repeat it.
+    // Unless the amounts merely round to each other, which is a guess — and a
     // guess that silently swallowed a second real purchase would leave nothing
     // behind to notice.
     row.merge = match.exactAmount;
   }
+}
+
+function countsOf(rows: ImportRow[]): ImportPlan["counts"] {
+  return {
+    total: rows.length,
+    fresh: rows.filter((row) => row.status === "new").length,
+    duplicate: rows.filter((row) => row.status === "duplicate").length,
+    similar: rows.filter((row) => row.status === "similar").length,
+    near: rows.filter((row) => row.match !== null && !row.match.exactAmount).length,
+    excluded: rows.filter((row) => !row.include).length,
+  };
+}
+
+export function buildImportPlan(
+  lines: StatementLine[],
+  skipped: SkippedRow[],
+  existing: Transaction[],
+  categories: BudgetCategory[],
+  source: StatementSource,
+  options: PlanOptions = {},
+): ImportPlan {
+  const live = existing.filter((entry) => entry.deletedAt === null);
+  const byExternalId = new Map<string, Transaction>();
+  for (const entry of live) {
+    if (entry.externalId) byExternalId.set(entry.externalId, entry);
+  }
+
+  const built = buildRows(lines, byExternalId, categories, options);
+  claimExistingEntries(built.rows, live, options);
 
   const dates = lines.map((line) => line.date).sort();
   return {
-    rows,
+    rows: built.rows,
     skipped,
     source,
     range:
       dates.length > 0
         ? { from: dates[0] as LocalDate, to: dates[dates.length - 1] as LocalDate }
         : null,
-    counts: {
-      total: rows.length,
-      fresh: rows.filter((row) => row.status === "new").length,
-      duplicate: rows.filter((row) => row.status === "duplicate").length,
-      similar: rows.filter((row) => row.status === "similar").length,
-      near: rows.filter((row) => row.match !== null && !row.match.exactAmount).length,
-      excluded: rows.filter((row) => !row.include).length,
-    },
-    missingCategories: [...missing],
-    unknownMerchants: [...unknown],
+    counts: countsOf(built.rows),
+    missingCategories: [...built.missingCategories],
+    unknownMerchants: [...built.unknownMerchants],
   };
 }
 
