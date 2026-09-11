@@ -284,7 +284,6 @@ function normaliseStatementBatch(batch: StatementBatch): StatementBatch {
   };
 }
 
-/* eslint-disable-next-line complexity -- a flat defaulting map, not branching */
 function normaliseTransaction(t: Transaction): Transaction {
   // A row carrying `instalmentIndex` is one monthly charge of a purchase, not
   // a purchase: aggregation makes those and nothing may ever write one back.
@@ -308,7 +307,6 @@ function normaliseTransaction(t: Transaction): Transaction {
   };
 }
 
-/* eslint-disable-next-line complexity -- a flat defaulting map, not branching */
 function normaliseWishlistItem(item: WishlistItem): WishlistItem {
   return {
     ...item,
