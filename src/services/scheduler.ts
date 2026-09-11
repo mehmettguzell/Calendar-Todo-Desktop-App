@@ -1,7 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { HEARTBEAT_EVENT, onDesktopEvent } from "./desktop";
 import { reminderNotification } from "@/domain/notification";
-import { collectDueReminders, nextReminderInstant } from "@/domain/reminders";
+import {
+  collectDueReminders,
+  nextReminderInstant,
+  type DueReminder,
+} from "@/domain/reminders";
 import type { LocalDate, Reminder, TaskInstance } from "@/domain/types";
 import { useStore } from "@/state/store";
 import { notify } from "./notifications";
@@ -26,6 +36,114 @@ export interface ActiveAlert {
   reminder: Reminder;
   instance: TaskInstance;
   firedAt: number;
+}
+
+/**
+ * The minute hand, aligned to the boundary rather than free-running.
+ *
+ * An interval started at 10:00:40 fires at 10:01:40, so `now` would change forty
+ * seconds after the wall clock's minute did, and every derived OVERDUE with it.
+ */
+function startClock(alive: () => boolean): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tick = () => {
+    if (!alive()) return;
+    const state = useStore.getState();
+    if (state.ready) state.tick();
+    timer = setTimeout(tick, MINUTE_MS - (Date.now() % MINUTE_MS));
+  };
+  tick();
+  return () => {
+    if (timer !== undefined) clearTimeout(timer);
+  };
+}
+
+/** One key per "this reminder, on this day, since this snooze". */
+function deliveryKeyOf(due: DueReminder): string {
+  const { reminder, instance } = due;
+  return `${reminder.id}@${instance.date ?? "none"}@${reminder.snoozedUntil ?? ""}`;
+}
+
+/**
+ * The OS banner is best effort; the card is the delivery that always happens.
+ *
+ * A machine that refuses notifications must not take the reminder down with it.
+ */
+function announce(due: DueReminder, now: Date): void {
+  const { db } = useStore.getState();
+  const categoryId = due.instance.task.categoryId;
+  const category = categoryId
+    ? (db.categories.find((c) => c.id === categoryId) ?? null)
+    : null;
+  void notify(reminderNotification(due.instance, now, category)).catch((error) =>
+    console.error("[tempo] the OS notification did not get through", error),
+  );
+}
+
+function reminderIndexes() {
+  const { db } = useStore.getState();
+  return {
+    db,
+    tasks: new Map(db.tasks.map((t) => [t.id, t])),
+    occurrences: new Map(db.occurrences.map((o) => [o.id, o])),
+  };
+}
+
+/** How long until the next reminder wants attention, within sane bounds. */
+function sleepMs(): number {
+  const { db, tasks, occurrences } = reminderIndexes();
+  const now = new Date();
+  const next = nextReminderInstant(db.reminders, tasks, occurrences, db.settings, now);
+  const until = next ? next.getTime() - now.getTime() : MAX_SLEEP_MS;
+  return Math.min(Math.max(until, MIN_SLEEP_MS), MAX_SLEEP_MS);
+}
+
+function dueNow(): DueReminder[] {
+  const { db, tasks, occurrences } = reminderIndexes();
+  return collectDueReminders(db.reminders, tasks, occurrences, db.settings, new Date());
+}
+
+/** Fire each due reminder exactly once, as a card and as an OS banner. */
+function deliver(
+  due: DueReminder[],
+  delivered: Set<string>,
+  show: Dispatch<SetStateAction<ActiveAlert[]>>,
+): void {
+  const now = new Date();
+  for (const item of due) {
+    const key = deliveryKeyOf(item);
+    if (delivered.has(key)) continue;
+    delivered.add(key);
+
+    const { reminder, instance } = item;
+    useStore.getState().markReminderFired(reminder.id, instance.date as LocalDate | null);
+    announce(item, now);
+    show((current) => [
+      ...current.filter((a) => a.id !== key),
+      { id: key, reminder, instance, firedAt: Date.now() },
+    ]);
+  }
+}
+
+/**
+ * Anything the user does can move the next instant — adding a reminder for two
+ * minutes from now, dragging a task to another day, snoozing. Re-arming on every
+ * write that touches those four collections costs one walk of the reminder list,
+ * and is the difference between "set a reminder and it arrives" and "set a
+ * reminder and wait for the next rebuild".
+ */
+function watchForRearm(rearm: () => void): () => void {
+  let watched = useStore.getState().db;
+  return useStore.subscribe(({ db }) => {
+    const unchanged =
+      db.reminders === watched.reminders &&
+      db.tasks === watched.tasks &&
+      db.occurrences === watched.occurrences &&
+      db.settings === watched.settings;
+    if (unchanged) return;
+    watched = db;
+    rearm();
+  });
 }
 
 /**
@@ -55,69 +173,9 @@ export function useReminderScheduler(): {
   useEffect(() => {
     let cancelled = false;
 
-    /* -- the clock ---------------------------------------------------- */
-    let clockTimer: ReturnType<typeof setTimeout> | undefined;
+    const deliverDue = () => deliver(dueNow(), deliveredRef.current, setAlerts);
 
-    // Aligned to the boundary rather than a free-running interval, so `now`
-    // changes when the wall clock's minute does, not 40 seconds afterwards.
-    const tickClock = () => {
-      if (cancelled) return;
-      const state = useStore.getState();
-      if (state.ready) state.tick();
-      clockTimer = setTimeout(tickClock, MINUTE_MS - (Date.now() % MINUTE_MS));
-    };
-
-    /* -- reminders ---------------------------------------------------- */
     let reminderTimer: ReturnType<typeof setTimeout> | undefined;
-
-    const deliverDue = () => {
-      const { db } = useStore.getState();
-      const now = new Date();
-      const tasks = new Map(db.tasks.map((t) => [t.id, t]));
-      const occurrences = new Map(db.occurrences.map((o) => [o.id, o]));
-      const due = collectDueReminders(db.reminders, tasks, occurrences, db.settings, now);
-
-      for (const { reminder, instance } of due) {
-        const deliveryKey = `${reminder.id}@${instance.date ?? "none"}@${
-          reminder.snoozedUntil ?? ""
-        }`;
-        if (deliveredRef.current.has(deliveryKey)) continue;
-        deliveredRef.current.add(deliveryKey);
-
-        useStore.getState().markReminderFired(reminder.id, instance.date as LocalDate | null);
-
-        // The card below is the delivery that always happens; the OS banner is
-        // best effort, and a machine that refuses it must not take the reminder
-        // down with it.
-        const category = instance.task.categoryId
-          ? (db.categories.find((c) => c.id === instance.task.categoryId) ?? null)
-          : null;
-        void notify(reminderNotification(instance, now, category)).catch((error) =>
-          console.error("[tempo] the OS notification did not get through", error),
-        );
-
-        setAlerts((current) => [
-          ...current.filter((a) => a.id !== deliveryKey),
-          { id: deliveryKey, reminder, instance, firedAt: Date.now() },
-        ]);
-      }
-    };
-
-    /** How long until the next reminder wants attention. */
-    const sleepMs = (): number => {
-      const { db } = useStore.getState();
-      const now = new Date();
-      const next = nextReminderInstant(
-        db.reminders,
-        new Map(db.tasks.map((t) => [t.id, t])),
-        new Map(db.occurrences.map((o) => [o.id, o])),
-        db.settings,
-        now,
-      );
-      const until = next ? next.getTime() - now.getTime() : MAX_SLEEP_MS;
-      return Math.min(Math.max(until, MIN_SLEEP_MS), MAX_SLEEP_MS);
-    };
-
     const runReminders = () => {
       if (cancelled) return;
       if (reminderTimer !== undefined) clearTimeout(reminderTimer);
@@ -130,30 +188,9 @@ export function useReminderScheduler(): {
       reminderTimer = setTimeout(runReminders, sleepMs());
     };
 
-    tickClock();
+    const stopClock = startClock(() => !cancelled);
     runReminders();
-
-    /*
-     * Anything the user does can move the next instant — adding a reminder for
-     * two minutes from now, dragging a task to another day, snoozing. Re-arming
-     * on every write costs one walk of the reminder list and is the difference
-     * between "set a reminder and it arrives" and "set a reminder and wait for
-     * the next rebuild".
-     */
-    let watched = useStore.getState().db;
-    const unsubscribe = useStore.subscribe((state) => {
-      const { db } = state;
-      if (
-        db.reminders === watched.reminders &&
-        db.tasks === watched.tasks &&
-        db.occurrences === watched.occurrences &&
-        db.settings === watched.settings
-      ) {
-        return;
-      }
-      watched = db;
-      runReminders();
-    });
+    const unsubscribe = watchForRearm(runReminders);
 
     // A hidden window has its timers throttled by the webview, so the host
     // process supplies a beat that is not — which is what keeps a reminder set
@@ -166,18 +203,18 @@ export function useReminderScheduler(): {
 
     return () => {
       cancelled = true;
-      if (clockTimer !== undefined) clearTimeout(clockTimer);
+      stopClock();
       if (reminderTimer !== undefined) clearTimeout(reminderTimer);
       unsubscribe();
       unlisten?.();
     };
   }, []);
 
-  const dismissAlert = (id: string) => setAlerts((current) => current.filter((a) => a.id !== id));
+  const dismissAlert = (id: string) =>
+    setAlerts((current) => current.filter((a) => a.id !== id));
 
   return { alerts, dismissAlert };
 }
-
 /**
  * Keeps the running focus timer's elapsed seconds ticking once per second.
  *
