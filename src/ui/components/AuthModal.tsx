@@ -12,8 +12,8 @@ import {
 import {
   useAuthStore,
   useTrialStatus,
-  type AuthModalView,
 } from "@/state/authStore";
+import type { AuthModalView } from "@/state/authState";
 import { getSubscriptionStatusLabel } from "@/domain/auth";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { Avatar } from "./Avatar";
