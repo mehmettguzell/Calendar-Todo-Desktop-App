@@ -19,11 +19,24 @@ document. Why each of those exists — and what was deliberately left out — is
 | --- | --- | --- |
 | **Node.js 20+** | everything | ships with npm — `node -v` to check |
 | **Rust 1.77.2+** | the desktop app | install via [rustup](https://rustup.rs) |
-| **MSVC build tools + Windows SDK** | the desktop app | "Desktop development with C++" in the Visual Studio Installer |
-| **WebView2** | running the desktop app | preinstalled on Windows 11; [download](https://developer.microsoft.com/microsoft-edge/webview2/) on older Windows |
+| **GNU Make** | the `make` shortcuts | preinstalled on macOS/Linux; on Windows `winget install GnuWin32.Make` or use the npm commands directly |
+| _Windows:_ **MSVC build tools + Windows SDK** | the desktop app | "Desktop development with C++" in the Visual Studio Installer |
+| _Windows:_ **WebView2** | running the desktop app | preinstalled on Windows 11; [download](https://developer.microsoft.com/microsoft-edge/webview2/) on older Windows |
+| _macOS:_ **Xcode command line tools** | the desktop app | `xcode-select --install` |
+| _Linux:_ **webkit2gtk + build deps** | the desktop app | see the apt line below |
+
+On Debian/Ubuntu:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+See the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for other
+distros.
 
 Only Node.js is needed for `npm run dev`, the browser-only build. The Rust
-toolchain is what turns it into a desktop app.
+toolchain and the platform packages above are what turn it into a desktop app.
 
 ### Install
 
@@ -48,13 +61,14 @@ equivalent; use whichever you prefer.
 | `make dev` | `npm run dev` | UI only, in a browser, no Rust, data in `localStorage` |
 | `make test` | `npm test` | the test suite |
 | `make check` | `npm run typecheck && npm test` | typecheck, then the tests |
-| `make exe` | `npx tauri build --no-bundle` | the standalone `tempo.exe` |
-| `make bundle` | `npm run tauri:build` | the exe plus the MSI and setup.exe installers |
+| `make exe` | `npx tauri build --no-bundle` | the standalone binary (`tempo.exe` on Windows, `tempo` elsewhere) |
+| `make bundle` | `npm run tauri:build` | the binary plus the platform installers (MSI/NSIS, `.dmg`, `.deb`/`.AppImage`) |
 | `make stop` | — | close a running Tempo window |
 | `make clean` | — | drop `dist` and the Rust build cache |
 
-`make exe` and `make bundle` close a running Tempo first: Windows locks a
-running exe, so the build cannot overwrite it. Your tasks are saved
+The Makefile detects the platform, so the same targets work on Windows, macOS
+and Linux. `make exe` and `make bundle` close a running Tempo first: Windows
+locks a running exe so the build cannot overwrite it. Your tasks are saved
 continuously, so closing the window loses nothing.
 
 ### Installing the built app

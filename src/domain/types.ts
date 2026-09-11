@@ -32,8 +32,27 @@ export interface Recurrence {
   freq: RecurrenceFreq;
   /** Repeat every `interval` units of `freq`. Always >= 1. */
   interval: number;
-  /** WEEKLY only. 0 = Sunday … 6 = Saturday. Empty/undefined = anchor weekday. */
+  /**
+   * WEEKLY: the days the series lands on. 0 = Sunday … 6 = Saturday.
+   * MONTHLY: paired with `bySetPos`, the single weekday of "the 3rd Tuesday".
+   * Empty/undefined = whatever weekday the anchor falls on.
+   */
   byWeekday?: number[];
+  /**
+   * MONTHLY only. The day of the month the series lands on, or `-1` for the
+   * last day of each month. Undefined = the anchor's own day, which is what
+   * every rule written before this field existed means.
+   */
+  byMonthDay?: number | null;
+  /**
+   * MONTHLY only, and only alongside a single `byWeekday`. 1-4 selects the
+   * first through fourth of that weekday in the month, `-1` the last one.
+   * Undefined = the rule counts days of the month, not weekdays.
+   *
+   * Capped at 4 rather than 5 on purpose: every month has a fourth Tuesday,
+   * so no month of the series is ever silently skipped.
+   */
+  bySetPos?: number | null;
   /** Inclusive last date the series may produce. */
   until?: LocalDate | null;
   /** Maximum number of occurrences produced, counting the anchor. */
@@ -53,8 +72,26 @@ export interface Task {
   priority: Priority;
   /** `null` means unscheduled: visible in Todo, absent from the calendar. */
   dueDate: LocalDate | null;
-  /** Optional multi-day or deadline end date (`YYYY-MM-DD`). */
+  /**
+   * Last day of a multi-day run (`YYYY-MM-DD`).
+   *
+   * A span: the task occupies every day from `dueDate` to here, and is drawn
+   * on all of them. "Berlin conference, 25-28 August".
+   */
   endDate?: LocalDate | null;
+  /**
+   * The day the task has to be finished by.
+   *
+   * Deliberately not `endDate`. A span says which days a task *occupies*; a
+   * deadline says when it stops being on time. Conflating them is what makes
+   * "due 20 September" paint twenty-two solid days across the calendar, so a
+   * deadline is drawn once — on its own day — and leaves the days before it
+   * alone.
+   *
+   * Ignored while `recurrence` is set: a series bounds itself with
+   * `recurrence.until`, and every occurrence carries its own deadline.
+   */
+  deadline?: LocalDate | null;
   allDay: boolean;
   startTime: LocalTime | null;
   endTime: LocalTime | null;
@@ -137,6 +174,9 @@ export type HistoryKind =
   | "REMINDER_ADDED"
   | "REMINDER_REMOVED"
   | "REMINDER_FIRED"
+  | "DEADLINE_ADDED"
+  | "DEADLINE_REMOVED"
+  | "DEADLINE_MET"
   | "FOCUS_LOGGED"
   | "DELETED"
   | "RESTORED";
@@ -185,6 +225,16 @@ export interface Settings {
   dayEndHour: number;
   /** Time given to an all-day task when a snooze needs a clock time. */
   allDayReminderTime: LocalTime;
+  /**
+   * Which round of seeded categories this document has already been offered.
+   *
+   * Seeds are a suggestion, offered once. Without this the app could not tell
+   * "you have never been offered a Home category" from "you were, and you
+   * deleted it" — and would helpfully put the deleted one back on every launch.
+   */
+  categorySeedVersion?: number;
+  /** The same, for the budget's own labels. See `backfillBudgetCategories`. */
+  budgetCategorySeedVersion?: number;
 
   /* Budget capture ------------------------------------------------- */
 
@@ -200,55 +250,6 @@ export interface Settings {
   /** The last day the nudge was delivered, so it fires once and not again. */
   lastSpendNudgeOn?: LocalDate | null;
 
-  /** Reading the bank's transaction notification mail. See `mail.ts`. */
-  mailSync?: MailSyncSettings;
-}
-
-/**
- * Where the automatic spending feed comes from.
- *
- * A Turkish bank will not hand account data to a personal application — that
- * needs a payment-services licence — but it will send a message per
- * transaction. Reading that mailbox is the only route by which a purchase can
- * reach the ledger without anyone typing it.
- *
- * The password is deliberately absent: it lives in the OS credential store,
- * reachable only by the native side. This object is written to the same plain
- * JSON document as everything else, and a mailbox password in a file the user
- * can open is a mailbox password in every backup they ever make.
- */
-export interface MailSyncSettings {
-  enabled: boolean;
-  host: string;
-  port: number;
-  /** TLS on connect (993). Off means STARTTLS on 143. */
-  secure: boolean;
-  username: string;
-  /** The mailbox to read; a filing rule may put bank mail outside INBOX. */
-  folder: string;
-  /**
-   * Addresses or domains whose mail is read at all.
-   *
-   * Empty means "read everything in the folder", which is only sensible for a
-   * mailbox that exists solely for bank notifications.
-   */
-  senders: string[];
-  /** How often to look, in minutes. */
-  everyMinutes: number;
-  /**
-   * Write recognised purchases straight to the ledger.
-   *
-   * When off, they wait in a review list. On is the point of the feature — an
-   * entry that needs confirming is an entry that needs attention, which is the
-   * cost the automatic feed exists to remove — but the ledger is the user's,
-   * so they get to say.
-   */
-  autoRecord: boolean;
-  /** Highest message id already read, so a poll asks only for what is new. */
-  lastUid?: number | null;
-  lastSyncAt?: Instant | null;
-  /** What went wrong last time, shown in Settings rather than swallowed. */
-  lastError?: string | null;
 }
 
 /**
@@ -282,6 +283,45 @@ export interface TaskInstance {
    * continuation bar.
    */
   span: TaskSpan;
+  /**
+   * This instance is the task's deadline marker, not a day it occupies.
+   *
+   * The same task can produce both — a start on the 30th and a deadline on the
+   * 20th of the next month — so views branch on this to draw the marker
+   * differently, never to decide which task it belongs to.
+   */
+  isDeadline: boolean;
+  /**
+   * This row exists *only* because of a deadline: it is a date, not work.
+   *
+   * `isDeadline` also gets set on a real occurrence that happens to fall on the
+   * task's deadline — a one-day job due by its own date — and that row is still
+   * the task, still tickable, still a task in every list. This one is not: no
+   * time was ever scheduled on this day, and there is nothing here to do. The
+   * lists use it to keep markers out of the work, which is the difference
+   * between "you have 9 things today" and "you have 7 things and 2 dates".
+   */
+  deadlineOnly: boolean;
+  /**
+   * The name of the checkpoint this instance marks, when it marks one.
+   *
+   * A named deadline is drawn on the calendar under its own label — "Backend
+   * bitecek" is what the user wrote down and what they are looking for on the
+   * 25th, not the name of the project it belongs to. `null` on every other
+   * instance, including the task's own final deadline, which has no name of
+   * its own to show.
+   */
+  deadlineLabel?: string | null;
+  /** Set alongside `deadlineLabel`, so a met checkpoint can render as met. */
+  deadlineMet?: boolean;
+  /**
+   * Which checkpoint this instance is, when it is one.
+   *
+   * Carried rather than parsed back out of `key`: a chip the user clicks has to
+   * edit or delete the checkpoint itself, and reading an id out of a string
+   * that exists to be a React key is how the two quietly drift apart.
+   */
+  deadlineId?: string | null;
 }
 
 /** Position of one rendered date within a task's `dueDate`..`endDate` range. */
@@ -303,7 +343,13 @@ export interface TaskSpan {
  * The tombstone is what makes "gone" a fact rather than an absence.
  */
 export interface Tombstone {
-  kind: "task" | "category" | "reminder" | "occurrence" | "transaction";
+  kind:
+    | "task"
+    | "category"
+    | "reminder"
+    | "occurrence"
+    | "transaction"
+    | "focus";
   id: string;
   at: Instant;
 }

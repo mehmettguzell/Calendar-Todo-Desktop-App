@@ -20,7 +20,6 @@ import {
   QUICK_CAPTURE_SHORTCUT,
 } from "@/services/desktop";
 import { useNow, useStore } from "@/state/store";
-import { SpendFeedSettings } from "@/ui/budget/SpendFeedSettings";
 import { ConfirmButton, Field, Modal, Switch } from "./components/primitives";
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
@@ -156,8 +155,6 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         <NotificationCheck />
       </Field>
 
-      <SpendFeedSettings />
-
       <ExportSection />
 
       <DesktopSection />
@@ -167,7 +164,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           className="input mono"
           readOnly
           value={storagePath}
-          style={{ fontSize: 12 }}
+          style={{ fontSize: "var(--text-xs)" }}
         />
       </Field>
 
@@ -191,7 +188,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               failed write reports back, so saying nothing would leave an empty
               app sitting on top of a file that still holds everything. */}
           {resetError ? (
-            <span style={{ fontSize: 11.5, color: "var(--danger)" }}>
+            <span style={{ fontSize: "var(--text-2xs)", color: "var(--danger)" }}>
               Cleared here, but the file could not be written: {resetError}
             </span>
           ) : null}
@@ -241,7 +238,7 @@ function NotificationCheck() {
       {result ? (
         <span
           style={{
-            fontSize: 11.5,
+            fontSize: "var(--text-2xs)",
             color: result.ok ? "var(--text-muted)" : "var(--danger)",
           }}
         >
@@ -279,7 +276,7 @@ function ExportSection() {
   return (
     <section className="settings-section">
       <h3 className="settings-heading">{t("exportSection")}</h3>
-      <p className="faint" style={{ fontSize: 12, lineHeight: 1.5 }}>
+      <p className="faint" style={{ fontSize: "var(--text-xs)", lineHeight: 1.5 }}>
         {t("exportHint")}
       </p>
       <div className="export-buttons">
@@ -324,7 +321,7 @@ function DesktopSection() {
     <section className="settings-section">
       <h3 className="settings-heading">{t("desktopSection")}</h3>
 
-      <p className="faint" style={{ fontSize: 12, lineHeight: 1.5 }}>
+      <p className="faint" style={{ fontSize: "var(--text-xs)", lineHeight: 1.5 }}>
         {t("runInBackgroundHint")}
       </p>
 
@@ -345,7 +342,7 @@ function DesktopSection() {
           );
         }}
       />
-      <p className="faint" style={{ fontSize: 11.5 }}>
+      <p className="faint" style={{ fontSize: "var(--text-2xs)" }}>
         {failed ? t("startWithWindowsFailed") : t("startWithWindowsHint")}
       </p>
 

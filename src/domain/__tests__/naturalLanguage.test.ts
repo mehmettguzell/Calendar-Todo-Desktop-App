@@ -160,3 +160,46 @@ describe("the title is what is left", () => {
     expect(parse("   toplantı   ").title).toBe("toplantı");
   });
 });
+
+describe("deadlines in plain language", () => {
+  it("reads a Turkish \u201c...e kadar\u201d as a deadline, not a start date", () => {
+    const parsed = parse("20 Eyl\u00fcl'e kadar sunum");
+    expect(parsed.deadline).toBe("2026-09-20");
+    expect(parsed.dueDate).toBeNull();
+    expect(parsed.title).toBe("sunum");
+  });
+
+  it("reads the English forms", () => {
+    expect(parse("report by 20 September").deadline).toBe("2026-09-20");
+    expect(parse("report until 2026-09-20").deadline).toBe("2026-09-20");
+    expect(parse("report by 20 September").title).toBe("report");
+  });
+
+  it("takes a relative deadline too", () => {
+    expect(parse("yar\u0131na kadar rapor").deadline).toBe("2026-08-26");
+    expect(parse("report by tomorrow").deadline).toBe("2026-08-26");
+  });
+
+  it("keeps a start date and a deadline apart in one sentence", () => {
+    const parsed = parse("yar\u0131n ba\u015fla 20 Eyl\u00fcl'e kadar bitir");
+    expect(parsed.dueDate).toBe("2026-08-26");
+    expect(parsed.deadline).toBe("2026-09-20");
+  });
+
+  /*
+   * A dash still means a span: "25 - 28 August" is four days of conference,
+   * which is a different fact from "finish by the 28th".
+   */
+  it("leaves the dash form as a multi-day span", () => {
+    const parsed = parse("2026-08-25 - 2026-08-28 konferans");
+    expect(parsed.dueDate).toBe("2026-08-25");
+    expect(parsed.endDate).toBe("2026-08-28");
+    expect(parsed.deadline).toBeNull();
+  });
+
+  it("leaves \u201ckadar\u201d alone when no date precedes it", () => {
+    const parsed = parse("bu kadar yeter");
+    expect(parsed.deadline).toBeNull();
+    expect(parsed.title).toBe("bu kadar yeter");
+  });
+});

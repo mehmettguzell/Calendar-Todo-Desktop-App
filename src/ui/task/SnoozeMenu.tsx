@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { atTime, toLocalDate, toLocalTime } from "@/domain/datetime";
 import {
+  availableSnoozePresets,
   resolveSnooze,
   snoozePreviewDate,
-  SNOOZE_PRESETS,
   type SnoozePresetId,
 } from "@/domain/snooze";
 import type { TaskInstance } from "@/domain/types";
@@ -56,10 +56,10 @@ export function SnoozeMenu({
 
   return (
     <Popover onClose={onClose} align={align}>
-      <div style={{ padding: "4px 8px 6px", fontSize: 11, fontWeight: 650, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-faint)" }}>
+      <div style={{ padding: "4px 8px 6px", fontSize: "var(--text-2xs)", fontWeight: 650, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-faint)" }}>
         {t("snooze")}
       </div>
-      {SNOOZE_PRESETS.map((preset) => {
+      {availableSnoozePresets(instance, now).map((preset) => {
         const preview =
           preset.id === "custom"
             ? null
@@ -80,7 +80,7 @@ export function SnoozeMenu({
           >
             <span className="grow">{t(preset.labelKey as TranslationKey)}</span>
             {targetDate ? (
-              <span className="faint mono" style={{ fontSize: 11 }}>
+              <span className="faint mono" style={{ fontSize: "var(--text-2xs)" }}>
                 {preview?.reschedule
                   ? `${targetDate.slice(5)}${clock ? ` ${clock}` : ""}`
                   : (clock ?? targetDate.slice(5))}
@@ -90,7 +90,7 @@ export function SnoozeMenu({
         );
       })}
       <hr />
-      <div style={{ padding: "2px 8px 4px", fontSize: 11, color: "var(--text-faint)" }}>
+      <div style={{ padding: "2px 8px 4px", fontSize: "var(--text-2xs)", color: "var(--text-faint)" }}>
         {t("snoozeFootnote")}
       </div>
     </Popover>

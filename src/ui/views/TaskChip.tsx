@@ -1,10 +1,17 @@
 import type { DragEvent, MouseEvent } from "react";
+import { Flag } from "lucide-react";
 import type { Category, TaskInstance } from "@/domain/types";
-import { cn } from "@/lib/cn";
+import { usePickGesture } from "@/ui/task/usePickGesture";
+import {
+  chipClassName,
+  chipFacts,
+  chipStyle,
+  chipTitle,
+} from "./taskChipLook";
 
 /**
  * Compact task rendering for the month grid.
- * All-day tasks read as filled bars, timed tasks as a dot plus a start time —
+ * All-day tasks read as tinted bars, timed tasks as a dot plus a start time —
  * the visual distinction the spec asks for in section 6.
  *
  * A task that runs `dueDate`..`endDate` is drawn on every day it covers. The
@@ -17,6 +24,7 @@ export function TaskChip({
   category,
   onOpen,
   onContextMenu,
+  listIds,
   draggable = false,
   dragging = false,
   onDragStart,
@@ -26,51 +34,61 @@ export function TaskChip({
   category: Category | null;
   onOpen: (instance: TaskInstance) => void;
   onContextMenu?: (event: MouseEvent, instance: TaskInstance) => void;
+  /**
+   * The chips drawn beside this one, in order — what a Shift-click measures
+   * across. A day cell's worth, never the whole month: a range spanning two
+   * days of a grid is not a range anybody can see.
+   */
+  listIds?: string[];
   draggable?: boolean;
   dragging?: boolean;
   onDragStart?: (event: DragEvent, instance: TaskInstance) => void;
   onDragEnd?: () => void;
 }) {
   const { task, span } = instance;
-  const allDay = task.allDay || !task.startTime;
-  const color = category?.color ?? "var(--accent)";
-  const done = instance.storedStatus === "COMPLETED";
-  const spanning = span.length > 1;
-  const continues = spanning && !span.isStart;
+  const facts = chipFacts(instance, category);
+
+  /*
+   * A chip is picked the way a row is.
+   *
+   * Not with a checkbox: there is no room for one on a bar this size, and the
+   * month grid would turn into a form. The mode itself is the affordance —
+   * once it is on, a click picks instead of opens, and a picked chip is
+   * outlined. A modifier click does the same without the mode, exactly as in
+   * every list.
+   *
+   * Deadline markers stay out of it. Picking one would quietly pick the plan
+   * it belongs to, and "delete the 4 things I picked" would take a whole
+   * project with it.
+   */
+  const { picking, picked, onClickCapture } = usePickGesture({
+    taskId: task.id,
+    listIds,
+    enabled: !instance.deadlineOnly,
+  });
+
+  const plain = !facts.allDay && !facts.continues && !facts.isDeadline;
 
   return (
     <button
       type="button"
-      className={cn(
-        "chip truncate",
-        allDay && "allday",
-        done && "done",
-        instance.status === "OVERDUE" && "overdue",
-        spanning && "spanning",
-        spanning && !span.isStart && "span-continued",
-        spanning && !span.isEnd && "span-continues",
-        dragging && "chip-dragging",
-      )}
-      style={allDay ? { background: color } : undefined}
-      title={
-        spanning
-          ? `${task.title} · ${task.dueDate} → ${task.endDate} (${span.index + 1}/${span.length})`
-          : task.title
-      }
+      className={chipClassName(instance, facts, { dragging, picking, picked })}
+      style={chipStyle(facts)}
+      title={chipTitle(instance, facts)}
       draggable={draggable}
       onDragStart={onDragStart ? (e) => onDragStart(e, instance) : undefined}
       onDragEnd={onDragEnd}
       onContextMenu={onContextMenu ? (e) => onContextMenu(e, instance) : undefined}
-      onClick={() => onOpen(instance)}
+      onClick={(e) => {
+        if (onClickCapture(e)) return;
+        onOpen(instance);
+      }}
     >
-      {allDay || continues ? null : (
-        <i className="chip-dot" style={{ background: color }} />
-      )}
-      {allDay || continues ? null : (
-        <span className="chip-time">{task.startTime}</span>
-      )}
-      <span className="chip-title truncate">{task.title}</span>
-      {spanning && span.isStart && span.length > 1 ? (
+      {facts.isDeadline ? <Flag size={11} className="chip-flag" aria-hidden /> : null}
+      {plain ? <i className="chip-dot" style={{ background: facts.color }} /> : null}
+      {plain ? <span className="chip-time">{task.startTime}</span> : null}
+      <span className="chip-title truncate">{facts.label}</span>
+      {facts.spanning && span.isStart ? (
         <span className="chip-span-count">{span.length}d</span>
       ) : null}
     </button>

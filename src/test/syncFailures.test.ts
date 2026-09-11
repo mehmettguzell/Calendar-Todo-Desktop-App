@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifySyncError, isRetryableSyncFailure } from "@/lib/errors";
-import { acceptsRemoteTask } from "@/state/syncEngine";
+import { acceptsRemoteTask } from "@/sync";
 import { migrate } from "@/data/db";
 import { useSyncStore } from "@/state/syncStore";
 

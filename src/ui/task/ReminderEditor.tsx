@@ -35,7 +35,7 @@ export function ReminderEditor({ task }: { task: Task }) {
   return (
     <div className="col" style={{ gap: 8 }}>
       {reminders.length === 0 ? (
-        <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+        <p className="faint" style={{ margin: 0, fontSize: "var(--text-xs)" }}>
           {t("reminderNone")} {task.dueDate ? "" : t("reminderNeedsDate")}
         </p>
       ) : (
@@ -44,8 +44,8 @@ export function ReminderEditor({ task }: { task: Task }) {
           return (
             <div key={reminder.id} className="row">
               <div className="grow">
-                <div style={{ fontSize: 13 }}>{describeReminder(reminder, t)}</div>
-                <div className="faint mono" style={{ fontSize: 11 }}>
+                <div style={{ fontSize: "var(--text-sm)" }}>{describeReminder(reminder, t)}</div>
+                <div className="faint mono" style={{ fontSize: "var(--text-2xs)" }}>
                   {fires
                     ? t("reminderNext", {
                         when: fires.toLocaleString(localeTag(), {
@@ -109,9 +109,10 @@ function AddReminderForm({ task, onDone }: { task: Task; onDone: () => void }) {
 
   return (
     <div className="col" style={{ gap: 8 }}>
-      <div className="segmented" style={{ alignSelf: "flex-start" }}>
+      <div className="segmented-tabs" style={{ alignSelf: "flex-start" }}>
         <button
           type="button"
+          className="segmented-tab"
           aria-pressed={mode === "RELATIVE"}
           disabled={!task.dueDate}
           onClick={() => setMode("RELATIVE")}
@@ -120,6 +121,7 @@ function AddReminderForm({ task, onDone }: { task: Task; onDone: () => void }) {
         </button>
         <button
           type="button"
+          className="segmented-tab"
           aria-pressed={mode === "ABSOLUTE"}
           onClick={() => setMode("ABSOLUTE")}
         >

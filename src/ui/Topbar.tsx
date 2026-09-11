@@ -5,20 +5,40 @@ import {
   ChevronLeft,
   ChevronRight,
   CloudOff,
+  Eye,
+  EyeOff,
   Plus,
   RefreshCw,
   Search,
 } from "lucide-react";
+import { cn } from "@/lib/cn";
 import { formatErrorMessage, type SyncFailureKind } from "@/lib/errors";
 import { localeTag } from "@/domain/datetime";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { useAuthStore } from "@/state/authStore";
 import type { Filters } from "@/state/selectors";
-import { syncDifferences } from "@/state/syncEngine";
+import { syncDifferences, type SyncDifferenceReport } from "@/sync";
 import { useSyncStore, type SkippedRow, type SyncPhase } from "@/state/syncStore";
+import { SelectButton } from "./task/SelectButton";
 import type { CalendarMode } from "./views/CalendarView";
 import type { ViewId } from "./Sidebar";
-import { Switch } from "./components/primitives";
+import { Segmented } from "./components/Segmented";
+
+/**
+ * Where a task can be picked.
+ *
+ * Which is every view that draws tasks: the six of them each show rows, chips
+ * or cards backed by the same `Task`, and the bulk bar acts on tasks rather
+ * than on whatever a given screen calls them.
+ */
+const SELECTABLE_VIEWS = new Set<ViewId>([
+  "today",
+  "tasks",
+  "plans",
+  "calendar",
+  "focus",
+  "notes",
+]);
 
 const MODES: { id: CalendarMode; labelKey: TranslationKey }[] = [
   { id: "month", labelKey: "calMonth" },
@@ -36,10 +56,7 @@ const MODES: { id: CalendarMode; labelKey: TranslationKey }[] = [
  * saved and will go up on their own.
  */
 function SyncButton() {
-  const [feedback, setFeedback] = useState<{
-    type: "success" | "error" | "info";
-    text: string;
-  } | null>(null);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
   const user = useAuthStore((s) => s.user);
   const session = useAuthStore((s) => s.session);
   const openAuthModal = useAuthStore((s) => s.openAuthModal);
@@ -67,23 +84,7 @@ function SyncButton() {
     // returns. The try/catch is for the impossible one.
     try {
       // Manual: the press is the condition that revives a paused retry budget.
-      const report = await syncDifferences({ manual: true });
-      if (!report.success) {
-        setFeedback(
-          report.error === "offline"
-            ? { type: "info", text: t("syncOfflineNotice") }
-            : { type: "error", text: t(syncFailureKey(report.error ?? "unknown")) },
-        );
-      } else if (report.totalDifferences === 0) {
-        setFeedback({ type: "success", text: t("syncUpToDate") });
-      } else {
-        const parts: string[] = [];
-        if (report.uploadedTasks > 0) parts.push(`${report.uploadedTasks} ${t("syncTasksUp")}`);
-        if (report.downloadedTasks > 0) parts.push(`${report.downloadedTasks} ${t("syncTasksDown")}`);
-        if (report.uploadedCategories > 0) parts.push(`${report.uploadedCategories} ${t("syncCatsUp")}`);
-        if (report.downloadedCategories > 0) parts.push(`${report.downloadedCategories} ${t("syncCatsDown")}`);
-        setFeedback({ type: "success", text: `${t("syncSuccess")} ${parts.join(", ")}` });
-      }
+      setFeedback(describeReport(await syncDifferences({ manual: true }), t));
     } catch (err: unknown) {
       // The reason belongs in the console; the user gets a sentence, not a
       // Postgres message naming our tables and columns.
@@ -107,13 +108,6 @@ function SyncButton() {
         onClick={handleSync}
         disabled={syncing}
         title={status.tooltip}
-        style={{
-          gap: 6,
-          fontWeight: 500,
-          border: "1px solid var(--border)",
-          padding: "5px 11px",
-          borderRadius: "var(--radius-md)",
-        }}
       >
         <span
           className="sync-dot"
@@ -144,7 +138,7 @@ function SyncButton() {
             border: "1px solid var(--border, #333)",
             borderRadius: 8,
             padding: "8px 12px",
-            fontSize: 12,
+            fontSize: "var(--text-xs)",
             maxWidth: 340,
             boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
             display: "flex",
@@ -183,17 +177,50 @@ function syncFailureKey(kind: SyncFailureKind): TranslationKey {
   }
 }
 
+/** What the button says back, and in what colour. */
+interface Feedback {
+  type: "success" | "error" | "info";
+  text: string;
+}
+
+/** What one press of the sync button is worth saying about. */
+function describeReport(
+  report: SyncDifferenceReport,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+): Feedback {
+  if (!report.success) {
+    return report.error === "offline"
+      ? { type: "info", text: t("syncOfflineNotice") }
+      : { type: "error", text: t(syncFailureKey(report.error ?? "unknown")) };
+  }
+  if (report.totalDifferences === 0) {
+    return { type: "success", text: t("syncUpToDate") };
+  }
+
+  const parts: string[] = [];
+  const moved = (count: number, key: TranslationKey) => {
+    if (count > 0) parts.push(`${count} ${t(key)}`);
+  };
+  moved(report.uploadedTasks, "syncTasksUp");
+  moved(report.downloadedTasks, "syncTasksDown");
+  moved(report.uploadedCategories, "syncCatsUp");
+  moved(report.downloadedCategories, "syncCatsDown");
+  return { type: "success", text: `${t("syncSuccess")} ${parts.join(", ")}` };
+}
+
+interface SyncStatusInput {
+  phase: SyncPhase;
+  pending: number;
+  lastSyncedAt: number | null;
+  lastFailure: SyncFailureKind | null;
+  autoRetryPaused: boolean;
+  realtime: "connected" | "connecting" | "down";
+  skipped: SkippedRow[];
+}
+
 /** One colour and one sentence for whatever the sync layer is doing. */
 function describeSyncStatus(
-  s: {
-    phase: SyncPhase;
-    pending: number;
-    lastSyncedAt: number | null;
-    lastFailure: SyncFailureKind | null;
-    autoRetryPaused: boolean;
-    realtime: "connected" | "connecting" | "down";
-    skipped: SkippedRow[];
-  },
+  s: SyncStatusInput,
   t: (key: TranslationKey, params?: Record<string, string | number>) => string,
 ): { color: string; tooltip: string } {
   const last =
@@ -218,21 +245,8 @@ function describeSyncStatus(
       };
     case "disabled":
       return { color: "var(--text-faint)", tooltip: t("syncLoginRequired") };
-    default: {
-      // A pass that finished but left rows behind is not a green light. The
-      // rows are safe locally — that is the whole point of dropping them from
-      // the batch rather than letting Postgres reject everything — but the
-      // badge should not claim this device is fully in the cloud when it isn't.
-      const held = s.skipped.length;
-      return {
-        color: held > 0 ? "#f59e0b" : s.realtime === "connected" ? "#10b981" : "#94a3b8",
-        tooltip:
-          (s.realtime === "connected" ? `${t("syncLive")} · ` : "") +
-          last +
-          (s.pending > 0 ? ` · ${s.pending} ${t("syncPendingHint")}` : "") +
-          (held > 0 ? ` · ${t("syncSkipped", { count: held })}` : ""),
-      };
-    }
+    default:
+      return settledStatus(s, t, last);
   }
 }
 
@@ -286,22 +300,23 @@ export function Topbar({
           <button type="button" className="btn" onClick={onToday}>
             {t("today")}
           </button>
-          <div className="segmented">
-            {MODES.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                aria-pressed={mode === m.id}
-                onClick={() => onMode(m.id)}
-              >
-                {t(m.labelKey)}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            size="sm"
+            ariaLabel={t("calendarModeAria")}
+            value={mode}
+            onChange={onMode}
+            segments={MODES.map((m) => ({ id: m.id, label: t(m.labelKey) }))}
+          />
         </>
       ) : null}
 
       <span className="grow" />
+
+      {/* Every screen that draws rows draws the same way into picking them.
+          Bütçe is the exception, and it is the honest one: there is nothing
+          there a bulk task action could apply to, and a button that does
+          nothing is worse than one that is absent. */}
+      {SELECTABLE_VIEWS.has(view) ? <SelectButton /> : null}
 
       <label className="search">
         <Search size={14} />
@@ -313,11 +328,22 @@ export function Topbar({
         />
       </label>
 
-      <Switch
-        checked={filters.showCompleted}
-        label={t("done")}
-        onChange={(showCompleted) => onFilters({ ...filters, showCompleted })}
-      />
+      {/* "Show finished tasks" was a labelled switch standing at the same
+          weight as the primary button beside it, for something you toggle once
+          a week. It is the same setting, as an eye you press — on when it is
+          on, and it says which it is on hover. */}
+      <button
+        type="button"
+        className={cn("btn ghost icon", filters.showCompleted && "active")}
+        aria-pressed={filters.showCompleted}
+        title={filters.showCompleted ? t("hideCompleted") : t("showCompleted")}
+        aria-label={filters.showCompleted ? t("hideCompleted") : t("showCompleted")}
+        onClick={() =>
+          onFilters({ ...filters, showCompleted: !filters.showCompleted })
+        }
+      >
+        {filters.showCompleted ? <Eye size={16} /> : <EyeOff size={16} />}
+      </button>
 
       <SyncButton />
 
@@ -326,4 +352,32 @@ export function Topbar({
       </button>
     </header>
   );
+}
+
+/**
+ * Idle, which is not the same as clean.
+ *
+ * A pass that finished but left rows behind is not a green light. The rows are
+ * safe locally — that is the whole point of dropping them from the batch rather
+ * than letting Postgres reject everything — but the badge should not claim this
+ * device is fully in the cloud when it isn't.
+ */
+function settledStatus(
+  s: SyncStatusInput,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+  last: string,
+): { color: string; tooltip: string } {
+  const held = s.skipped.length;
+  const live = s.realtime === "connected";
+  const notes = [
+    live ? t("syncLive") : null,
+    last,
+    s.pending > 0 ? `${s.pending} ${t("syncPendingHint")}` : null,
+    held > 0 ? t("syncSkipped", { count: held }) : null,
+  ];
+
+  return {
+    color: held > 0 ? "#f59e0b" : live ? "#10b981" : "#94a3b8",
+    tooltip: notes.filter(Boolean).join(" · "),
+  };
 }

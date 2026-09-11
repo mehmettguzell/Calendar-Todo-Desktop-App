@@ -3,9 +3,68 @@
     Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
 
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
+  /*
+   * The display face, for the handful of things that name a screen.
+   *
+   * A serif is the cheapest character this interface can buy: it costs no
+   * bytes, works offline — which matters for a desktop app that must open on a
+   * plane — and it says something the system sans cannot, which is that this
+   * is a place for your own days rather than a dashboard.
+   *
+   * It is spent on names only: the date on Today, a page title, a plan's
+   * title, a modal's title, an empty state's line. Every label, button, meta
+   * line and form field stays in the sans, because a serif at 11px in a
+   * control is illegible and pretending otherwise is how "characterful"
+   * becomes "hard to use".
+   */
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+    Georgia, "Times New Roman", serif;
+
+  /*
+   * The type scale.
+   *
+   * The stylesheets had grown eighteen distinct font sizes over 226
+   * declarations — 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13, 13.5, 14, 14.5, 15,
+   * 16, 17, 18, 20, 22, 24. Sizes half a pixel apart do not read as two ranks,
+   * they read as one blurry one, and every new component had to guess which of
+   * the three near-identical "small" sizes it belonged to.
+   *
+   * Nine steps, each far enough from the next to mean something. Anything new
+   * picks one of these; a size that is not on the scale is a decision that
+   * needs a reason.
+   */
+  --text-3xs: 10px;
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+
+  /*
+   * Three weights, and no others.
+   *
+   * Between 400 and 700 the stylesheets used 500, 550, 600, 650 and 680 — five
+   * near-identical steps for one idea ("a bit heavier"). At 13px nobody can
+   * tell 600 from 650; what they can tell is that nothing on the screen agrees
+   * with anything else.
+   */
+  --weight-normal: 400;
+  --weight-medium: 550;
+  --weight-bold: 700;
+
+  /*
+   * Three radii.
+   *
+   * On top of these there were ad-hoc 4px, 5px, 6px and 8px values scattered
+   * through the files. A corner is a rhythm: four almost-equal curves read as
+   * a mistake, three distinct ones read as a system.
+   */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -14,67 +73,108 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  --bg: #f4f5f7;
-  --surface: #ffffff;
-  --surface-2: #fafbfc;
-  --surface-hover: #f0f2f5;
-  --border: #e2e5ea;
-  --border-strong: #cdd2da;
-  --text: #131721;
-  --text-muted: #667085;
-  --text-faint: #97a0af;
+  /*
+   * Warm paper, warm ink, and an accent that is nobody's default.
+   *
+   * The previous palette was correct and completely anonymous: the same cold
+   * blue-grey every productivity tool ships with. Nothing was wrong with any
+   * single value, and together they said nothing about what this app is.
+   *
+   * So: paper rather than white, ink rather than black, and indigo rather than
+   * the #3b82f6 that half the web uses for its primary button. The three
+   * signal colours keep their jobs — amber is still "today", green "done", red
+   * "late" — because they are the only colours in here that a user has to
+   * *read*, and rotating those would be a redesign of the meaning, not the
+   * look.
+   *
+   * Every pair below is verified in `src/test/palette.test.ts`, which also
+   * checks the four tone steps still separate the surfaces now that the app
+   * draws almost no lines between them.
+   */
+  --bg: #f4f2ef;
+  --surface: #fffefc;
+  --surface-2: #eae6e0;
+  --surface-3: #ded9d1;
+  /* An alias, not a fifth ground. Hover means "become the next step down the
+     ladder", and 33 rules were written against this name before the ladder
+     existed; pointing it at `--surface-2` keeps them all correct and stops the
+     app carrying a tone nothing else in the system knows about. */
+  --surface-hover: var(--surface-2);
+  --border: #e3ded7;
+  --border-strong: #c6bfb5;
 
-  --accent: #3b6dff;
-  --accent-soft: #e8eeff;
+  --text: #1b1916;
+  --text-muted: #615b54;
+  --text-faint: #867f76;
+
+  --accent: #4a3fd4;
+  --accent-soft: #eceaff;
   --accent-text: #ffffff;
 
-  --danger: #e5484d;
-  --danger-soft: #fdecec;
-  --warning: #d97706;
-  --warning-soft: #fdf1e0;
-  --success: #12a150;
-  --success-soft: #e6f6ec;
-  --info: #7c6bf5;
-  --info-soft: #eeecfe;
+  --danger: #c22f3a;
+  --danger-soft: #fbe9ea;
+  --warning: #8f5b05;
+  --warning-soft: #fbefdc;
+  --success: #12744a;
+  --success-soft: #e3f2e8;
+  --info: #6f5df0;
+  --info-soft: #eceaff;
 
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.05);
-  --shadow: 0 4px 12px rgba(16, 24, 40, 0.08), 0 1px 3px rgba(16, 24, 40, 0.04);
-  --shadow-lg: 0 16px 40px rgba(16, 24, 40, 0.16), 0 4px 10px rgba(16, 24, 40, 0.06);
+  /*
+   * One elevation, for things that float.
+   *
+   * There were three shadow tokens and 46 uses, most of them on cards sitting
+   * flat in the page — a "subtle shadow" on a static box is a border written
+   * in grey. Shadow now means one thing: this is above the page and can be
+   * dismissed, and there are two depths of it: a menu, and a modal.
+   */
+  --shadow: 0 6px 16px rgba(16, 24, 40, 0.1), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-lg: 0 20px 48px rgba(16, 24, 40, 0.18), 0 4px 12px rgba(16, 24, 40, 0.07);
 
-  --sidebar-w: 264px;
+  --sidebar-w: 248px;
   --panel-w: 400px;
   --hour-h: 52px;
 
   color-scheme: light;
 }
 
-:root[data-theme="dark"] {
-  --bg: #0d0f14;
-  --surface: #161920;
-  --surface-2: #1b1f28;
-  --surface-hover: #212630;
-  --border: #262b36;
-  --border-strong: #363d4b;
-  --text: #e9ecf2;
-  --text-muted: #98a1b1;
-  --text-faint: #6b7484;
+/*
+ * Scoped to the attribute, not to the root that usually carries it.
+ *
+ * The app only ever stamps `data-theme` on `<html>`, so in practice this is
+ * the same selector — but written this way a theme can also be applied to a
+ * subtree, which is what lets `docs/ui-redesign/gallery.html` put the light
+ * and the dark rendering of every component side by side on one page. A
+ * palette nobody can see both halves of at once is a palette that drifts.
+ */
+[data-theme="dark"] {
+  --bg: #100f0d;
+  --surface: #1a1815;
+  --surface-2: #232019;
+  --surface-3: #2e2a22;
+  --surface-hover: var(--surface-2);
+  --border: #2b2721;
+  --border-strong: #443f36;
 
-  --accent: #5b83ff;
-  --accent-soft: #1c2646;
-  --accent-text: #ffffff;
+  --text: #f0ece5;
+  --text-muted: #a49c91;
+  --text-faint: #7b736a;
 
-  --danger: #ff6369;
-  --danger-soft: #3a1d20;
-  --warning: #f0a742;
-  --warning-soft: #3a2c17;
-  --success: #38c172;
-  --success-soft: #16321f;
-  --info: #9c8dff;
+  --accent: #9b91ff;
+  --accent-soft: #241f45;
+  --accent-text: #100f0d;
+
+  --danger: #ff7b7f;
+  --danger-soft: #3a1c1e;
+  --warning: #e6a54a;
+  --warning-soft: #382a15;
+  --success: #4cc98a;
+  --success-soft: #14301f;
+  --info: #b0a6ff;
   --info-soft: #241f45;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.6);
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.62);
 
   color-scheme: dark;
 }

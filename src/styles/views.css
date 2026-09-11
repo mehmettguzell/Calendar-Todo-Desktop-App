@@ -11,25 +11,40 @@
   margin-bottom: var(--space-5);
 }
 
+/* The label above a list.
+   A rule under every heading drew a ladder down the page — four sections meant
+   four horizontal lines competing with the rows they introduced. Space does
+   the same separating for free, and a small uppercase label is unmistakably a
+   heading rather than one more task title. */
 .section-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
-  margin-bottom: var(--space-2);
-  padding-bottom: 5px;
-  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+  padding: 0 2px;
+  color: var(--text-muted);
 }
 
 .section-head h2 {
-  font-size: 13px;
-  letter-spacing: 0.02em;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: inherit;
 }
+
 .section-head .count {
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
-.section-head.alert h2 {
+
+.section-head.alert {
+  color: var(--danger);
+}
+
+.section-head.alert .count {
   color: var(--danger);
 }
 
@@ -42,12 +57,58 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
-  padding: 8px var(--space-2);
-  border-radius: var(--radius-sm);
+  /* Taller than it needs to be, on purpose: a list of tasks is read down the
+     left edge, and rows packed to their text height turn that edge into a
+     wall. The extra four pixels is the difference between scanning and
+     squinting, and it is also what makes the row a comfortable click target. */
+  padding: 10px var(--space-2);
+  border-radius: var(--radius);
   transition: background 100ms ease;
   /* Anchors the drop marker drawn in the gaps around this row. */
   position: relative;
 }
+
+/* Picking rows.
+   The checkbox column only exists while a selection is being made, so a list
+   nobody is selecting in keeps exactly the layout it always had. */
+.task-pick {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  padding-top: 3px;
+  flex: none;
+  cursor: pointer;
+}
+
+.task-pick input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.task-row.picked {
+  background: var(--accent-soft);
+}
+
+/* While picking, a click anywhere on the row means "pick me" rather than
+   "open me" — the cursor is the only warning of that, so it gives one. */
+.task-row.picking .task-main {
+  cursor: pointer;
+}
+
+/* A priority swatch for menus, where there is no room for the full bar. */
+.prio-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+.prio-dot.HIGH { background: var(--danger); }
+.prio-dot.MEDIUM { background: var(--warning); }
+.prio-dot.LOW { background: var(--accent); }
 
 /* -------------------------------------------------- task reordering */
 
@@ -103,9 +164,12 @@
   color: var(--accent);
 }
 
+/* Rows sit on the page's own ground, so hovering one lifts it to the raised
+   surface — the same move the whole app uses to say "this is on top". */
 .task-row:hover {
-  background: var(--surface-hover);
+  background: var(--surface-2);
 }
+
 .task-row.selected {
   background: var(--accent-soft);
 }
@@ -123,49 +187,84 @@
      them into an unreadable column. */
   flex-wrap: wrap;
   gap: var(--space-2);
-  font-weight: 500;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  color: var(--text);
 }
 
 .task-title > .label {
   flex: 1 1 auto;
 }
 
-.task-row.done .task-title > .label {
-  color: var(--text-faint);
-  text-decoration: line-through;
+/* Finishing something should feel like finishing something.
+ *
+ * The line is drawn rather than switched on: `text-decoration-color` animates,
+ * which `text-decoration` itself does not, and unlike a pseudo-element rule it
+ * survives a title that wraps onto three lines. The row steps back at the same
+ * time, so a day's completed work settles into a quiet band under the open
+ * work instead of becoming a column of struck-through sentences.
+ *
+ * Both halves are on the *undone* rule as well, so taking a tick back plays
+ * the same movement in reverse rather than snapping. */
+.task-row {
+  transition:
+    background 100ms ease,
+    opacity 260ms ease;
 }
 
+.task-row .task-title > .label {
+  text-decoration: line-through;
+  text-decoration-color: transparent;
+  text-decoration-thickness: 1.5px;
+  transition:
+    color 260ms ease,
+    text-decoration-color 260ms ease;
+}
+
+.task-row.done {
+  opacity: 0.55;
+}
+
+/* Reading a finished row is still a thing people do. */
+.task-row.done:hover {
+  opacity: 1;
+}
+
+.task-row.done .task-title > .label {
+  color: var(--text-muted);
+  text-decoration-color: var(--text-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-row,
+  .task-row .task-title > .label {
+    transition: none;
+  }
+}
+
+/* The line under the title. Tight to it — 2px was enough to look accidental
+   and not enough to group them — and quiet enough that the eye reads the
+   titles down the list first and only stops here when it has found the row. */
 .task-meta {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 5px;
   flex-wrap: wrap;
-  margin-top: 2px;
-  color: var(--text-muted);
-  font-size: 12px;
+  margin-top: 3px;
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  line-height: 1.4;
 }
 
 .task-meta .sep {
   color: var(--border-strong);
 }
+/* Layout only. Whether these are on screen is `.hover-actions` in ui.css —
+   the same rule the plan cards and the sidebar's category rows follow, so
+   "controls appear on approach" has one definition and not four. */
 .task-actions {
-  display: flex;
-  align-items: center;
   gap: 2px;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-.task-row:hover .task-actions,
-.task-row:focus-within .task-actions {
-  opacity: 1;
-}
-
-.subtask-strip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-faint);
-  font-size: 12px;
 }
 
 .progress {
@@ -194,9 +293,52 @@
   width: var(--panel-w);
   min-width: 0;
   height: 100%;
-  border-left: 1px solid var(--border);
-  background: var(--surface-2);
+  /* A sheet of its own, standing beside the content sheet. The hairline is
+     what keeps the two apart where they meet, since both are the same tone —
+     the one place in the app where a line still earns its keep in the flow. */
+  box-shadow: -1px 0 0 var(--border);
+  background: var(--surface);
   animation: panel-in 260ms ease-out;
+}
+
+/* The panel taking the whole window.
+   Fixed rather than a wider grid track: the track animating from 400px to the
+   full width would relayout the calendar behind it on every frame, and that
+   view is about to be covered anyway. The reserved track is deliberately left
+   in place so restoring is a repaint rather than a second relayout. */
+.panel.is-maximized {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  width: 100vw;
+  height: 100vh;
+  border-left: none;
+  animation: panel-max-in 180ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* A form stretched across a 27" monitor is unreadable, so the content keeps a
+   comfortable measure. Padding rather than a centred wrapper, so the head and
+   foot rules still span the whole window like a window's own chrome. */
+.panel.is-maximized .panel-head,
+.panel.is-maximized .panel-body,
+.panel.is-maximized .panel-foot {
+  padding-inline: max(var(--space-4), calc((100% - 920px) / 2));
+  animation: none;
+}
+
+@keyframes panel-max-in {
+  from {
+    opacity: 0.6;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel.is-maximized { animation: none; }
 }
 
 /* Held in the tree for the length of its exit and nothing more: it is sliding
@@ -208,8 +350,12 @@
 }
 
 @keyframes panel-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* The panel slides; its contents drift in behind it a beat later. The stagger
@@ -222,13 +368,25 @@
 }
 
 .panel-head,
-.note-panel-head { animation-delay: 50ms; }
-.panel-body { animation-delay: 90ms; }
-.panel-foot { animation-delay: 130ms; }
+.note-panel-head {
+  animation-delay: 50ms;
+}
+.panel-body {
+  animation-delay: 90ms;
+}
+.panel-foot {
+  animation-delay: 130ms;
+}
 
 @keyframes panel-content-in {
-  from { opacity: 0; transform: translateX(12px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -236,8 +394,12 @@
   .panel-head,
   .note-panel-head,
   .panel-body,
-  .panel-foot { animation: none; }
-  .panel.is-closing { transition: none; }
+  .panel-foot {
+    animation: none;
+  }
+  .panel.is-closing {
+    transition: none;
+  }
 }
 
 .panel-head {
@@ -260,14 +422,35 @@
 
 .panel-foot {
   display: flex;
+  flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border);
 }
 
+/* What the task can be filed into. Wraps rather than squeezing, because a
+   parent's title is as long as the user made it. */
+.panel-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* The quiet line: when the task was made, and the one way to get rid of it.
+   Deleting lives down here rather than up among the actions so that the
+   pointer never passes over it on the way to something else. */
+.panel-foot-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 /* A box rather than a line: the whole name is visible however long it runs,
    and the field grows to fit it (see the height it is given in TaskPanel). */
 .panel-title-input {
+  font-family: var(--font-display);
   width: 100%;
   /* `overflow: hidden` below lets a flex column shrink this to nothing, and the
      panel body is exactly that; the field owns its height, so opt out. */
@@ -279,8 +462,8 @@
   background: none;
   outline: none;
   font-family: inherit;
-  font-size: 18px;
-  font-weight: 620;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
   line-height: 1.3;
   letter-spacing: -0.02em;
   overflow: hidden;
@@ -301,11 +484,140 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* A block of content inside a page.
+   Separated by tone, not by a line: the app drew 102 hairlines because its two
+   surface tones were five units apart and could not separate anything on their
+   own. They are far enough apart now. */
 .card {
   padding: var(--space-3);
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-2);
+}
+
+/* A popover that has to open upwards, because its trigger sits on the bottom
+   edge of the window. `.popover` itself takes no vertical anchor, so it is made
+   relative here and the wrapper does the lifting. */
+.popover-up {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 4px;
+}
+
+.popover-up > .popover {
+  position: relative;
+}
+
+/* One row of the plan menu hanging off the panel's footer button. */
+.popover-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 190px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.popover-item:hover,
+.popover-item:focus-visible {
+  background: var(--surface-hover);
+}
+
+/* The one row in a menu you cannot take back. Coloured only on approach, so a
+   menu is not a red thing sitting open on the screen. */
+.popover-item.danger {
+  color: var(--danger);
+}
+
+.popover-item.danger:hover,
+.popover-item.danger:focus-visible {
+  background: var(--danger-soft);
+}
+
+/* Disabled rather than hidden, so "why can I not do this here" is answered on
+   the control itself — through its `title`. */
+.popover-item:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.popover-item:disabled:hover {
+  background: none;
+}
+
+.popover-item .truncate {
+  min-width: 0;
+}
+
+/* -------------------------------------------------- the task panel's folds */
+
+/* The always-open block: the two or three edits nearly every visit makes. */
+.panel-essentials {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.panel-section {
+  padding: 0;
+}
+
+.panel-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 10px var(--space-3);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: left;
+}
+
+.panel-section-head:hover {
+  background: var(--surface-hover);
+}
+
+.panel-section-title {
+  color: var(--text-faint);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* What the section holds, while it is shut. Truncates rather than wraps: this
+   line must never be tall enough to compete with the section it summarises. */
+.panel-section-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-align: right;
+}
+
+.panel-section-caret {
+  flex: none;
+  color: var(--border-strong);
+  transition: transform 140ms ease;
+}
+
+.panel-section.is-open .panel-section-caret {
+  transform: rotate(90deg);
+}
+
+.panel-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 2px var(--space-3) var(--space-3);
 }
 
 .card-head {
@@ -314,8 +626,8 @@
   justify-content: space-between;
   margin-bottom: var(--space-2);
   color: var(--text-faint);
-  font-size: 11px;
-  font-weight: 650;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -391,7 +703,7 @@
 .timeline-item {
   display: flex;
   gap: var(--space-3);
-  font-size: 12.5px;
+  font-size: var(--text-xs);
 }
 
 .timeline-item .rail {
@@ -427,7 +739,7 @@
 .timeline-item time {
   display: block;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 
 /* -------------------------------------------------------------- misc */
@@ -439,21 +751,20 @@
 }
 
 .stat {
-  padding: var(--space-3);
-  border: 1px solid var(--border);
+  padding: var(--space-4);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-2);
 }
 
 .stat .value {
-  font-size: 22px;
-  font-weight: 650;
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 .stat .label {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .mini {
@@ -465,8 +776,8 @@
 
 .mini .head {
   color: var(--text-faint);
-  font-size: 10px;
-  font-weight: 650;
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-bold);
   text-align: center;
 }
 
@@ -477,7 +788,7 @@
   height: 24px;
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -491,11 +802,11 @@
 }
 .mini button.today {
   color: var(--accent);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 .mini button.selected {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
 }
 
 .mini button.has-tasks::after {
@@ -511,15 +822,20 @@
 
 /* -------------------------------------------------- Today View Hero Card */
 
+/* Without the week's chart beside it, the card is one column: a hero card that
+   keeps a 1.25fr slot for something that is not there leaves a hole where a
+   new account most needs the screen to look finished. */
+.today-hero-card.is-solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .today-hero-card {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--border);
+  gap: var(--space-5);
+  padding: var(--space-5);
   border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  background: var(--surface-2);
 }
 
 @media (max-width: 860px) {
@@ -541,64 +857,62 @@
   min-width: 0;
 }
 
-.today-motivation-badge-row {
+/* The date, as the page's headline.
+   Weekday small and lettered above, the day and month large below it — the
+   shape a wall calendar uses, which is the point: it should be recognisable
+   before it is read. */
+.today-date {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 2px;
 }
 
-.today-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 650;
+.today-date-weekday {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.today-date-day {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-medium);
   letter-spacing: -0.01em;
+  line-height: 1.05;
+  color: var(--text);
 }
 
-.today-badge.neutral {
-  background: var(--accent-soft);
-  color: var(--accent);
+/* The greeting, as a heading rather than a badge.
+   A pill draws a box around text to say "this is a distinct object"; the
+   greeting is not one, it is the sentence the card opens with. Losing the box
+   loses nothing but the box — the mood still reaches the reader as colour. */
+.today-hero-headline {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
 }
 
-.today-badge.success {
-  background: var(--success-soft);
+.today-hero-headline.neutral {
+  color: var(--text-muted);
+}
+.today-hero-headline.success {
   color: var(--success);
 }
-
-.today-badge.warning {
-  background: var(--warning-soft);
+.today-hero-headline.warning {
   color: var(--warning);
 }
-
-.today-badge.celebrate {
-  background: linear-gradient(
-    135deg,
-    rgba(245, 158, 11, 0.15),
-    rgba(16, 185, 129, 0.15)
-  );
-  color: #d97706;
-  border: 1px solid rgba(245, 158, 11, 0.3);
-}
-
-.today-streak-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--warning-soft);
+.today-hero-headline.celebrate {
   color: var(--warning);
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .today-hero-subtitle {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   line-height: 1.4;
 }
@@ -608,17 +922,28 @@
   align-items: center;
   gap: 6px;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
 .today-hero-stat strong {
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--text);
 }
 
 .today-hero-stat.danger strong {
   color: var(--danger);
+}
+
+.today-hero-stat.streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--warning);
+}
+
+.today-hero-stat.streak strong {
+  color: var(--warning);
 }
 
 .today-hero-stat-dot {
@@ -654,8 +979,8 @@
 }
 
 .progress-ring-pct {
-  font-size: 20px;
-  font-weight: 800;
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   color: var(--text);
@@ -666,10 +991,10 @@
 }
 
 .progress-ring-sub {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   color: var(--text-faint);
   margin-top: 2px;
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 
 .progress-ring-done-btn {
@@ -690,7 +1015,7 @@
 }
 
 .progress-ring-icon-trophy {
-  color: #f59e0b;
+  color: var(--warning);
   filter: drop-shadow(0 2px 6px rgba(245, 158, 11, 0.4));
   animation: floatTrophy 2s ease-in-out infinite;
 }
@@ -714,144 +1039,119 @@
 
 /* -------------------------------------------------- Weekly Bar Chart */
 
-.weekly-chart-card {
+/* -------------------------------------------------- the week strip */
+
+.week-strip {
   display: flex;
   flex-direction: column;
   gap: 10px;
   height: 100%;
   justify-content: space-between;
-  border-left: 1px solid var(--border);
   padding-left: var(--space-4);
 }
 
 @media (max-width: 860px) {
-  .weekly-chart-card {
-    border-left: none;
-    border-top: 1px solid var(--border);
+  .week-strip {
     padding-left: 0;
     padding-top: var(--space-3);
   }
 }
 
-.weekly-chart-head {
+.week-strip-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
-.weekly-chart-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 650;
+.week-strip-title {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--text-muted);
 }
 
-.weekly-chart-toggles {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.btn-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 7px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text-muted);
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-
-.btn-toggle:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.btn-toggle.active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.weekly-bars-container {
+.week-strip-days {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
-  height: 72px;
-  align-items: end;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
 }
 
-.weekly-bar-col {
+/* A day, not a bar.
+   The number leads, the activity is a fill behind it, and the whole column is
+   the hit target — the strip is how you get to Wednesday as much as it is how
+   you find out what Wednesday held. */
+.week-day {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  height: 100%;
+  gap: 2px;
+  padding: 6px 0 8px;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  overflow: hidden;
+  transition: background 120ms ease;
+}
+
+.week-day:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+
+.week-day:disabled {
   cursor: default;
 }
 
-.weekly-bar-track {
-  position: relative;
-  flex: 1;
-  width: 100%;
-  max-width: 22px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
+.week-day-name {
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  z-index: 1;
+}
+
+.week-day-num {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  z-index: 1;
+}
+
+/* Behind the label, growing from the bottom. */
+.week-day-track {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: flex-end;
-  overflow: hidden;
 }
 
-.weekly-bar-fill {
+.week-day-fill {
   width: 100%;
+  background: var(--surface-3);
   border-radius: var(--radius-sm);
-  background: var(--border-strong);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 2px;
-  transition:
-    height 350ms cubic-bezier(0.34, 1.56, 0.64, 1),
-    background 150ms ease;
+  transition: height 320ms cubic-bezier(0.34, 1.2, 0.64, 1);
 }
 
-.weekly-bar-fill.has-val {
-  background: var(--accent);
-}
-
-.weekly-bar-fill.has-val.today-fill {
-  background: linear-gradient(180deg, var(--accent), #7c3aed);
-  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.35);
-}
-
-.weekly-bar-val {
-  font-size: 9.5px;
-  font-weight: 700;
-  color: #fff;
-  line-height: 1;
-}
-
-.weekly-bar-label {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 10.5px;
-  color: var(--text-faint);
-  font-weight: 500;
-}
-
-.weekly-bar-col.is-today .weekly-bar-label {
+/* Today is the only column that takes the accent. Seven coloured bars are
+   seven things claiming to be the one that matters. */
+.week-day.is-today .week-day-num,
+.week-day.is-today .week-day-name {
   color: var(--accent);
-  font-weight: 700;
 }
+
+.week-day.is-today .week-day-fill {
+  background: var(--accent-soft);
+}
+
+.week-day.is-today {
+  box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+
 
 .today-dot {
   width: 4px;
@@ -864,10 +1164,8 @@
 
 .activity-heatmap-card {
   padding: var(--space-4);
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  background: var(--surface-2);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -884,9 +1182,8 @@
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface-2);
+  background: var(--surface-3);
 }
 
 .heatmap-stat-icon-box {
@@ -894,7 +1191,7 @@
   place-items: center;
   width: 38px;
   height: 38px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
 
@@ -905,7 +1202,7 @@
 
 .heatmap-stat-icon-box.trophy {
   background: rgba(245, 158, 11, 0.15);
-  color: #d97706;
+  color: var(--warning);
 }
 
 .heatmap-stat-icon-box.zap {
@@ -919,21 +1216,21 @@
 }
 
 .heatmap-stat-val {
-  font-size: 20px;
-  font-weight: 800;
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
 
 .heatmap-stat-unit {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
 }
 
 .heatmap-stat-lbl {
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   margin-top: 2px;
 }
@@ -950,7 +1247,7 @@
   grid-template-rows: repeat(7, 14px);
   gap: 3px;
   margin-top: 18px; /* space for month labels */
-  font-size: 9.5px;
+  font-size: var(--text-3xs);
   color: var(--text-faint);
   line-height: 14px;
 }
@@ -987,8 +1284,8 @@
   position: absolute;
   left: 0;
   top: 0;
-  font-size: 10px;
-  font-weight: 600;
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-medium);
   color: var(--text-faint);
   white-space: nowrap;
 }
@@ -1057,23 +1354,23 @@
   background: #047857;
 }
 
-:root[data-theme="dark"] .heatmap-cell.intensity-0 {
+[data-theme="dark"] .heatmap-cell.intensity-0 {
   background: rgba(255, 255, 255, 0.05);
 }
 
-:root[data-theme="dark"] .heatmap-cell.intensity-1 {
+[data-theme="dark"] .heatmap-cell.intensity-1 {
   background: #064e3b;
 }
 
-:root[data-theme="dark"] .heatmap-cell.intensity-2 {
+[data-theme="dark"] .heatmap-cell.intensity-2 {
   background: #059669;
 }
 
-:root[data-theme="dark"] .heatmap-cell.intensity-3 {
+[data-theme="dark"] .heatmap-cell.intensity-3 {
   background: #10b981;
 }
 
-:root[data-theme="dark"] .heatmap-cell.intensity-4 {
+[data-theme="dark"] .heatmap-cell.intensity-4 {
   background: #34d399;
 }
 
@@ -1084,7 +1381,7 @@
   gap: 12px;
   padding-top: 4px;
   border-top: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .heatmap-hover-info {
@@ -1096,88 +1393,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
-}
-
-/* ================================================================== */
-/* PLANS VIEW STYLES                                                 */
-/* ================================================================== */
-
-.plans-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.plans-title-box {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.plans-title-icon {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), #7c3aed);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
-}
-
-.plans-main-title {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  margin: 0;
-}
-
-.plans-subtitle {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin: 2px 0 0 0;
-}
-
-.plans-actions-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.plans-filter-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-}
-
-.plan-tab-btn {
-  padding: 5px 12px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--text-muted);
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-
-.plan-tab-btn:hover {
-  color: var(--text);
-}
-
-.plan-tab-btn.active {
-  background: var(--surface);
-  color: var(--accent);
-  font-weight: 650;
-  box-shadow: var(--shadow-sm);
+  font-size: var(--text-2xs);
 }
 
 /* Plan Starters Grid */
@@ -1188,11 +1404,13 @@
   margin-bottom: var(--space-4);
 }
 
+/* A template you can take. Dashed, because it is an offer rather than a thing
+   you own yet — the one place in the app a dashed edge means something. */
 .plan-starter-card {
   padding: 14px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-2);
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -1205,24 +1423,24 @@
   border-style: solid;
   transform: translateY(-2px);
   box-shadow: var(--shadow);
-  background: var(--surface-hover);
+  background: var(--surface-3);
 }
 
 .plan-starter-title {
-  font-size: 14px;
-  font-weight: 650;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
   color: var(--text);
 }
 
 .plan-starter-desc {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   line-height: 1.35;
 }
 
 .plan-starter-sub-count {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
   color: var(--accent);
   margin-top: 4px;
 }
@@ -1245,58 +1463,150 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--border);
+  padding: var(--space-4);
   border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-  transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease,
-    transform 150ms ease;
+  background: var(--surface-2);
+  position: relative;
+  transition: background 150ms ease;
 }
 
+/* No lift on hover. A card that rises when the pointer passes over it is
+   twelve cards flickering as the pointer crosses the grid; a quiet change of
+   ground says the same thing without the movement. */
 .plan-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow);
+  background: var(--surface-3);
+}
+
+/* Picking plans.
+   Same two states the todo rows use — a soft fill for what is held, a pointer
+   for the surface that now means "pick me" rather than "open me". */
+.plan-card.picked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.plan-card.picking .plan-card-title-row,
+.plan-card.picking .plan-card-desc,
+.plan-card.picking .plan-card-meta-row,
+.plan-subtask-item.picking .plan-subtask-label {
+  cursor: pointer;
+}
+
+.plan-subtask-item.picked {
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+}
+
+/* The quick ways into a selection. Its own strip below the header, present
+   only while selecting, so the header keeps its shape when nobody is. */
+.plans-pick-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
 }
 
 .plan-card.selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 .plan-card.completed {
   opacity: 0.85;
 }
 
-.plan-card-head {
+.plan-card.dragging {
+  opacity: 0.45;
+  transform: scale(0.98);
+}
+
+.plan-card.drop-before::before,
+.plan-card.drop-after::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-soft);
+  z-index: 10;
+}
+
+.plan-card.drop-before::before {
+  left: -10px;
+}
+
+.plan-card.drop-after::after {
+  right: -10px;
+}
+
+/* Arrives with the pointer, like every other control that is only there for
+   rearranging. A grid of twelve cards was showing twelve drag handles to
+   someone who was reading, not sorting. */
+.plan-card-grip {
   display: flex;
   align-items: center;
+  justify-content: center;
+  cursor: grab;
+  color: var(--text-faint);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  opacity: 0;
+  transition:
+    color 120ms ease,
+    opacity 120ms ease,
+    background 120ms ease;
+}
+
+.plan-card:hover .plan-card-grip,
+.plan-card-grip:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .plan-card-grip { opacity: 1; }
+}
+
+.plan-card-grip:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.plan-card-grip:active {
+  cursor: grabbing;
+}
+
+.plan-card-head {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
 
 .plan-card-title-row {
   display: flex;
-  align-items: center;
+  /* Top-aligned so the action buttons stay level with the first line of a
+     name that runs to two. */
+  align-items: flex-start;
   gap: 8px;
   flex: 1;
   min-width: 0;
   cursor: pointer;
 }
 
-.plan-icon.active {
-  color: var(--accent);
-}
-
-.plan-icon.completed {
-  color: var(--success);
-}
-
 .plan-card-title {
-  font-size: 15px;
-  font-weight: 650;
+  /* A plan is known by its name, so the name is never the part that gets cut:
+     it wraps and the card grows, rather than ending in an ellipsis that hides
+     which plan this is. */
+  font-family: var(--font-display);
+  flex: 1;
+  line-height: 1.3;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
   letter-spacing: -0.01em;
   margin: 0;
 }
@@ -1306,14 +1616,15 @@
   color: var(--text-muted);
 }
 
-.plan-card-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+/* Anchors the overflow menu, and hides the date input the menu opens. */
+.plan-card-menu-anchor {
+  position: relative;
+  display: inline-flex;
+  flex: none;
 }
 
 .plan-card-desc {
-  font-size: 12.5px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   margin: 0;
   line-height: 1.35;
@@ -1328,89 +1639,69 @@
   cursor: pointer;
 }
 
-.plan-category-pill {
+/* The plan card wears the app's pill (see `ui.css`), with one addition of its
+   own: the stage chip, which is the only pill on any card that is a button. */
+.plan-stage-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 7px;
+  padding: 2px 9px;
   border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  font-size: 11px;
-  font-weight: 600;
+  background: var(--surface-3);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
   color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
 
-.plan-priority-tag {
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
+.plan-stage-chip.is-not-started:hover,
+.plan-stage-chip.is-not-started:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
-.plan-priority-tag.HIGH {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.plan-priority-tag.MEDIUM {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-
-.plan-priority-tag.LOW {
+.plan-stage-chip.is-started {
+  border-color: transparent;
   background: var(--accent-soft);
   color: var(--accent);
 }
 
-.plan-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 700;
+.plan-stage-chip.is-started:hover,
+.plan-stage-chip.is-started:focus-visible {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text-muted);
 }
 
-.plan-status-pill.active {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-
-.plan-status-pill.success {
+.plan-stage-chip.is-completed {
+  border-color: transparent;
   background: var(--success-soft);
   color: var(--success);
-}
-
-/* Plan Progress Section */
-.plan-card-progress-section {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  cursor: default;
 }
 
 .plan-progress-track {
   width: 100%;
   height: 6px;
   border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: var(--surface-3);
   overflow: hidden;
 }
 
+/* A flat accent fill rather than a blue-to-green gradient: a bar that changes
+   hue as it fills invents a second meaning for a length that already has one. */
 .plan-progress-bar {
   height: 100%;
   border-radius: 999px;
+  background: var(--accent);
   transition: width 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.plan-progress-bar.in-progress {
-  background: linear-gradient(90deg, var(--accent), #10b981);
-}
-
-.plan-progress-bar.completed {
+.plan-card.completed .plan-progress-bar {
   background: var(--success);
 }
 
@@ -1429,8 +1720,8 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   color: var(--text-faint);
   transition: color 120ms ease;
 }
@@ -1445,31 +1736,27 @@
   margin-top: 6px;
 }
 
-.plan-today-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-weight: 600;
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
-}
-
 /* Rows read as a list, not as a stack of boxes inside the card box. The
    divider carries the separation that a filled background used to. Matches
    the .budget-row pattern. */
+/* A step, drawn like a task row: no rule under it, a quiet ground on approach.
+   Five steps in a card used to mean five hairlines in a card, which told the
+   reader only that a list is a list. */
 .plan-subtask-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 2px;
-  border-bottom: 1px solid var(--border);
-  font-size: 12.5px;
+  padding: 6px var(--space-2);
+  margin: 0 -6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
   transition: background 120ms ease;
   /* Anchors the drop marker drawn in the gap above or below this row. */
   position: relative;
+}
+
+.plan-subtask-item:hover {
+  background: var(--surface-3);
 }
 
 /* Sits with the row's other hover controls, so a card nobody is rearranging
@@ -1535,8 +1822,8 @@
 .plan-subtask-more {
   align-self: flex-start;
   padding: 6px 2px;
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
   transition: color 120ms ease;
 }
@@ -1547,8 +1834,8 @@
 
 .plan-card-count {
   flex: none;
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
 }
 
@@ -1565,30 +1852,239 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
   padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
+  border-radius: var(--radius-sm);
+  background: var(--warning-soft);
+  color: var(--warning);
   flex: none;
 }
 
-.plan-subtask-today-btn {
-  opacity: 0.45;
+/* Always drawn, never a hover secret.
+   It sat at 45% of a muted grey, which on a 12px glyph is close enough to the
+   row's own background that the control could not be found without knowing it
+   was there. It is the most-used thing on a step row, so it carries the same
+   amber the "Bugün" tag does and is legible before the pointer arrives.
+   Shared with the task panel's subtask rows, which offer the same control. */
+/* Full strength, so it is findable — it spent a long time at 45% opacity in a
+   grey nobody could see — but an icon rather than a tinted block: four steps
+   used to stack four amber squares down the edge of a card. */
+.btn.ghost.plan-subtask-today-btn {
+  flex: none;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  background: none;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.btn.ghost.plan-subtask-today-btn:hover,
+.btn.ghost.plan-subtask-today-btn:focus-visible {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* Already on today: filled, so "put it there" and "take it off" do not look
+   like the same button. */
+.btn.ghost.plan-subtask-today-btn.active {
+  background: var(--warning);
+  color: var(--accent-text);
+}
+
+.btn.ghost.plan-subtask-today-btn.active:hover,
+.btn.ghost.plan-subtask-today-btn.active:focus-visible {
+  background: var(--warning);
+  color: var(--accent-text);
+  filter: brightness(0.92);
+}
+
+/* ---- Plan deadlines -------------------------------------------------
+   The dated checkpoints a plan is broken into. Deliberately built from the
+   same parts as the steps list above it — same header, same row height, same
+   hover controls — so a card reads as one thing and not two lists that ended
+   up sharing a border. */
+.plan-deadlines {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 10px;
+}
+
+/* Nothing in it yet: no rule, no heading, just the offer to start one. */
+.plan-deadlines.is-empty {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.plan-deadlines.is-empty .plan-deadlines-head {
+  justify-content: flex-start;
+}
+
+.plan-deadlines-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Deliberately identical to `.plan-subtasks-toggle-title`: the two sections
+   sit one above the other, and a card whose halves are styled differently
+   reads as two widgets that happened to land in the same box. */
+.plan-deadlines-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-faint);
+  transition: color 120ms ease;
+}
+.plan-deadlines-title:hover {
+  color: var(--text);
+}
+
+.plan-deadlines-count {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-deadlines-add {
+  flex: none;
+  padding: 2px 6px;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+.plan-deadlines-add:hover {
+  color: var(--accent);
+}
+
+.plan-deadline-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 2px;
+  font-size: var(--text-xs);
+}
+.plan-deadline-item:last-child {
+  border-bottom: none;
+}
+.plan-deadline-item:hover {
+  background: var(--surface-hover);
+}
+
+/* The deadline's own control. Sized and spaced like the checkbox it replaced
+   so the two lists still line up, but shaped like nothing on the task side:
+   an outline that fills when the date is met. */
+.plan-deadline-flag {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+.plan-deadline-flag:hover {
+  background: var(--surface-hover);
+  color: var(--text-muted);
+}
+.plan-deadline-flag.is-met {
+  color: var(--success);
+}
+.plan-deadline-item.missed .plan-deadline-flag:not(.is-met) {
+  color: var(--danger);
+}
+
+.plan-deadline-label {
+  cursor: pointer;
+}
+.plan-deadline-item.done .plan-deadline-label {
+  text-decoration: line-through;
+  color: var(--text-faint);
+}
+
+/* The date is dashed like every other deadline in the app — its calendar
+   marker, the task row, the plan's own pill — so one fact reads one way. */
+.plan-deadline-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  padding: 1px 6px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
+}
+.plan-deadline-date:hover {
+  border-style: solid;
+  color: var(--text);
+}
+.plan-deadline-item.missed .plan-deadline-date {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.plan-deadline-item.done .plan-deadline-date {
+  opacity: 0.55;
+}
+
+.plan-deadline-missed {
+  flex: none;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  color: var(--danger);
+}
+
+/* Hidden until the row is pointed at, like the step grip beside it: a list
+   nobody is editing shows dates, not buttons. */
+.plan-deadline-remove {
+  opacity: 0;
+  flex: none;
   transition:
     opacity 120ms ease,
-    transform 120ms ease;
+    color 120ms ease;
+}
+.plan-deadline-item:hover .plan-deadline-remove,
+.plan-deadline-remove:focus-visible {
+  opacity: 1;
+}
+.plan-deadline-remove:hover {
+  color: var(--danger);
+}
+
+.plan-deadline-add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+}
+
+.plan-deadline-date-input {
   flex: none;
-}
-
-.plan-subtask-item:hover .plan-subtask-today-btn {
-  opacity: 1;
-}
-
-.plan-subtask-today-btn.active {
-  opacity: 1;
-  color: #f59e0b;
+  width: 140px;
+  font-variant-numeric: tabular-nums;
 }
 
 .plan-subtask-add-row {
@@ -1598,47 +2094,14 @@
   margin-top: 8px;
 }
 
-/* ================================================================== */
-/* TASKS VIEW STYLES                                                 */
-/* ================================================================== */
-
-.task-summary-banner {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: var(--space-3);
-}
-
-.task-summary-stat {
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.task-summary-val {
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-}
-
-.task-summary-lbl {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
 /* Tasks Quick Add Card */
 .tasks-quick-add-card {
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-2);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: var(--shadow-sm);
 }
 
 .tasks-quick-add-input-row {
@@ -1648,7 +2111,7 @@
 }
 
 .tasks-quick-input {
-  font-size: 14.5px;
+  font-size: var(--text-md);
 }
 
 .tasks-quick-options-row {
@@ -1666,134 +2129,6 @@
   gap: 4px;
 }
 
-.tasks-quick-group-lbl {
-  font-size: 11px;
-  color: var(--text-faint);
-  font-weight: 600;
-  margin-right: 2px;
-}
-
-.tasks-quick-pill {
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--text-muted);
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-
-.tasks-quick-pill:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.tasks-quick-pill.active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 650;
-}
-
-.tasks-quick-pill.prio-high.active {
-  background: var(--danger-soft);
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.tasks-quick-pill.prio-med.active {
-  background: var(--warning-soft);
-  border-color: var(--warning);
-  color: var(--warning);
-}
-
-/* Tasks Controls Bar */
-.tasks-controls-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.tasks-filter-pills {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.filter-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-
-.filter-pill:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.filter-pill.active {
-  background: var(--text);
-  border-color: var(--text);
-  color: var(--surface);
-  font-weight: 600;
-}
-
-.filter-pill.danger.active {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #fff;
-}
-
-.tasks-view-switcher {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-}
-
-.tasks-view-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
-  border: none;
-  border-radius: 4px;
-  background: none;
-  color: var(--text-muted);
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-
-.tasks-view-btn:hover {
-  color: var(--text);
-}
-
-.tasks-view-btn.active {
-  background: var(--surface);
-  color: var(--accent);
-  font-weight: 650;
-  box-shadow: var(--shadow-sm);
-}
-
 /* Kanban Board Layout */
 .kanban-grid {
   display: grid;
@@ -1807,10 +2142,15 @@
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
   min-height: 240px;
+}
+
+/* A row inside a column is already standing on the inset tone, so its hover
+   has to go one step further down the ladder or it would not move at all. */
+.kanban-column .task-row:hover {
+  background: var(--surface-3);
 }
 
 .kanban-column-head {
@@ -1818,12 +2158,11 @@
   align-items: center;
   gap: 6px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
 }
 
 .kanban-col-title {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   margin: 0;
   flex: 1;
 }
@@ -1837,7 +2176,7 @@
 .kanban-empty-slot {
   text-align: center;
   padding: 24px 8px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-faint);
 }
 
@@ -1847,14 +2186,9 @@
 
 .today-highlight-card {
   padding: 14px 16px;
-  border: 1.5px solid rgba(245, 158, 11, 0.4);
   border-radius: var(--radius);
-  background: linear-gradient(
-    135deg,
-    rgba(245, 158, 11, 0.08),
-    rgba(59, 130, 246, 0.04)
-  );
-  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.12);
+  background: var(--warning-soft);
+  color: var(--text);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1880,9 +2214,9 @@
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--warning-soft);
-  color: #d97706;
-  font-size: 11px;
-  font-weight: 800;
+  color: var(--warning);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
@@ -1894,8 +2228,8 @@
 }
 
 .today-highlight-title {
-  font-size: 16px;
-  font-weight: 650;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
   color: var(--text);
 }
 
@@ -1905,36 +2239,9 @@
 }
 
 .today-highlight-desc {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   margin-top: 2px;
-}
-
-/* Today Fast Add Bar */
-.today-fast-add-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.today-fast-input {
-  border: none;
-  background: none;
-  font-size: 13.5px;
-}
-
-.today-fast-input:focus {
-  box-shadow: none;
-}
-
-.prio-high-active {
-  background: var(--danger-soft) !important;
-  color: var(--danger) !important;
-  font-weight: 700;
 }
 
 /* ==================================================================
@@ -1952,9 +2259,75 @@
 
 .budget-range {
   margin: 0;
-  font-size: 17px;
-  font-weight: 650;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
   letter-spacing: -0.01em;
+}
+
+/* The period's net, beside the period's name.
+   The one number that stays on screen whichever tab is open — enough to know
+   whether the month is going well without leaving the tab you are on. */
+.budget-range-net {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.budget-range-net.is-positive {
+  color: var(--success);
+  background: var(--success-soft);
+}
+.budget-range-net.is-negative {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* Which question the page is answering.
+   A row of its own under the period bar, because the two strips do different
+   jobs: the one above chooses the window, this one chooses the question about
+   it. Side by side in a single bar — which is how the page grew — they read as
+   one undifferentiated wall of tabs, and nobody could say which drove what. */
+.budget-tabbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+
+/* One sentence saying what this tab is for.
+   The budget is the one screen in the app whose vocabulary is not obvious on
+   sight — "sabitler", "ekstre", "hareket" — and a line of plain language costs
+   a row and answers the question before it is asked. */
+/* What was just written down, and the way back to it.
+   The form is on the summary and the row it writes is a tab away, so the
+   moment after an entry is typed is the one moment the page has to hand it
+   back — a wrong amount is noticed then, not on a tab you have to know
+   about. */
+.budget-added-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: calc(var(--space-5) * -1 + 6px) 0 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--success-soft);
+  color: var(--success);
+  font-size: var(--text-xs);
+}
+
+.budget-added-note .btn {
+  color: inherit;
+}
+
+.budget-tab-hint {
+  max-width: 78ch;
+  margin: -8px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--text-faint);
 }
 
 .budget-totals {
@@ -1974,16 +2347,25 @@
   align-items: center;
   gap: 2px 8px;
   padding: 14px 16px;
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--surface-2);
 }
 
-.budget-stat.income { --stat-tone: #22c55e; }
-.budget-stat.expense { --stat-tone: #ef4444; }
-.budget-stat.investment { --stat-tone: #3b82f6; }
-.budget-stat.positive { --stat-tone: #22c55e; }
-.budget-stat.negative { --stat-tone: #ef4444; }
+.budget-stat.income {
+  --stat-tone: var(--success);
+}
+.budget-stat.expense {
+  --stat-tone: var(--danger);
+}
+.budget-stat.investment {
+  --stat-tone: var(--accent);
+}
+.budget-stat.positive {
+  --stat-tone: var(--success);
+}
+.budget-stat.negative {
+  --stat-tone: var(--danger);
+}
 
 .budget-stat.emphasis {
   border-color: color-mix(in srgb, var(--stat-tone) 45%, var(--border));
@@ -1997,23 +2379,23 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--stat-tone);
   background: color-mix(in srgb, var(--stat-tone) 16%, transparent);
 }
 
 .budget-stat-label {
   grid-area: label;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
 }
 
 .budget-stat-value {
   grid-area: value;
   margin-top: 6px;
-  font-size: 22px;
-  font-weight: 700;
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   color: var(--stat-tone);
@@ -2021,11 +2403,114 @@
 
 .budget-stat-hint {
   grid-area: hint;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   color: var(--text-faint);
 }
 
 /* Entry row --------------------------------------------------------- */
+
+/* ---- Wishlist ---------------------------------------------------------
+   Above the four totals, so the first thing the budget shows is the tension
+   it exists to resolve: what you mean to buy, and what the month can take.
+   Deliberately quieter than the totals underneath it — none of these numbers
+   is money that has moved. */
+.wishlist-total {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.wishlist-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.wishlist-add .wishlist-price {
+  flex: 0 0 110px;
+  font-variant-numeric: tabular-nums;
+}
+.wishlist-add .wishlist-link {
+  flex: 0 0 200px;
+}
+
+.wishlist-empty {
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
+.wishlist-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wishlist-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 2px;
+  border-top: 1px solid var(--border-soft, var(--border));
+}
+.wishlist-row:first-child {
+  border-top: none;
+}
+
+.wishlist-row-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+/* The name is also the way into editing the row, so it is a button — but a
+   button that has to read as the line of text it replaced. Only the underline
+   on hover says it can be pressed, which is the same signal the link beside it
+   uses. */
+.wishlist-row-title {
+  padding: 0;
+  font-size: var(--text-sm);
+  text-align: left;
+}
+button.wishlist-row-title:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+/* Open for correction: the form takes the whole row, so the three fields land
+   where the three facts were. */
+.wishlist-row.is-editing {
+  padding: 4px 2px;
+}
+.wishlist-row.is-editing .wishlist-add {
+  margin-bottom: 0;
+}
+/* The link is a destination, not the row: it stays small and never competes
+   with the name of the thing. */
+.wishlist-row-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+  text-decoration: none;
+  max-width: 180px;
+}
+.wishlist-row-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.wishlist-row-price {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 
 .budget-entry {
   display: flex;
@@ -2033,37 +2518,45 @@
   gap: var(--space-2);
   flex-wrap: wrap;
   padding: 10px 12px;
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface-2);
 }
 
-.budget-entry .budget-amount { flex: 0 0 118px; font-variant-numeric: tabular-nums; }
-.budget-entry .budget-date { flex: 0 0 150px; }
+/* Inside its own titled card the form has stopped being a floating row, so it
+   stops drawing the ground for one: two panels of the same tone stacked is a
+   border written in grey. */
+.budget-entry-card .budget-entry {
+  padding: 0;
+  background: none;
+}
+
+.budget-entry .budget-amount {
+  flex: 0 0 118px;
+  font-variant-numeric: tabular-nums;
+}
+.budget-entry .budget-date {
+  flex: 0 0 150px;
+}
 /* The note takes whatever is left; everything else keeps its own width so the
    row stays one line at normal window sizes and wraps predictably below. */
-.budget-entry .budget-category { flex: 0 0 168px; }
-.budget-entry .budget-account { flex: 0 0 150px; }
-.budget-entry .budget-note { flex: 1 1 200px; min-width: 160px; }
+.budget-entry .budget-category {
+  flex: 0 0 168px;
+}
+.budget-entry .budget-account {
+  flex: 0 0 150px;
+}
+.budget-entry .budget-note {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
 
 .budget-entry-error {
   flex-basis: 100%;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--danger);
 }
 
 /* Breakdown & ledger ------------------------------------------------- */
-
-.budget-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-4);
-  align-items: start;
-}
-
-@media (max-width: 980px) {
-  .budget-columns { grid-template-columns: minmax(0, 1fr); }
-}
 
 .budget-bars {
   display: flex;
@@ -2085,7 +2578,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .budget-bar-track {
@@ -2103,67 +2596,16 @@
 }
 
 .budget-bar-value {
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
 }
 
-.budget-rows {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  max-height: 420px;
-  overflow-y: auto;
-}
-
-.budget-row {
-  display: grid;
-  /* date · icon · text · provisional badge · amount · delete */
-  grid-template-columns: 56px 28px minmax(0, 1fr) auto auto 26px;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 2px;
-  border-bottom: 1px solid var(--border);
-}
-
-.budget-row:last-child { border-bottom: none; }
-
-.budget-row-date { font-size: 11.5px; color: var(--text-faint); }
-
-.budget-row-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  font-size: 13px;
-}
-
-.budget-row-text { display: flex; flex-direction: column; min-width: 0; }
-.budget-row-title { font-size: 13px; font-weight: 550; }
-.budget-row-note { font-size: 11.5px; color: var(--text-faint); }
-
-.budget-row-amount { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.budget-row-amount.income { color: #22c55e; }
-.budget-row-amount.expense { color: var(--text); }
-.budget-row-amount.investment { color: #3b82f6; }
-
-/* Row actions stay out of the way until the row is under the pointer. */
-.budget-row-delete { opacity: 0; transition: opacity 120ms ease; }
-.budget-row:hover .budget-row-delete,
-.budget-row-delete:focus-visible { opacity: 0.75; }
-.budget-row-delete:hover { opacity: 1; color: var(--danger); }
-
 /* Budget: repeat picker, limits ------------------------------------------- */
-
-.budget-entry .budget-repeat { flex: 0 0 140px; }
 
 .budget-generated-note {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
@@ -2172,9 +2614,18 @@
   grid-template-columns: minmax(90px, 150px) 1fr auto auto;
 }
 
-.budget-limit-note { font-weight: 500; opacity: 0.75; }
-.budget-limit-note.close { color: #eab308; opacity: 1; }
-.budget-limit-note.over { color: var(--danger); opacity: 1; }
+.budget-limit-note {
+  font-weight: var(--weight-medium);
+  opacity: 0.75;
+}
+.budget-limit-note.close {
+  color: var(--warning);
+  opacity: 1;
+}
+.budget-limit-note.over {
+  color: var(--danger);
+  opacity: 1;
+}
 
 /* Hidden until wanted: a view about where the money went should not read as a
    form. An already-set limit stays visible. */
@@ -2186,7 +2637,7 @@
   background: transparent;
   color: var(--text-muted);
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   text-align: right;
   font-variant-numeric: tabular-nums;
   opacity: 0;
@@ -2221,7 +2672,9 @@
   background: var(--surface-2);
   color: var(--text-muted);
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
 }
 
 .import-drop:hover,
@@ -2240,10 +2693,15 @@
   border-radius: var(--radius-sm);
   background: var(--danger-soft);
   color: var(--danger);
-  font-size: 12.5px;
+  font-size: var(--text-xs);
 }
 
-.import-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.import-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
 
 .import-chip {
   display: inline-flex;
@@ -2253,14 +2711,25 @@
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
 }
 
-.import-chip.warn { border-color: var(--warning); color: var(--warning); }
+.import-chip.warn {
+  border-color: var(--warning);
+  color: var(--warning);
+}
 
 /* The preview is the whole point of the wizard, so it gets the height. */
-.import-table-wrap { max-height: 46vh; border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.import-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.import-table-wrap {
+  max-height: 46vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.import-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
 
 .import-table th {
   position: sticky;
@@ -2270,22 +2739,40 @@
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-faint);
-  font-size: 10.5px;
-  font-weight: 650;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   text-align: left;
 }
 
-.import-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-.import-table tr:last-child td { border-bottom: none; }
+.import-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.import-table tr:last-child td {
+  border-bottom: none;
+}
 /* Rows the ledger already knows recede rather than disappear: someone
    reconciling wants to see that the line was read, not wonder where it went. */
-.import-table tr.is-known { background: var(--surface-2); }
-.import-table tr.is-off { opacity: 0.5; }
+.import-table tr.is-known {
+  background: var(--surface-2);
+}
+.import-table tr.is-off {
+  opacity: 0.5;
+}
 
-.import-merchant { display: block; font-weight: 600; }
-.import-raw { display: block; max-width: 320px; color: var(--text-faint); font-size: 10.5px; }
+.import-merchant {
+  display: block;
+  font-weight: var(--weight-medium);
+}
+.import-raw {
+  display: block;
+  max-width: 320px;
+  color: var(--text-faint);
+  font-size: var(--text-2xs);
+}
 .import-flag {
   display: inline-block;
   margin-top: 2px;
@@ -2293,15 +2780,33 @@
   border-radius: 999px;
   background: var(--warning-soft, var(--surface-hover));
   color: var(--warning);
-  font-size: 10px;
+  font-size: var(--text-3xs);
 }
-.import-flag.kind { background: var(--surface-hover); color: var(--text-muted); }
-.import-amount { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.import-amount.in { color: var(--success); }
+.import-flag.kind {
+  background: var(--surface-hover);
+  color: var(--text-muted);
+}
+.import-amount {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.import-amount.in {
+  color: var(--success);
+}
 
 /* Spending breakdown -------------------------------------------------------- */
-.spend-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.spend-total { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.spend-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.spend-total {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
 
 .spend-delta {
   display: inline-flex;
@@ -2309,23 +2814,52 @@
   gap: 3px;
   padding: 2px 7px;
   border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 650;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
 }
 /* Spending more is the bad direction, so the usual green/red is inverted. */
-.spend-delta.up { background: var(--danger-soft); color: var(--danger); }
-.spend-delta.down { background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); }
-.spend-delta.sm { padding: 0 5px; font-size: 10.5px; }
+.spend-delta.up {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.spend-delta.down {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+}
+.spend-delta.sm {
+  padding: 0 5px;
+  font-size: var(--text-2xs);
+}
 
-.spend-search { display: flex; align-items: center; gap: 6px; color: var(--text-faint); }
-.spend-search .input { flex: 1; }
-.spend-search-total { font-weight: 650; font-variant-numeric: tabular-nums; }
+.spend-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+}
+.spend-search .input {
+  flex: 1;
+}
+.spend-search-total {
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
 
-.spend-categories, .spend-merchants { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.spend-categories,
+.spend-merchants {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 
 .spend-category-head {
   display: grid;
-  grid-template-columns: 14px 18px minmax(60px, 1fr) 28px minmax(60px, 1.4fr) auto 34px auto;
+  grid-template-columns:
+    14px 18px minmax(60px, 1fr) 28px minmax(60px, 1.4fr)
+    auto 34px auto;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -2334,19 +2868,61 @@
   text-align: left;
 }
 
-.spend-category-head:hover { background: var(--surface-hover); }
-.spend-caret { transition: transform 140ms ease; color: var(--text-faint); }
-.spend-category.open .spend-caret { transform: rotate(90deg); }
-.spend-name { min-width: 0; font-size: 13px; }
-.spend-count { font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
-.spend-track { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
-.spend-track.thin { height: 4px; }
-.spend-fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
-.spend-value { font-size: 12.5px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.spend-share { font-size: 11px; text-align: right; }
+.spend-category-head:hover {
+  background: var(--surface-hover);
+}
+.spend-caret {
+  transition: transform 140ms ease;
+  color: var(--text-faint);
+}
+.spend-category.open .spend-caret {
+  transform: rotate(90deg);
+}
+.spend-name {
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+.spend-count {
+  font-size: var(--text-2xs);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.spend-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.spend-track.thin {
+  height: 4px;
+}
+.spend-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.spend-value {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.spend-share {
+  font-size: var(--text-2xs);
+  text-align: right;
+}
 
-.spend-merchants { margin: 2px 0 6px 22px; padding-left: 10px; border-left: 1px solid var(--border); }
-.spend-merchants.standalone { margin-left: 0; padding-left: 0; border-left: none; }
+.spend-merchants {
+  margin: 2px 0 6px 22px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+.spend-merchants.standalone {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+}
 
 .spend-merchant {
   display: grid;
@@ -2354,17 +2930,34 @@
   align-items: center;
   gap: 8px;
   padding: 3px 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
-.spend-average { font-size: 10.5px; white-space: nowrap; }
-.spend-refund { color: var(--success); font-size: 10.5px; white-space: nowrap; }
+.spend-average {
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+.spend-refund {
+  color: var(--success);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
 
 @media (max-width: 900px) {
-  .spend-category-head { grid-template-columns: 14px 18px 1fr auto auto; }
-  .spend-category-head .spend-track, .spend-category-head .spend-count { display: none; }
-  .spend-merchant { grid-template-columns: 1fr auto auto; }
-  .spend-merchant .spend-track, .spend-merchant .spend-average { display: none; }
+  .spend-category-head {
+    grid-template-columns: 14px 18px 1fr auto auto;
+  }
+  .spend-category-head .spend-track,
+  .spend-category-head .spend-count {
+    display: none;
+  }
+  .spend-merchant {
+    grid-template-columns: 1fr auto auto;
+  }
+  .spend-merchant .spend-track,
+  .spend-merchant .spend-average {
+    display: none;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -2373,12 +2966,19 @@
 
 /* The box reached from the tray. One column, big amount, nothing else to
    read: it is used standing at a till, not sitting at a desk. */
-.spend-capture { display: flex; flex-direction: column; gap: 10px; }
-.spend-capture .btn.block { justify-content: center; width: 100%; }
+.spend-capture {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.spend-capture .btn.block {
+  justify-content: center;
+  width: 100%;
+}
 
 .spend-capture .spend-amount {
-  font-size: 24px;
-  font-weight: 650;
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
   text-align: center;
   padding: 10px 12px;
@@ -2389,7 +2989,7 @@
   padding: 7px 10px;
   border-radius: var(--radius-sm);
   background: var(--accent-soft);
-  font-size: 12.5px;
+  font-size: var(--text-xs);
 }
 
 .spend-done {
@@ -2401,13 +3001,18 @@
   text-align: center;
 }
 
-.spend-done strong { font-size: 24px; font-variant-numeric: tabular-nums; }
-.spend-done svg { color: var(--success); }
+.spend-done strong {
+  font-size: var(--text-2xl);
+  font-variant-numeric: tabular-nums;
+}
+.spend-done svg {
+  color: var(--success);
+}
 
 .spend-provisional-note {
   max-width: 260px;
   color: var(--text-faint);
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   line-height: 1.45;
 }
 
@@ -2418,7 +3023,7 @@
   border: 1px dashed var(--border);
   border-radius: 999px;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--text-3xs);
   white-space: nowrap;
 }
 
@@ -2433,7 +3038,10 @@
   background: var(--surface-2);
 }
 
-.spend-day-total strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.spend-day-total strong {
+  font-size: var(--text-2xl);
+  font-variant-numeric: tabular-nums;
+}
 
 .spend-day-list {
   margin: 0;
@@ -2449,75 +3057,845 @@
   gap: 8px;
   padding: 6px 2px;
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
-.spend-day-row:last-child { border-bottom: none; }
-.spend-day-icon { width: 18px; text-align: center; }
-.spend-day-amount { text-align: right; font-variant-numeric: tabular-nums; }
-.spend-day-amount.income { color: var(--success); }
+.spend-day-row:last-child {
+  border-bottom: none;
+}
+.spend-day-icon {
+  width: 18px;
+  text-align: center;
+}
+.spend-day-amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.spend-day-amount.income {
+  color: var(--success);
+}
 
-.spend-day-add { display: flex; flex-wrap: wrap; gap: 6px; }
-.spend-day-add .input { flex: 1 1 110px; min-width: 96px; }
+.spend-day-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.spend-day-add .input {
+  flex: 1 1 110px;
+  min-width: 96px;
+}
 
 /* The bank's queue --------------------------------------------------- */
 
-.budget-feed { display: flex; flex-direction: column; gap: 8px; }
-
-.feed-rows { margin: 0; padding: 0; list-style: none; }
-
-.feed-row {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) auto auto auto;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 2px;
-  border-bottom: 1px solid var(--border);
+/* Imported statements ------------------------------------------------
+   One line per import: what it was, how much it added, and the way out. It
+   only renders when there is something to list, so the budget page of someone
+   who never imports is exactly as it was. */
+.imported-statements .section-head {
+  margin-bottom: 6px;
 }
 
-.feed-row:last-child { border-bottom: none; }
-.feed-date { font-size: 11.5px; color: var(--text-faint); }
-.feed-what { display: flex; flex-direction: column; min-width: 0; }
-.feed-what strong { font-size: 13px; font-weight: 550; }
-.feed-what .faint { font-size: 11px; }
-.feed-amount { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.statement-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.statement-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.statement-row:last-child {
+  border-bottom: none;
+}
+
+.statement-what {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.statement-what strong {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+.statement-what .faint {
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.statement-count {
+  flex: none;
+  font-size: var(--text-2xs);
+}
+
+.statement-amount {
+  flex: none;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Quiet until pointed at: undoing an import is not something to invite. */
+.statement-revert {
+  flex: none;
+  opacity: 0.55;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease;
+}
+.statement-row:hover .statement-revert,
+.statement-revert:focus-visible {
+  opacity: 1;
+}
+.statement-revert:hover {
+  color: var(--danger);
+}
+
+.statement-done {
+  flex: none;
+  font-size: var(--text-2xs);
+}
+
+.statement-row.is-reverted .statement-what strong,
+.statement-row.is-reverted .statement-amount {
+  text-decoration: line-through;
+  color: var(--text-faint);
+}
+
+/* What the daily mode would actually write, under the import toolbar. */
+.import-daily-note {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
 
 /* Reconciliation in the import preview -------------------------------- */
 
-.import-chip.match { border-color: var(--accent); color: var(--accent); }
+.import-chip.match {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
-.import-account { max-width: 320px; }
+.import-account {
+  max-width: 320px;
+}
 
-.import-match { white-space: nowrap; }
+.import-match {
+  white-space: nowrap;
+}
 
 .import-merge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: var(--text-2xs);
   cursor: pointer;
 }
 
 .import-match-why {
   display: block;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--text-3xs);
 }
 
 /* Mail settings ------------------------------------------------------- */
 
-.mail-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 8px; }
+.settings-rule {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
 
-.mail-ok {
+/* The deadline a plan has to be finished by, beside its name. A plan carries
+   no schedule, so this is the only date it ever shows — and the only reason it
+   appears on the calendar at all. */
+/* The date input the flag button drives. It is laid over the button rather
+   than parked in a corner, so the picker the browser opens is anchored where
+   the user clicked; it stays transparent and below the button, which keeps the
+   click on the button and the popup in the right place. */
+.plan-deadline-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  opacity: 0;
+  pointer-events: none;
+}
+.task-deadline.is-overdue { border-color: var(--danger); color: var(--danger); }
+
+/* ==================================================================
+   Fixed income & costs
+   The panel the ledger cannot be: what is standing, what has landed,
+   and what this period still owes.
+   ================================================================== */
+
+.budget-fixed .section-head h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fixed-hint,
+.ledger-hint {
+  margin: -2px 0 0;
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+}
+
+.fixed-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fixed-total {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.fixed-total b {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.fixed-total.expense b {
+  color: var(--danger);
+}
+.fixed-total.income b {
+  color: var(--success);
+}
+
+/* What the period still owes — the number this panel exists to show, so it is
+   the one allowed to carry a colour of its own. */
+.fixed-total.pending {
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
+  background: var(--warning-soft);
+}
+.fixed-total.pending b {
+  color: var(--warning);
+}
+
+.fixed-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fixed-row {
+  border-bottom: 1px solid var(--border);
+}
+.fixed-row:last-child {
+  border-bottom: none;
+}
+
+.fixed-row-head {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fixed-row-head:hover {
+  background: var(--surface-hover);
+}
+
+.fixed-row-icon,
+.ledger-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.fixed-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fixed-row-name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.fixed-row-when {
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+}
+
+.fixed-row-amount {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+.fixed-row-amount.income {
+  color: var(--success);
+}
+.fixed-row-amount.investment {
+  color: var(--accent);
+}
+
+.fixed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.fixed-badge.done {
+  color: var(--success);
+  background: var(--success-soft);
+}
+.fixed-badge.waiting {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+.fixed-badge.quiet {
+  color: var(--text-faint);
+  background: var(--surface-2);
+}
+
+.fixed-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.fixed-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 0 0 132px;
+}
+.fixed-field.grow {
+  flex: 1 1 180px;
+  min-width: 150px;
+}
+
+.fixed-field > span {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+.fixed-also {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.fixed-also input {
+  accent-color: var(--accent);
+}
+
+.fixed-editor-actions {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0;
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--text);
-  font-size: 12.5px;
+  flex-basis: 100%;
 }
 
-.settings-rule { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+/* ==================================================================
+   Ledger
+   Entries by day, each day carrying its own total, so a long run has a
+   shape the eye can read before a single amount is.
+   ================================================================== */
+
+.ledger-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ledger-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 220px;
+  min-width: 180px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-faint);
+}
+
+.ledger-search .input {
+  flex: 1;
+  border: none;
+  background: none;
+  padding: 6px 0;
+}
+.ledger-search .input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.ledger-days {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+/* The day header sticks while its own rows scroll past, so the date the
+   amounts belong to never leaves the screen. */
+.ledger-day-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 0;
+  background: var(--surface);
+}
+
+.ledger-day-head h4 {
+  margin: 0;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ledger-day-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.ledger-day-total {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.ledger-day-total.income {
+  color: var(--success);
+}
+
+.ledger-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The row and the one control that acts on it. The head still takes the whole
+   click — the pencil is the part that *says* so. */
+.ledger-row-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Out of the way until the row is under the pointer or being read by the
+   keyboard, and permanently visible while its editor is open. A pencil on
+   every row of a month of shopping is forty pencils and no ledger. */
+.ledger-row-edit {
+  flex: none;
+  opacity: 0;
+}
+.ledger-row-line:hover .ledger-row-edit,
+.ledger-row-line:focus-within .ledger-row-edit,
+.ledger-row-edit.is-open {
+  opacity: 1;
+}
+
+.ledger-row-head {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  /* Takes the row, leaving the pencil beside it its own width. */
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ledger-row-head:hover,
+.ledger-row.open .ledger-row-head {
+  background: var(--surface-hover);
+}
+
+.ledger-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The thing that happened leads; the grouping it belongs to follows. The other
+   way round — which is how this list used to read — gives a month of shopping
+   forty rows that all say "Groceries". */
+.ledger-row-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.ledger-row-detail {
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+}
+
+.ledger-row-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ledger-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.ledger-tag.repeat {
+  padding: 1px 5px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ledger-tag.pending {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+/* "3/12" — a number pair, so it reads in the same tabular figures as the
+   amount it sits beside. */
+.ledger-tag.instalment {
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-row-amount {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+.ledger-row-amount.income {
+  color: var(--success);
+}
+.ledger-row-amount.investment {
+  color: var(--accent);
+}
+
+.ledger-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px;
+  margin: 2px 0 8px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.ledger-edit-amount {
+  flex: 0 0 110px;
+}
+.ledger-edit-category {
+  flex: 0 0 150px;
+}
+.ledger-edit-account {
+  flex: 0 0 130px;
+}
+.ledger-edit-date {
+  flex: 0 0 148px;
+}
+.ledger-edit-note {
+  flex: 1 1 160px;
+  min-width: 140px;
+}
+/* Deliberately the narrowest box in the row: it holds a count of months, and
+   a wide field would suggest it wants a price. */
+.ledger-edit-instalments {
+  flex: 0 0 64px;
+  text-align: center;
+}
+/* Its own line under the fields — the outstanding debt is a consequence of the
+   entry, not another thing to fill in. */
+.ledger-edit-hint {
+  flex: 1 0 100%;
+  font-size: var(--text-2xs);
+}
+
+/* The limit editor sits beside the category head rather than inside it: a
+   button cannot contain a text field, and the number belongs next to the total
+   it constrains. */
+.spend-category-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.spend-category-line .spend-category-head {
+  flex: 1;
+  min-width: 0;
+}
+.spend-category-line .budget-limit-input {
+  flex: none;
+}
+.spend-category-line:hover .budget-limit-input,
+.spend-category-line .budget-limit-input:focus {
+  opacity: 1;
+}
+
+.fixed-total.investment b {
+  color: var(--accent);
+}
+
+/* When the number beside a bar is measuring a ceiling rather than a share, it
+   carries the ceiling's colour so the two never disagree. */
+.spend-share.close {
+  color: var(--warning);
+}
+.spend-share.over {
+  color: var(--danger);
+  font-weight: var(--weight-bold);
+}
+
+/* ==================================================================
+   Deadline markers
+   A deadline is a date, not work. In Today and Görevler it used to be
+   drawn as a task row — checkbox, priority stripe, drag handle, a timer
+   offering to track time against a date — so a day with three tasks and
+   two checkpoints read as five things to do.
+
+   The shape is the message. Nothing here is full-bleed, nothing here is
+   tickable, and the dashed edge is the app's existing sign for "a day
+   written against something" — the calendar's own checkpoint chips use
+   the same language. They wrap on one strip above the lists, because a
+   handful of dates is a glance, not a list to be worked down.
+   ================================================================== */
+
+.deadline-markers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.deadline-markers-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 2px;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.deadline-markers-head .count {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.deadline-marker-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deadline-marker {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.deadline-marker:hover {
+  border-color: var(--accent);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.deadline-marker-flag {
+  align-self: center;
+  flex: none;
+  color: var(--accent);
+}
+
+/* What finishes, in the reader's colour — the one part of the line that is
+   the user's own words. */
+.deadline-marker-name {
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+
+/* Which plan it belongs to. Present only on a named checkpoint, where the
+   name alone ("Backend bitecek") does not say what it is a checkpoint of. */
+.deadline-marker-of {
+  color: var(--text-faint);
+}
+.deadline-marker-of::before {
+  content: "· ";
+}
+
+.deadline-marker-when {
+  margin-left: auto;
+  padding-left: var(--space-2);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+/* Gone, and still outstanding: the only one of these that changes what you
+   would do next, so it is the only one that carries a colour. */
+.deadline-marker.is-missed {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.deadline-marker.is-missed .deadline-marker-flag,
+.deadline-marker.is-missed .deadline-marker-name,
+.deadline-marker.is-missed .deadline-marker-when {
+  color: var(--danger);
+}
+
+/* Met. Kept legible rather than hidden — "we hit that one" is part of what
+   the day has to say — but struck through and stepped back. */
+.deadline-marker.is-met {
+  border-style: solid;
+  border-color: var(--border);
+  color: var(--text-faint);
+}
+.deadline-marker.is-met .deadline-marker-flag {
+  color: var(--success);
+}
+.deadline-marker.is-met .deadline-marker-name {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+/* ==================================================================
+   Picking, on the surfaces that are not rows
+   The bulk bar is one bar and does not care which screen a task was
+   picked on, so every rendering of a task has to be pickable and has
+   to say so the same way: a soft accent fill for what is held, and a
+   pointer on whatever now means "pick me" instead of "open me".
+
+   The two rules the row already sets stand here too — nothing shows
+   until the mode is on, and the mode is off by default.
+   ================================================================== */
+
+/* A note is a task with a tag on it, so the card picks like a row. The
+   checkbox sits in the corner the pin does not use. */
+.note-pick {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.note-pick input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.note-card.picking .note-title {
+  /* The heading shifts clear of the checkbox rather than sitting under it. */
+  padding-left: 20px;
+}
+
+.note-card.picked {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* A month chip and a week event are too small for a checkbox — a grid of
+   them would read as a form. The mode itself is the affordance: while it is
+   on a click picks, and what is held is outlined. */
+.chip.picking,
+.event.picking {
+  cursor: pointer;
+}
+
+.chip.picked,
+.event.picked {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.chip.picked {
+  background: var(--accent-soft);
+}

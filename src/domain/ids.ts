@@ -20,3 +20,27 @@ export function occurrenceId(taskId: string, date: LocalDate): string {
 export function instanceKey(taskId: string, date: LocalDate | null, recurring: boolean): string {
   return recurring && date ? occurrenceId(taskId, date) : taskId;
 }
+
+/**
+ * React key for a task's deadline marker.
+ *
+ * A marker and the task's own scheduled day can both fall inside one rendered
+ * range, so the marker needs a key of its own. It is never a mutation target:
+ * completing a deadline marker completes the task, which `refOf` resolves from
+ * `instance.task.id`, not from this.
+ */
+export function deadlineKey(taskId: string): string {
+  return `${taskId}::deadline`;
+}
+
+/**
+ * React key for one of a task's named deadlines.
+ *
+ * Distinct from `deadlineKey`: that marks the task's own final deadline, of
+ * which there is at most one, while a task can carry any number of these and
+ * several can land in the same rendered range. Like the other marker key it is
+ * never a mutation target — the chip opens the task it belongs to.
+ */
+export function namedDeadlineKey(taskId: string, deadlineId: string): string {
+  return `${taskId}::deadline::${deadlineId}`;
+}

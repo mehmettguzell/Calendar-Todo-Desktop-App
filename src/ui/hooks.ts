@@ -59,90 +59,102 @@ export function useApplyLanguage(language: "tr" | "en") {
   }, [language]);
 }
 
-/**
- * n = new task, t = today, Escape = close panel, Ctrl/Cmd+K = command palette,
- * Ctrl/Cmd+Z = undo, Ctrl/Cmd+C / X / V = copy, cut and paste a task.
- *
- * Everything but the palette is ignored while typing, and undo is additionally
- * left to the text field when the cursor is inside one.
- *
- * Copy, cut and paste report whether they did anything, and the keystroke is
- * only swallowed when they did: with nothing selected, Ctrl+C has to go on
- * meaning what it means everywhere else on the page.
- */
-export function useShortcuts({
-  onNew,
-  onToday,
-  onEscape,
-  onPalette,
-  onUndo,
-  onCopy,
-  onCut,
-  onPaste,
-}: {
+export interface Shortcuts {
   onNew: () => void;
   onToday: () => void;
   onEscape: () => void;
   onPalette: () => void;
   onUndo: () => void;
+  /** Return false to let the browser keep the keystroke. */
   onCopy: () => boolean;
   onCut: () => boolean;
   onPaste: () => boolean;
-}) {
+}
+
+function isTyping(target: HTMLElement | null): boolean {
+  return (
+    target?.tagName === "INPUT" ||
+    target?.tagName === "TEXTAREA" ||
+    target?.isContentEditable === true
+  );
+}
+
+/**
+ * The two that work even while typing.
+ *
+ * Ctrl/Cmd+K is the way out of wherever you are, which is exactly when the
+ * cursor tends to be in a field; Ctrl+N is the same argument for capture.
+ */
+function handleAlways(e: KeyboardEvent, on: Shortcuts): boolean {
+  if (!e.metaKey && !e.ctrlKey) return false;
+  const key = e.key.toLowerCase();
+  if (key === "k") {
+    e.preventDefault();
+    on.onPalette();
+    return true;
+  }
+  if (key === "n") {
+    e.preventDefault();
+    on.onNew();
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Copy, cut and paste, when they are about the selected task.
+ *
+ * Text the user highlighted on the page is theirs to copy, so an active text
+ * selection hands the keystroke back — only an empty one can mean "the task".
+ */
+const CLIPBOARD_KEYS: Record<string, keyof Pick<Shortcuts, "onCopy" | "onCut" | "onPaste">> = {
+  c: "onCopy",
+  x: "onCut",
+  v: "onPaste",
+};
+
+function handleClipboard(e: KeyboardEvent, on: Shortcuts): boolean {
+  if ((!e.metaKey && !e.ctrlKey) || e.shiftKey) return false;
+  const key = e.key.toLowerCase();
+  const action = CLIPBOARD_KEYS[key];
+  if (!action) return false;
+  // An active text selection means the keystroke is about that text, not a task.
+  if (action !== "onPaste" && window.getSelection()?.toString()) return true;
+  if (on[action]()) e.preventDefault();
+  return true;
+}
+
+function handleBareKey(e: KeyboardEvent, on: Shortcuts): void {
+  if (e.key === "n") {
+    e.preventDefault();
+    on.onNew();
+  } else if (e.key === "t") {
+    on.onToday();
+  } else if (e.key === "Escape") {
+    on.onEscape();
+  }
+}
+
+export function useShortcuts(on: Shortcuts) {
+  const { onNew, onToday, onEscape, onPalette, onUndo, onCopy, onCut, onPaste } = on;
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const typing =
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.isContentEditable === true;
-
-      // Ctrl/Cmd+K works even while typing: it is the way out of wherever you
-      // are, which is exactly when the cursor tends to be in a field.
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        onPalette();
-        return;
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
-        e.preventDefault();
-        onNew();
-        return;
-      }
-      // Undo is checked before the typing guard is applied to plain keys, but
-      // after it for text fields: inside an input, Ctrl+Z belongs to the input.
+      const typing = isTyping(e.target as HTMLElement | null);
+      if (handleAlways(e, on)) return;
+      // Inside an input, Ctrl+Z belongs to the input.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !typing) {
         e.preventDefault();
         onUndo();
         return;
       }
       if (typing) return;
-
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey) {
-        const key = e.key.toLowerCase();
-        if (key === "c" || key === "x" || key === "v") {
-          // Text the user highlighted on the page is theirs to copy; only an
-          // empty selection means "copy" can be about the selected task.
-          if (key !== "v" && (window.getSelection()?.toString() ?? "") !== "") {
-            return;
-          }
-          const handled =
-            key === "c" ? onCopy() : key === "x" ? onCut() : onPaste();
-          if (handled) e.preventDefault();
-          return;
-        }
-      }
-
-      if (e.key === "n") {
-        e.preventDefault();
-        onNew();
-      } else if (e.key === "t") {
-        onToday();
-      } else if (e.key === "Escape") {
-        onEscape();
-      }
+      if (handleClipboard(e, on)) return;
+      handleBareKey(e, on);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onNew, onToday, onEscape, onPalette, onUndo, onCopy, onCut, onPaste]);
+    // The handlers are read through `on` on every event; listing them keeps the
+    // listener in step with a caller that swaps one out.
+  }, [on, onNew, onToday, onEscape, onPalette, onUndo, onCopy, onCut, onPaste]);
 }

@@ -6,18 +6,16 @@ import {
   ChevronRight,
   CircleAlert,
   Clock,
-  Flame,
   Plus,
   Sun,
 } from "lucide-react";
-import { formatTracked, toLocalDate } from "@/domain/datetime";
-import { getMotivationalMessage } from "@/domain/gamification";
-import type { Priority, Task, TaskInstance } from "@/domain/types";
+import { toLocalDate } from "@/domain/datetime";
+import type { LocalDate, Task, TaskInstance } from "@/domain/types";
 import { fireConfetti } from "@/lib/confetti";
-import { cn } from "@/lib/cn";
-import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n";
 import {
-  arrangeInstances,
+  deadlineMarkersOf,
+  splitDay,
   useFocusSessions,
   useGamificationStats,
   useInstancesInRange,
@@ -26,11 +24,13 @@ import {
   type Filters,
 } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
+import { EmptyArt } from "@/ui/components/EmptyArt";
 import { Empty } from "@/ui/components/primitives";
-import { ProgressRing } from "@/ui/components/ProgressRing";
-import { WeeklyBarChart } from "@/ui/components/WeeklyBarChart";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
+import { Composer, focusComposer } from "@/ui/task/Composer";
+import { DeadlineMarkers } from "@/ui/task/DeadlineMarkers";
 import { TaskList } from "@/ui/task/TaskList";
+import { TodayHero } from "./today/TodayHero";
 
 /**
  * Today: Command center with progress ring, inline quick add,
@@ -40,24 +40,23 @@ export function TodayView({
   filters,
   selectedKey,
   onOpen,
+  onPickDate,
 }: {
   filters: Filters;
   selectedKey: string | null;
   onOpen: (instance: TaskInstance) => void;
+  /** Opens a day in the calendar; the week strip is navigation too. */
+  onPickDate?: (date: LocalDate) => void;
 }) {
   const now = useNow();
   const today = toLocalDate(now);
   const groups = useTodoGroups(filters);
   const sessions = useFocusSessions();
-  const createTask = useStore((s) => s.createTask);
   const rollOverTo = useStore((s) => s.rollOverTo);
   const { t } = useI18n();
   const { streaks } = useGamificationStats();
   const weeklyStats = useWeeklyStatsHook(7);
 
-  const [quickTitle, setQuickTitle] = useState("");
-  const [quickPriority, setQuickPriority] = useState<Priority>("NONE");
-  const [showCompletedSection, setShowCompletedSection] = useState(true);
   const [rolled, setRolled] = useState(0);
 
   const overdue = groups.find((g) => g.id === "overdue")?.instances ?? [];
@@ -72,6 +71,18 @@ export function TodayView({
     [filters],
   );
   const todays = useInstancesInRange(today, today, todayFilters);
+  /*
+   * The dates falling today, kept out of the lists below.
+   *
+   * `todays` holds them too — the calendar wants them — so everything that
+   * counts or lists work filters them back out. Today's own filter forces
+   * `showCompleted`, which for a checkpoint means a met one still shows: on
+   * the day you hit it, that is the part of the day worth seeing.
+   */
+  const deadlineMarkers = useMemo(
+    () => deadlineMarkersOf(todays, today),
+    [todays, today],
+  );
 
   const focusedToday = useMemo(
     () =>
@@ -80,10 +91,6 @@ export function TodayView({
         .reduce((total, s) => total + s.durationSec, 0),
     [sessions, today],
   );
-
-  const done = todays.filter((i) => i.storedStatus === "COMPLETED").length;
-  const sorted = arrangeInstances(todays);
-  const openCount = sorted.length - done;
 
   /*
    * Today's own tasks, minus the ones the Overdue section is already showing.
@@ -99,174 +106,55 @@ export function TodayView({
     [overdue],
   );
 
-  // Timed vs All-day vs Completed separation
-  const timedTasks = useMemo(
-    () =>
-      sorted.filter(
-        (t) =>
-          t.storedStatus !== "COMPLETED" &&
-          t.startsAt !== null &&
-          !overdueKeys.has(t.key),
-      ),
-    [sorted, overdueKeys],
+  /*
+   * The day, split the way it is drawn — and split by the same function
+   * Odaklanma uses, so the two screens cannot put one day in two orders.
+   */
+  const day = useMemo(
+    () => splitDay(todays.filter((i) => !overdueKeys.has(i.key))),
+    [todays, overdueKeys],
   );
+  const timedTasks = day.timed;
+  const allDayTasks = day.allDay;
+  const completedTodayTasks = day.completed;
 
-  const allDayTasks = useMemo(
-    () =>
-      sorted.filter(
-        (t) =>
-          t.storedStatus !== "COMPLETED" &&
-          t.startsAt === null &&
-          !overdueKeys.has(t.key),
-      ),
-    [sorted, overdueKeys],
-  );
-
-  const completedTodayTasks = useMemo(
-    () => sorted.filter((t) => t.storedStatus === "COMPLETED"),
-    [sorted],
-  );
-
-  // Dynamic motivational message
-  const motivation = useMemo(
-    () =>
-      getMotivationalMessage({
-        openCount,
-        doneCount: done,
-        overdueCount: overdue.length,
-        streak: streaks.currentStreak,
-      }),
-    [openCount, done, overdue.length, streaks.currentStreak],
-  );
+  const done = completedTodayTasks.length;
+  const openCount = timedTasks.length + allDayTasks.length;
+  const dayCount = done + openCount;
 
   // Confetti trigger on 100% completion
   const prevDoneRef = useRef<number>(done);
   useEffect(() => {
     if (
-      sorted.length > 0 &&
-      done === sorted.length &&
-      prevDoneRef.current < sorted.length
+      dayCount > 0 &&
+      done === dayCount &&
+      prevDoneRef.current < dayCount
     ) {
       fireConfetti({ particleCount: 100 });
     }
     prevDoneRef.current = done;
-  }, [done, sorted.length]);
-
-  const handleQuickAddToday = () => {
-    const trimmed = quickTitle.trim();
-    if (!trimmed) return;
-    createTask({
-      title: trimmed,
-      dueDate: today,
-      allDay: true,
-      priority: quickPriority,
-    });
-    setQuickTitle("");
-    setQuickPriority("NONE");
-  };
+  }, [done, dayCount]);
 
   return (
     <div className="page">
-      {/* Today Motivation & Progress Hero Header */}
-      <div className="today-hero-card section">
-        <div className="today-hero-left">
-          <ProgressRing
-            completed={done}
-            total={sorted.length}
-            onCelebrate={() => fireConfetti({ particleCount: 100 })}
-          />
+      <TodayHero
+        now={now}
+        counts={{
+          open: openCount,
+          done,
+          overdue: overdue.length,
+          streak: streaks.currentStreak,
+          focusedSec: focusedToday,
+        }}
+        weeklyStats={weeklyStats}
+        onPickDate={onPickDate}
+      />
 
-          <div className="today-hero-text">
-            <div className="today-motivation-badge-row">
-              <span className={`today-badge ${motivation.badgeType}`}>
-                {motivation.emoji} {t(motivation.titleKey as TranslationKey, motivation.params)}
-              </span>
-              {streaks.currentStreak > 0 && (
-                <span
-                  className="today-streak-badge"
-                  title={t("todayStreakBadge", { n: streaks.currentStreak })}
-                >
-                  <Flame size={12} /> {t("todayStreakShort", { n: streaks.currentStreak })}
-                </span>
-              )}
-            </div>
-
-            <p className="today-hero-subtitle">
-              {t(motivation.subtitleKey as TranslationKey, {
-                ...motivation.params,
-                streak: motivation.streakDays
-                  ? t("motivStreakSuffix", { n: motivation.streakDays })
-                  : "",
-              })}
-            </p>
-
-            <div className="today-hero-quickstats">
-              <span className="today-hero-stat">
-                <strong>{openCount}</strong> {t("todayOpen")}
-              </span>
-              <span className="today-hero-stat-dot">•</span>
-              <span className="today-hero-stat">
-                <strong>{done}</strong> {t("todayDone")}
-              </span>
-              {focusedToday > 0 && (
-                <>
-                  <span className="today-hero-stat-dot">•</span>
-                  <span className="today-hero-stat">
-                    <strong>{formatTracked(focusedToday)}</strong> {t("todayFocusedStat")}
-                  </span>
-                </>
-              )}
-              {overdue.length > 0 && (
-                <>
-                  <span className="today-hero-stat-dot">•</span>
-                  <span className="today-hero-stat danger">
-                    <strong>{overdue.length}</strong> {t("todayOverdueStat")}
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="today-hero-right">
-          <WeeklyBarChart stats={weeklyStats} />
-        </div>
-      </div>
-
-      {/* Inline Fast Add for Today */}
-      <div className="today-fast-add-bar section">
-        <input
-          className="input grow today-fast-input"
-          placeholder={t("todayFastAdd")}
-          value={quickTitle}
-          onChange={(e) => setQuickTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleQuickAddToday();
-          }}
-        />
-        <div className="row" style={{ gap: 4 }}>
-          <button
-            type="button"
-            className={cn(
-              "btn sm ghost",
-              quickPriority === "HIGH" && "active prio-high-active",
-            )}
-            title={t("todayHighPriority")}
-            onClick={() =>
-              setQuickPriority(quickPriority === "HIGH" ? "NONE" : "HIGH")
-            }
-          >
-            🔥 Yüksek
-          </button>
-          <button
-            type="button"
-            className="btn sm primary"
-            disabled={!quickTitle.trim()}
-            onClick={handleQuickAddToday}
-          >
-            <Plus size={13} /> Ekle
-          </button>
-        </div>
+      {/* The same box as every other "add a task" in the app. The high-priority
+          toggle that used to sit beside it is not gone — "!yüksek" in the line
+          says it, and so does the priority field under Detaylar. */}
+      <div className="section">
+        <Composer defaultDate={today} placeholder={t("todayFastAdd")} />
       </div>
 
       {/* Overdue Section */}
@@ -293,7 +181,7 @@ export function TodayView({
                 <CalendarCheck size={13} /> {t("rollOver")}
               </button>
             ) : rolled > 0 ? (
-              <span className="faint" style={{ fontSize: 12 }}>
+              <span className="faint" style={{ fontSize: "var(--text-xs)" }}>
                 {rolled} {t("rollOverDone")}
               </span>
             ) : null
@@ -307,6 +195,15 @@ export function TodayView({
           />
         </Section>
       ) : null}
+
+      {/* The day's dates, before the day's work.
+          A deadline is context for the list underneath rather than an item in
+          it, so it sits above it and looks nothing like it. */}
+      <DeadlineMarkers
+        markers={deadlineMarkers}
+        onOpen={onOpen}
+        className="section"
+      />
 
       {/* Timed Tasks Section */}
       {timedTasks.length > 0 ? (
@@ -335,9 +232,18 @@ export function TodayView({
       >
         {allDayTasks.length === 0 && timedTasks.length === 0 ? (
           <Empty
-            icon={<CalendarCheck size={28} />}
+            icon={<EmptyArt kind="cleared" />}
             title={t("todayEmptyTitle")}
             hint={t("todayEmptyHint")}
+            action={
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => focusComposer()}
+              >
+                <Plus size={14} /> {t("emptyAddFirstTask")}
+              </button>
+            }
           />
         ) : (
           <TaskList
@@ -350,36 +256,53 @@ export function TodayView({
         )}
       </Section>
 
-      {/* Completed Today Section */}
-      {completedTodayTasks.length > 0 ? (
-        <section className="section">
-          <div
-            className="section-head"
-            style={{ cursor: "pointer", userSelect: "none" }}
-            onClick={() => setShowCompletedSection((v) => !v)}
-          >
-            {showCompletedSection ? (
-              <ChevronDown size={14} />
-            ) : (
-              <ChevronRight size={14} />
-            )}
-            <CheckCircle2 size={14} style={{ color: "var(--success)" }} />
-            <h2>{t("todayCompletedHeading")}</h2>
-            <span className="count">{completedTodayTasks.length}</span>
-          </div>
+      <CompletedToday
+        instances={completedTodayTasks}
+        selectedKey={selectedKey}
+        onOpen={onOpen}
+      />
 
-          {showCompletedSection && (
-            <TaskList
-              listId="today:completed"
-              instances={completedTodayTasks}
-              showDate={false}
-              selectedKey={selectedKey}
-              onOpen={onOpen}
-            />
-          )}
-        </section>
-      ) : null}
     </div>
+  );
+}
+
+/** What the day already finished, folded away by default once it is long. */
+function CompletedToday({
+  instances,
+  selectedKey,
+  onOpen,
+}: {
+  instances: TaskInstance[];
+  selectedKey: string | null;
+  onOpen: (instance: TaskInstance) => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(true);
+  if (instances.length === 0) return null;
+
+  return (
+    <section className="section">
+      <div
+        className="section-head"
+        style={{ cursor: "pointer", userSelect: "none" }}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <CheckCircle2 size={14} style={{ color: "var(--success)" }} />
+        <h2>{t("todayCompletedHeading")}</h2>
+        <span className="count">{instances.length}</span>
+      </div>
+
+      {open ? (
+        <TaskList
+          listId="today:completed"
+          instances={instances}
+          showDate={false}
+          selectedKey={selectedKey}
+          onOpen={onOpen}
+        />
+      ) : null}
+    </section>
   );
 }
 

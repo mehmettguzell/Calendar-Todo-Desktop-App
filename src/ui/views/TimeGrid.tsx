@@ -12,8 +12,17 @@ import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
 import { useCategoryIndex } from "@/state/selectors";
 import { ContextMenu } from "@/ui/components/ContextMenu";
+import { usePickGesture } from "@/ui/task/usePickGesture";
 import { TaskChip } from "./TaskChip";
 import { useCalendarInteractions } from "./calendarInteractions";
+
+/** The all-day strip for one day — its own list, and its own Shift range. */
+function allDayOf(
+  byDate: Map<LocalDate, TaskInstance[]>,
+  date: LocalDate,
+): TaskInstance[] {
+  return (byDate.get(date) ?? []).filter((i) => i.startsAt === null);
+}
 
 const GUTTER = 56;
 const HOUR_H = 52;
@@ -124,9 +133,7 @@ export function TimeGrid({
             // the one place on the grid that has no clock reading.
             onDrop={(e) => gestures.dropOn(e, date, null)}
           >
-            {(instancesByDate.get(date) ?? [])
-              .filter((i) => i.startsAt === null)
-              .map((instance) => (
+            {allDayOf(instancesByDate, date).map((instance) => (
                 <TaskChip
                   key={instance.key}
                   instance={instance}
@@ -137,6 +144,7 @@ export function TimeGrid({
                   }
                   onOpen={onOpen}
                   onContextMenu={gestures.openTaskMenu}
+                  listIds={allDayOf(instancesByDate, date).map((i) => i.task.id)}
                   draggable={!instance.isRecurring}
                   dragging={gestures.dragging?.key === instance.key}
                   onDragStart={gestures.startDrag}
@@ -204,6 +212,12 @@ function DayColumn({
   const categories = useCategoryIndex();
   const { t } = useI18n();
   const placed = useMemo(() => layout(instances, dayStartHour), [instances, dayStartHour]);
+  // This column's events, in the order they start: the range a Shift-click in
+  // it can reach.
+  const columnIds = useMemo(
+    () => instances.map((instance) => instance.task.id),
+    [instances],
+  );
 
   /** The quarter-hour the pointer is over, so a drop keeps the time it aimed at. */
   const timeAt = (clientY: number, element: HTMLElement) => {
@@ -248,43 +262,20 @@ function DayColumn({
           ? categories.get(instance.task.categoryId)
           : null;
         return (
-          <button
+          <TimedEvent
             key={instance.key}
-            type="button"
-            className={cn(
-              "event",
-              instance.storedStatus === "COMPLETED" && "done",
-              instance.status === "OVERDUE" && "overdue",
-              gestures.dragging?.key === instance.key && "chip-dragging",
-            )}
-            style={{
-              top,
-              height,
-              left: `calc(${left * 100}% + 3px)`,
-              width: `calc(${width * 100}% - 6px)`,
-              borderLeftColor: category?.color ?? "var(--accent)",
-            }}
-            draggable={!instance.isRecurring}
-            onDragStart={(e) => {
-              e.stopPropagation();
-              gestures.startDrag(e, instance);
-            }}
-            onDragEnd={gestures.endDrag}
-            onContextMenu={(e) => gestures.openTaskMenu(e, instance)}
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpen(instance);
-            }}
-          >
-            <span className="event-title truncate">{instance.task.title}</span>
-            <span className="event-time">
-              {instance.task.startTime}
-              {instance.task.endTime ? ` - ${instance.task.endTime}` : ""}
-            </span>
-          </button>
+            instance={instance}
+            listIds={columnIds}
+            color={category?.color ?? "var(--accent)"}
+            top={top}
+            height={height}
+            left={left}
+            width={width}
+            gestures={gestures}
+            onOpen={onOpen}
+          />
         );
       })}
-
       <button
         type="button"
         className="month-add"
@@ -347,4 +338,77 @@ function layout(instances: TaskInstance[], dayStartHour: number): Placed[] {
   }
   flush();
   return placed;
+}
+
+/**
+ * One timed task, as a block on the hour grid.
+ *
+ * Its own component because it is picked like every other rendering of a task
+ * is, and `usePickGesture` is a hook — a `.map` inside another component
+ * cannot call one.
+ */
+function TimedEvent({
+  instance,
+  listIds,
+  color,
+  top,
+  height,
+  left,
+  width,
+  gestures,
+  onOpen,
+}: {
+  instance: TaskInstance;
+  listIds: string[];
+  color: string;
+  top: number;
+  height: number;
+  left: number;
+  width: number;
+  gestures: ReturnType<typeof useCalendarInteractions>;
+  onOpen: (instance: TaskInstance) => void;
+}) {
+  const { picking, picked, onClickCapture } = usePickGesture({
+    taskId: instance.task.id,
+    listIds,
+  });
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        "event",
+        instance.storedStatus === "COMPLETED" && "done",
+        instance.status === "OVERDUE" && "overdue",
+        gestures.dragging?.key === instance.key && "chip-dragging",
+        picking && "picking",
+        picked && "picked",
+      )}
+      style={{
+        top,
+        height,
+        left: `calc(${left * 100}% + 3px)`,
+        width: `calc(${width * 100}% - 6px)`,
+        borderLeftColor: color,
+      }}
+      draggable={!instance.isRecurring}
+      onDragStart={(e) => {
+        e.stopPropagation();
+        gestures.startDrag(e, instance);
+      }}
+      onDragEnd={gestures.endDrag}
+      onContextMenu={(e) => gestures.openTaskMenu(e, instance)}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (onClickCapture(e)) return;
+        onOpen(instance);
+      }}
+    >
+      <span className="event-title truncate">{instance.task.title}</span>
+      <span className="event-time">
+        {instance.task.startTime}
+        {instance.task.endTime ? ` - ${instance.task.endTime}` : ""}
+      </span>
+    </button>
+  );
 }

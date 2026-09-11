@@ -1,6 +1,7 @@
 import { Cloud, Crown, LogIn } from "lucide-react";
 import { useAuthStore, useTrialStatus } from "@/state/authStore";
 import { useI18n } from "@/lib/i18n";
+import { Avatar } from "./Avatar";
 
 export function UserProfileWidget() {
   const { t } = useI18n();
@@ -31,8 +32,6 @@ export function UserProfileWidget() {
     );
   }
 
-  const initial = (user.fullName || user.email || "U").charAt(0).toUpperCase();
-
   return (
     <div
       className="sidebar-user-card"
@@ -41,13 +40,11 @@ export function UserProfileWidget() {
       tabIndex={0}
       title={t("profileDetails")}
     >
-      <div className="sidebar-user-avatar">
-        {user.avatarUrl ? (
-          <img src={user.avatarUrl} alt={user.fullName ?? "User"} />
-        ) : (
-          <span>{initial}</span>
-        )}
-      </div>
+      <Avatar
+        className="sidebar-user-avatar"
+        src={user.avatarUrl}
+        name={user.fullName || user.email}
+      />
 
       <div className="grow truncate">
         <div className="sidebar-user-name-row">

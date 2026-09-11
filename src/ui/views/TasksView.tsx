@@ -1,37 +1,37 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   CheckCircle2,
   CircleAlert,
+  Plus,
   Flame,
   FolderKanban,
   Layers,
   List,
-  ListChecks,
-  Plus,
-  Trash2,
 } from "lucide-react";
-import { toLocalDate } from "@/domain/datetime";
-import { insertAt } from "@/domain/manualOrder";
-import { toInstance } from "@/domain/task";
-import type { Priority, Task, TaskInstance } from "@/domain/types";
-import { cn } from "@/lib/cn";
+import { addDaysLocal, toLocalDate } from "@/domain/datetime";
+import { enclosingPlan, toInstance } from "@/domain/task";
+import type { Task, TaskInstance } from "@/domain/types";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
   arrangeInstances,
   useCategories,
+  useDeadlineMarkers,
   useLiveTasks,
   useTodoGroups,
-  useTrashedTasks,
   type Filters,
   type TodoGroup,
 } from "@/state/selectors";
-import { useNow, useStore } from "@/state/store";
+import { useViewPrefs } from "@/state/viewPrefsStore";
+import { useNow } from "@/state/store";
+import { EmptyArt } from "@/ui/components/EmptyArt";
 import { Empty } from "@/ui/components/primitives";
-import { TrashModal } from "@/ui/components/TrashModal";
+import { PageHeader } from "@/ui/components/PageHeader";
+import { Segmented } from "@/ui/components/Segmented";
+import { Composer, focusComposer } from "@/ui/task/Composer";
+import { DeadlineMarkers } from "@/ui/task/DeadlineMarkers";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
 import { TaskList } from "@/ui/task/TaskList";
-
-type ViewMode = "list" | "priority" | "category";
+import { CategoryKanbanView, PriorityKanbanView } from "./tasks/KanbanViews";
 
 export function TasksView({
   filters,
@@ -43,20 +43,35 @@ export function TasksView({
   onOpen: (instance: TaskInstance) => void;
 }) {
   const tasks = useLiveTasks();
-  const trashedTasks = useTrashedTasks();
-  const createTask = useStore((s) => s.createTask);
   const categories = useCategories();
   const now = useNow();
   const today = toLocalDate(now);
   const groups = useTodoGroups(filters);
   const { t } = useI18n();
 
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [quickTitle, setQuickTitle] = useState("");
-  const [trashOpen, setTrashOpen] = useState(false);
-  const [filterPill, setFilterPill] = useState<
-    "all" | "high" | "overdue" | "completed"
-  >("all");
+  /*
+   * The dates worth knowing about from this page: the ones already missed, and
+   * the week ahead. They are markers, not rows — see `DeadlineMarkers` — and
+   * `useTodoGroups` no longer carries them, so this is where they come from.
+   *
+   * A month back rather than everything, because a checkpoint missed in March
+   * is not news in September; a week forward, because that is the horizon this
+   * page's own buckets stop at.
+   */
+  const deadlineMarkers = useDeadlineMarkers(
+    addDaysLocal(today, -30),
+    addDaysLocal(today, 7),
+    filters,
+  );
+
+  // Both live in `viewPrefsStore` for the same reason the plans filter does:
+  // a view unmounts on every sidebar click, and coming back to "all tasks,
+  // list" after every glance at the calendar is the app forgetting on your
+  // behalf.
+  const viewMode = useViewPrefs((s) => s.taskLayout);
+  const setViewMode = useViewPrefs((s) => s.setTaskLayout);
+  const filterPill = useViewPrefs((s) => s.taskFilter);
+  const setFilterPill = useViewPrefs((s) => s.setTaskFilter);
 
   const parentCache = useMemo(() => {
     const map = new Map<string, Task>();
@@ -70,8 +85,8 @@ export function TasksView({
       tasks.filter((t) => {
         if (t.tags.includes("note")) return false;
         if (t.parentId) {
-          const parent = parentCache.get(t.parentId);
-          return parent?.tags.includes("plan") && t.dueDate !== null;
+          // A step at any depth of a plan, once it has been given a day.
+          return t.dueDate !== null && enclosingPlan(t, parentCache) !== null;
         }
         if (t.tags.includes("plan")) {
           return t.dueDate !== null;
@@ -114,173 +129,89 @@ export function TasksView({
     return { total, open, high, overdue, done };
   }, [mainTasks, today]);
 
-  const handleQuickAdd = () => {
-    const trimmed = quickTitle.trim();
-    if (!trimmed) return;
-
-    const newTask = createTask({
-      title: trimmed,
-      priority: "NONE",
-      dueDate: today,
-      allDay: true,
-    });
-
-    setQuickTitle("");
-    onOpen(toInstance(newTask, today, null, now));
-  };
-
   return (
     <div className="page wide">
-      {/* Task Summary Banner */}
-      <div className="task-summary-banner section">
-        <div className="task-summary-stat">
-          <div className="task-summary-val">{stats.open}</div>
-          <div className="task-summary-lbl">{t("tasksOpen")}</div>
-        </div>
-        <div className="task-summary-stat">
-          <div
-            className="task-summary-val"
-            style={{ color: stats.high > 0 ? "var(--danger)" : undefined }}
-          >
-            {stats.high}
-          </div>
-          <div className="task-summary-lbl">{t("tasksHighPriority")}</div>
-        </div>
-        <div className="task-summary-stat">
-          <div
-            className="task-summary-val"
-            style={{ color: stats.overdue > 0 ? "var(--warning)" : undefined }}
-          >
-            {stats.overdue}
-          </div>
-          <div className="task-summary-lbl">{t("tasksOverdue")}</div>
-        </div>
-        <div className="task-summary-stat">
-          <div className="task-summary-val" style={{ color: "var(--success)" }}>
-            {stats.done}
-          </div>
-          <div className="task-summary-lbl">{t("tasksCompleted")}</div>
-        </div>
+      {/*
+        The four-figure banner and the filter pills under it were the same four
+        numbers, twice — and the two could disagree, because one counted
+        `mainTasks` and the other counted whatever the pill filtered to. One
+        strip now, where the number and the thing it counts are the same
+        control: pressing the number shows you what it counted.
+
+        Grouping (list / priority / category) is a second, quieter strip. It
+        answers a different question — *how* these are arranged, not *which* of
+        them — and putting the two rows side by side in one bar is what made
+        "which of these is the filter?" a question anyone had to ask.
+      */}
+      <PageHeader
+        actions={
+          <>
+            {/* Picking is reached from the topbar now — one door, on every
+                screen that has rows, instead of one per page header. */}
+            <Segmented
+              size="sm"
+              ariaLabel={t("tasksGroupBy")}
+              value={viewMode}
+              onChange={setViewMode}
+              segments={[
+                { id: "list", label: t("viewList"), icon: <List size={14} /> },
+                {
+                  id: "priority",
+                  label: t("viewPriority"),
+                  icon: <FolderKanban size={14} />,
+                },
+                {
+                  id: "category",
+                  label: t("viewCategory"),
+                  icon: <Layers size={14} />,
+                },
+              ]}
+            />
+          </>
+        }
+        tabs={
+          <Segmented
+            ariaLabel={t("tasksFilterAria")}
+            value={filterPill}
+            onChange={setFilterPill}
+            segments={[
+              { id: "all", label: t("allTasks"), count: stats.open },
+              {
+                id: "high",
+                label: t("highPriority"),
+                icon: <Flame size={12} />,
+                count: stats.high,
+              },
+              {
+                id: "overdue",
+                label: t("overdue"),
+                icon: <CircleAlert size={12} />,
+                count: stats.overdue,
+                tone: "danger",
+                hidden: stats.overdue === 0,
+              },
+              {
+                id: "completed",
+                label: t("completed"),
+                icon: <CheckCircle2 size={12} />,
+                count: stats.done,
+              },
+            ]}
+          />
+        }
+      />
+
+      <div className="section">
+        <Composer placeholder={t("quickAddPlaceholder")} />
       </div>
 
-      {/* Quick Add Bar */}
-      <div className="row section" style={{ gap: 8 }}>
-        <input
-          className="input grow"
-          placeholder={t("quickAddPlaceholder")}
-          value={quickTitle}
-          onChange={(e) => setQuickTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleQuickAdd();
-          }}
-        />
-        <button
-          type="button"
-          className="btn primary"
-          disabled={!quickTitle.trim()}
-          onClick={handleQuickAdd}
-        >
-          <Plus size={14} /> {t("add")}
-        </button>
-      </div>
-
-      {/* View Switcher & Filter Pills */}
-      <div className="tasks-controls-bar section">
-        <div className="tasks-filter-pills">
-          <button
-            type="button"
-            className={cn("filter-pill", filterPill === "all" && "active")}
-            onClick={() => setFilterPill("all")}
-          >
-            {t("allTasks")}
-          </button>
-          <button
-            type="button"
-            className={cn("filter-pill", filterPill === "high" && "active")}
-            onClick={() => setFilterPill("high")}
-          >
-            <Flame size={12} /> {t("highPriority")} ({stats.high})
-          </button>
-          {stats.overdue > 0 && (
-            <button
-              type="button"
-              className={cn(
-                "filter-pill danger",
-                filterPill === "overdue" && "active",
-              )}
-              onClick={() => setFilterPill("overdue")}
-            >
-              <CircleAlert size={12} /> {t("overdue")} ({stats.overdue})
-            </button>
-          )}
-          <button
-            type="button"
-            className={cn(
-              "filter-pill",
-              filterPill === "completed" && "active",
-            )}
-            onClick={() => setFilterPill("completed")}
-          >
-            <CheckCircle2 size={12} /> {t("completed")} ({stats.done})
-          </button>
-        </div>
-
-        <div className="row items-center" style={{ gap: 8 }}>
-          <div className="tasks-view-switcher">
-            <button
-              type="button"
-              className={cn("tasks-view-btn", viewMode === "list" && "active")}
-              title={t("tasksViewListTitle")}
-              onClick={() => setViewMode("list")}
-            >
-              <List size={15} /> {t("viewList")}
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "tasks-view-btn",
-                viewMode === "priority" && "active",
-              )}
-              title={t("tasksViewPriorityTitle")}
-              onClick={() => setViewMode("priority")}
-            >
-              <FolderKanban size={15} /> {t("viewPriority")}
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "tasks-view-btn",
-                viewMode === "category" && "active",
-              )}
-              title={t("tasksViewCategoryTitle")}
-              onClick={() => setViewMode("category")}
-            >
-              <Layers size={15} /> {t("viewCategory")}
-            </button>
-          </div>
-
-          <button
-            type="button"
-            className="btn ghost sm"
-            style={{ gap: 6, padding: "5px 10px", fontSize: 12 }}
-            title={t("trash")}
-            onClick={() => setTrashOpen(true)}
-          >
-            <Trash2 size={13} />
-            {t("trash")}
-            {trashedTasks.length > 0 && (
-              <span
-                className="nav-count is-alert"
-                style={{ fontSize: 10, padding: "1px 5px", height: "auto" }}
-              >
-                {trashedTasks.length}
-              </span>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {trashOpen && <TrashModal onClose={() => setTrashOpen(false)} />}
+      {/* Above the lists and shaped nothing like them: a deadline is a date
+          this page is measured against, not one more thing on it. */}
+      <DeadlineMarkers
+        markers={deadlineMarkers}
+        onOpen={onOpen}
+        className="section"
+      />
 
       {/* Main View Contents */}
       {viewMode === "list" ? (
@@ -343,7 +274,7 @@ function ListView({
     if (filtered.length === 0) {
       return (
         <Empty
-          icon={<ListChecks size={28} />}
+          icon={<EmptyArt kind="search" />}
           title={t("tasksNoMatchTitle")}
           hint={t("tasksNoMatchHint")}
         />
@@ -363,9 +294,18 @@ function ListView({
   if (groups.length === 0) {
     return (
       <Empty
-        icon={<ListChecks size={28} />}
+        icon={<EmptyArt kind="inbox" />}
         title={t("tasksEmptyTitle")}
         hint={t("tasksEmptyHint")}
+        action={
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => focusComposer()}
+          >
+            <Plus size={14} /> {t("emptyAddFirstTask")}
+          </button>
+        }
       />
     );
   }
@@ -393,138 +333,6 @@ function ListView({
           />
         </section>
       ))}
-    </div>
-  );
-}
-
-const PRIORITY_COLUMNS: {
-  id: Priority;
-  labelKey: TranslationKey;
-  icon: string;
-  className: string;
-}[] = [
-  { id: "HIGH", labelKey: "kanbanHigh", icon: "🔴", className: "high" },
-  { id: "MEDIUM", labelKey: "kanbanMedium", icon: "🟡", className: "medium" },
-  { id: "LOW", labelKey: "kanbanLow", icon: "🔵", className: "low" },
-  { id: "NONE", labelKey: "kanbanNone", icon: "⚪", className: "none" },
-];
-
-function PriorityKanbanView({
-  tasks,
-  selectedKey,
-  onOpen,
-  now,
-}: {
-  tasks: Task[];
-  selectedKey: string | null;
-  onOpen: (instance: TaskInstance) => void;
-  now: Date;
-}) {
-  const { t } = useI18n();
-  const updateTask = useStore((s) => s.updateTask);
-  const reorderTasks = useStore((s) => s.reorderTasks);
-
-  return (
-    <div className="kanban-grid">
-      {PRIORITY_COLUMNS.map((col) => {
-        const instances = arrangeInstances(
-          tasks
-            .filter((task) => task.priority === col.id)
-            .map((task) => toInstance(task, task.dueDate, null, now)),
-        );
-        const ids = instances.map((instance) => instance.task.id);
-
-        return (
-          <div key={col.id} className={cn("kanban-column", col.className)}>
-            <div className="kanban-column-head">
-              <span className="kanban-col-icon">{col.icon}</span>
-              <h3 className="kanban-col-title">{t(col.labelKey)}</h3>
-              <span className="count">{instances.length}</span>
-              <ResetOrderButton
-                tasks={instances.map((instance) => instance.task)}
-              />
-            </div>
-
-            <TaskList
-              listId={`priority:${col.id}`}
-              className="kanban-cards-list"
-              instances={instances}
-              selectedKey={selectedKey}
-              onOpen={onOpen}
-              empty={<div className="kanban-empty-slot">{t("tasksNone")}</div>}
-              // Crossing a column boundary is a priority change, and it goes
-              // through `updateTask` so the task's history records it as one.
-              onAccept={(task, slot) => {
-                updateTask(task.id, { priority: col.id });
-                reorderTasks(insertAt(ids, task.id, slot), task.id);
-              }}
-            />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function CategoryKanbanView({
-  tasks,
-  categories,
-  selectedKey,
-  onOpen,
-  now,
-}: {
-  tasks: Task[];
-  categories: { id: string; name: string; color: string }[];
-  selectedKey: string | null;
-  onOpen: (instance: TaskInstance) => void;
-  now: Date;
-}) {
-  const { t } = useI18n();
-  const updateTask = useStore((s) => s.updateTask);
-  const reorderTasks = useStore((s) => s.reorderTasks);
-
-  const allColumns = [
-    ...categories,
-    { id: "uncategorized", name: t("budgetUncategorised"), color: "var(--border-strong)" },
-  ];
-
-  return (
-    <div className="kanban-grid">
-      {allColumns.map((cat) => {
-        const categoryId = cat.id === "uncategorized" ? null : cat.id;
-        const instances = arrangeInstances(
-          tasks
-            .filter((task) => (task.categoryId ?? null) === categoryId)
-            .map((task) => toInstance(task, task.dueDate, null, now)),
-        );
-        const ids = instances.map((instance) => instance.task.id);
-
-        return (
-          <div key={cat.id} className="kanban-column">
-            <div className="kanban-column-head">
-              <i className="dot" style={{ background: cat.color }} />
-              <h3 className="kanban-col-title">{cat.name}</h3>
-              <span className="count">{instances.length}</span>
-              <ResetOrderButton
-                tasks={instances.map((instance) => instance.task)}
-              />
-            </div>
-
-            <TaskList
-              listId={`category:${cat.id}`}
-              className="kanban-cards-list"
-              instances={instances}
-              selectedKey={selectedKey}
-              onOpen={onOpen}
-              empty={<div className="kanban-empty-slot">{t("tasksNone")}</div>}
-              onAccept={(task, slot) => {
-                updateTask(task.id, { categoryId });
-                reorderTasks(insertAt(ids, task.id, slot), task.id);
-              }}
-            />
-          </div>
-        );
-      })}
     </div>
   );
 }

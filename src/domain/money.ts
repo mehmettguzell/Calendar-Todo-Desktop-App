@@ -1,5 +1,6 @@
 import { addDaysLocal, fromLocalDate, toLocalDate } from "./datetime";
-import { expandOccurrences } from "./recurrence";
+import { expandInstalments } from "./instalments";
+import { expandOccurrences, nextOccurrenceAfter } from "./recurrence";
 import type { Instant, LocalDate, Recurrence } from "./types";
 
 /**
@@ -106,6 +107,34 @@ export interface Transaction {
    */
   origin?: TransactionOrigin;
   /**
+   * The statement import that created this entry, when one did.
+   *
+   * The durable half of "undo this import": the batch record holds what an
+   * import did to rows that already existed, and this holds which rows it
+   * brought into being. Absent on everything typed by hand.
+   */
+  importId?: string | null;
+  /**
+   * How many monthly charges this purchase is split into.
+   *
+   * Absent, null or 1 all mean "paid in one go", which is almost every row.
+   * The entry keeps the whole price — that is what was bought and what is
+   * owed — and the months it lands in are worked out from here rather than
+   * stored, so correcting the price of a twelve-month plan stays a one-field
+   * edit. See `instalments.ts`.
+   */
+  instalments?: number | null;
+  /**
+   * Which charge of a plan this row is, 1-based.
+   *
+   * DERIVED AND NEVER STORED. Aggregation hands out one row per monthly charge
+   * so that every total in the app is built from what the bank charges rather
+   * than from the sticker price; this is what lets a view label that row
+   * "3/12". A row carrying it is a twelfth of a purchase, so it must never be
+   * written back to the document — `normaliseTransaction` drops it.
+   */
+  instalmentIndex?: number;
+  /**
    * When a statement vouched for this entry.
    *
    * A purchase reaches the ledger up to three times: typed at the till, pushed
@@ -171,6 +200,126 @@ export function dueRecurringTransactions(
   }
 
   return due;
+}
+
+/* ------------------------------------------------------------------ */
+/* Fixed costs                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The entries that repeat — rent, salary, the gym, the insurance.
+ *
+ * These are the *templates*: an ordinary entry that happens to carry a rule.
+ * There is no separate "fixed cost" record, and that is on purpose — a fixed
+ * cost is a transaction you already know about, so making it a second kind of
+ * thing would mean every total in the app had to remember to add it back in.
+ *
+ * Income first, then the money going out, largest first inside each: the list
+ * reads the way a budget is thought about.
+ */
+export function recurringTemplates(transactions: Transaction[]): Transaction[] {
+  const rank: Record<MoneyFlow, number> = { INCOME: 0, EXPENSE: 1, INVESTMENT: 2 };
+  return transactions
+    .filter((entry) => entry.deletedAt === null && entry.recurrence)
+    .sort(
+      (a, b) => rank[a.flow] - rank[b.flow] || b.amountMinor - a.amountMinor,
+    );
+}
+
+export interface FixedCostRow {
+  template: Transaction;
+  /** Every date the rule lands on inside the window, recorded or not. */
+  dates: LocalDate[];
+  /** The entries that have actually been written for those dates. */
+  recorded: Transaction[];
+  /** Dates the rule owes this window but has not produced yet. */
+  pendingDates: LocalDate[];
+  /**
+   * What this template accounts for across the window.
+   *
+   * Recorded entries count at the amount they were actually written for, not
+   * at the template's — rent really was 500 lira more in March, and a forecast
+   * that overwrites that with the standing figure is a forecast that argues
+   * with the ledger sitting underneath it.
+   */
+  expectedMinor: number;
+  /** Of that, the part already in the ledger. */
+  recordedMinor: number;
+  /** The next date the rule produces after today, anywhere — not just here. */
+  nextDate: LocalDate | null;
+}
+
+/**
+ * How each repeating entry lands inside one window.
+ *
+ * The point of this is the part the ledger cannot show: rent due on the 5th is
+ * a fact about this month from the 1st, but nothing is written for it until
+ * the 5th arrives — deliberately, since a budget that already contains money
+ * it has not spent is lying. So the ledger stays honest and this says what is
+ * still coming.
+ */
+export function fixedCostsInRange(
+  transactions: Transaction[],
+  range: DateRange,
+  today: LocalDate,
+): FixedCostRow[] {
+  const live = transactions.filter((entry) => entry.deletedAt === null);
+
+  return recurringTemplates(transactions).map((template) => {
+    const series = {
+      dueDate: template.date,
+      recurrence: template.recurrence ?? null,
+    };
+    const dates = expandOccurrences(series, range.from, range.to);
+
+    const byDate = new Map<LocalDate, Transaction>();
+    for (const entry of live) {
+      // The template is its own first occurrence; the copies point back at it.
+      const belongs =
+        entry.id === template.id || entry.recurrenceSourceId === template.id;
+      if (belongs && inRange(entry.date, range)) byDate.set(entry.date, entry);
+    }
+
+    const recorded = dates
+      .map((date) => byDate.get(date))
+      .filter((entry): entry is Transaction => entry !== undefined);
+
+    return {
+      template,
+      dates,
+      recorded,
+      pendingDates: dates.filter((date) => !byDate.has(date)),
+      expectedMinor: dates.reduce(
+        (sum, date) => sum + (byDate.get(date)?.amountMinor ?? template.amountMinor),
+        0,
+      ),
+      recordedMinor: recorded.reduce((sum, entry) => sum + entry.amountMinor, 0),
+      nextDate: nextOccurrenceAfter(series, today),
+    };
+  });
+}
+
+/** What the fixed entries add up to across a window, split by direction. */
+export function fixedCostTotals(rows: FixedCostRow[]): {
+  income: number;
+  expense: number;
+  investment: number;
+  /** Expected minus recorded: the part of the window still to be charged. */
+  outstanding: number;
+} {
+  let income = 0;
+  let expense = 0;
+  let investment = 0;
+  let outstanding = 0;
+
+  for (const row of rows) {
+    if (row.template.flow === "INCOME") income += row.expectedMinor;
+    else if (row.template.flow === "EXPENSE") expense += row.expectedMinor;
+    else investment += row.expectedMinor;
+    outstanding += row.expectedMinor - row.recordedMinor;
+  }
+
+  return { income, expense, investment, outstanding };
 }
 
 export interface LimitStatus {
@@ -380,13 +529,21 @@ export function inRange(date: LocalDate, range: DateRange): boolean {
 /* Aggregation                                                         */
 /* ------------------------------------------------------------------ */
 
-/** Live transactions inside a window, newest first. */
+/**
+ * Live transactions inside a window, newest first.
+ *
+ * The one seam where a purchase becomes what the bank actually charges: a
+ * twelve-month plan enters as one row and leaves as the single instalment that
+ * falls inside this window. Everything downstream — the totals, the category
+ * bars, the daily chart, the ledger — is built from what comes out of here, so
+ * none of them has to know that instalments exist. See `instalments.ts`.
+ */
 export function transactionsInRange(
   transactions: Transaction[],
   range: DateRange,
 ): Transaction[] {
-  return transactions
-    .filter((t) => t.deletedAt === null && inRange(t.date, range))
+  return expandInstalments(transactions.filter((t) => t.deletedAt === null))
+    .filter((t) => inRange(t.date, range))
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
 }
 
@@ -492,138 +649,6 @@ export function burnRatePerDay(
 /* Seed categories                                                     */
 /* ------------------------------------------------------------------ */
 
-/**
- * A starting set, not a closed list.
- *
- * Enough that the first transaction can be filed without a detour into
- * category management, and every one of them is deletable once the user's own
- * labels take over.
- */
-/**
- * Every category the app knows how to name, in both languages.
- *
- * Only a handful ship with a new document (`SEEDED_KEYS`); the rest exist so
- * the statement importer has somewhere to put a petrol station or a streaming
- * subscription. They are created the first time a statement actually contains
- * one — a category list should grow out of what you spend, not out of what the
- * developer imagined you might.
- */
-export type CategoryKey =
-  | "salary"
-  | "sideIncome"
-  | "rent"
-  | "groceries"
-  | "transport"
-  | "bills"
-  | "eatingOut"
-  | "health"
-  | "fun"
-  | "savings"
-  | "investments"
-  | "fuel"
-  | "clothing"
-  | "subscriptions"
-  | "personalCare"
-  | "education"
-  | "electronics"
-  | "home"
-  | "cash"
-  | "fees";
-
-interface CatalogueEntry {
-  tr: string;
-  en: string;
-  flow: MoneyFlow;
-  color: string;
-  icon: string;
-}
-
-export const CATEGORY_CATALOGUE: Record<CategoryKey, CatalogueEntry> = {
-  salary: { tr: "Maaş", en: "Salary", flow: "INCOME", color: "#22c55e", icon: "💼" },
-  sideIncome: { tr: "Ek gelir", en: "Side income", flow: "INCOME", color: "#14b8a6", icon: "✨" },
-  rent: { tr: "Kira", en: "Rent", flow: "EXPENSE", color: "#ef4444", icon: "🏠" },
-  groceries: { tr: "Market", en: "Groceries", flow: "EXPENSE", color: "#f97316", icon: "🛒" },
-  transport: { tr: "Ulaşım", en: "Transport", flow: "EXPENSE", color: "#eab308", icon: "🚌" },
-  bills: { tr: "Faturalar", en: "Bills", flow: "EXPENSE", color: "#8b5cf6", icon: "🧾" },
-  eatingOut: { tr: "Yeme & içme", en: "Eating out", flow: "EXPENSE", color: "#ec4899", icon: "🍽️" },
-  health: { tr: "Sağlık", en: "Health", flow: "EXPENSE", color: "#06b6d4", icon: "💊" },
-  fun: { tr: "Eğlence", en: "Fun", flow: "EXPENSE", color: "#a855f7", icon: "🎬" },
-  savings: { tr: "Birikim", en: "Savings", flow: "INVESTMENT", color: "#3b82f6", icon: "🏦" },
-  investments: { tr: "Yatırım", en: "Investments", flow: "INVESTMENT", color: "#0ea5e9", icon: "📈" },
-  fuel: { tr: "Akaryakıt", en: "Fuel", flow: "EXPENSE", color: "#f59e0b", icon: "⛽" },
-  clothing: { tr: "Giyim", en: "Clothing", flow: "EXPENSE", color: "#d946ef", icon: "👕" },
-  subscriptions: { tr: "Abonelikler", en: "Subscriptions", flow: "EXPENSE", color: "#6366f1", icon: "🔁" },
-  personalCare: { tr: "Kişisel bakım", en: "Personal care", flow: "EXPENSE", color: "#fb7185", icon: "💇" },
-  education: { tr: "Eğitim", en: "Education", flow: "EXPENSE", color: "#0891b2", icon: "🎓" },
-  electronics: { tr: "Teknoloji", en: "Electronics", flow: "EXPENSE", color: "#64748b", icon: "💻" },
-  home: { tr: "Ev", en: "Home", flow: "EXPENSE", color: "#84cc16", icon: "🛋️" },
-  cash: { tr: "Nakit çekim", en: "Cash withdrawal", flow: "EXPENSE", color: "#78716c", icon: "🏧" },
-  fees: { tr: "Banka ücretleri", en: "Bank fees", flow: "EXPENSE", color: "#94a3b8", icon: "🏛️" },
-};
-
-/** What a brand-new document starts with. The rest arrive when they are needed. */
-const SEEDED_KEYS: CategoryKey[] = [
-  "salary",
-  "sideIncome",
-  "rent",
-  "groceries",
-  "transport",
-  "bills",
-  "eatingOut",
-  "health",
-  "fun",
-  "savings",
-  "investments",
-];
-
-/**
- * The name a category key carries in a given language.
- *
- * Both spellings are exported because an existing document may hold either: a
- * user who started the app in English has a category called "Groceries", and
- * the importer has to recognise it rather than create a second one called
- * "Market" beside it.
- */
-export function categoryNamesFor(key: CategoryKey): [string, string] {
-  const entry = CATEGORY_CATALOGUE[key];
-  return [entry.tr, entry.en];
-}
-
-export function categoryNameFor(key: CategoryKey, language: "tr" | "en"): string {
-  const entry = CATEGORY_CATALOGUE[key];
-  return language === "tr" ? entry.tr : entry.en;
-}
-
-export function seedBudgetCategories(
-  language: "tr" | "en" = "en",
-): Omit<BudgetCategory, "id" | "updatedAt">[] {
-  return SEEDED_KEYS.map((key, order) => {
-    const entry = CATEGORY_CATALOGUE[key];
-    return {
-      name: language === "tr" ? entry.tr : entry.en,
-      flow: entry.flow,
-      color: entry.color,
-      icon: entry.icon,
-      builtIn: true,
-      order,
-    };
-  });
-}
-
-
-export const BUDGET_CATEGORY_COLORS = [
-  "#ef4444",
-  "#f97316",
-  "#eab308",
-  "#22c55e",
-  "#14b8a6",
-  "#06b6d4",
-  "#3b82f6",
-  "#8b5cf6",
-  "#ec4899",
-  "#64748b",
-];
-
 /* ------------------------------------------------------------------ */
 /* Accounts and provenance                                             */
 /* ------------------------------------------------------------------ */
@@ -659,3 +684,17 @@ export function accountNames(transactions: Transaction[]): string[] {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([name]) => name);
 }
+
+// The budget catalogue moved to its own module; it is still part of the money
+// domain's surface, so callers keep reaching it from here.
+export {
+  BUDGET_CATEGORY_COLORS,
+  BUDGET_SEED_VERSION,
+  budgetSeedKeys,
+  categoryNameFor,
+  categoryNamesFor,
+  CATEGORY_CATALOGUE,
+  seedBudgetCategories,
+  type CatalogueEntry,
+  type CategoryKey,
+} from "./budgetCatalogue";

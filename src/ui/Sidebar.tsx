@@ -14,7 +14,6 @@ import {
   Wallet,
 } from "lucide-react";
 import { addDaysLocal, toLocalDate } from "@/domain/datetime";
-import { CATEGORY_COLORS } from "@/data/db";
 import type { Category, LocalDate } from "@/domain/types";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
@@ -31,7 +30,7 @@ import { LevelBadge } from "./components/LevelBadge";
 import { MiniMonth } from "./components/MiniMonth";
 import { TrashModal } from "./components/TrashModal";
 import { UserProfileWidget } from "./components/UserProfileWidget";
-import { Field, Modal } from "./components/primitives";
+import { CategoryDialog } from "./components/CategoryDialog";
 
 export type ViewId =
   | "today"
@@ -42,13 +41,23 @@ export type ViewId =
   | "focus"
   | "budget";
 
-const NAV: { id: ViewId; labelKey: TranslationKey; icon: typeof Sun }[] = [
+/** How many category chips the sidebar shows before the rest fold away. */
+const CATEGORY_PREVIEW_COUNT = 5;
+
+const MAIN_NAV: { id: ViewId; labelKey: TranslationKey; icon: typeof Sun }[] = [
   { id: "today", labelKey: "navToday", icon: Sun },
-  { id: "calendar", labelKey: "navCalendar", icon: CalendarDays },
   { id: "tasks", labelKey: "navTasks", icon: ListChecks },
   { id: "plans", labelKey: "navPlans", icon: Target },
-  { id: "notes", labelKey: "navNotes", icon: StickyNote },
+  { id: "calendar", labelKey: "navCalendar", icon: CalendarDays },
+];
+
+const WORKSPACE_NAV: {
+  id: ViewId;
+  labelKey: TranslationKey;
+  icon: typeof Sun;
+}[] = [
   { id: "focus", labelKey: "navFocus", icon: Timer },
+  { id: "notes", labelKey: "navNotes", icon: StickyNote },
   { id: "budget", labelKey: "navBudget", icon: Wallet },
 ];
 
@@ -80,6 +89,7 @@ export function Sidebar({
   const trashedTasks = useTrashedTasks();
   const groups = useTodoGroups(filters);
   const [addingCategory, setAddingCategory] = useState(false);
+  const [showAllCategories, setShowAllCategories] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
   const { t } = useI18n();
@@ -94,6 +104,27 @@ export function Sidebar({
     }
     return map;
   }, [liveTasks]);
+
+  /**
+   * Used categories first, then the rest, and only the first five unless the
+   * list is asked to open. A filter that is *on* is always in the visible part
+   * — hiding the reason the task list looks short would be worse than a long
+   * sidebar.
+   */
+  const orderedCategories = useMemo(() => {
+    const inUse = (c: Category) =>
+      (categoryCounts[c.id] ?? 0) > 0 || filters.categoryIds.includes(c.id);
+    return [
+      ...categories.filter(inUse),
+      ...categories.filter((c) => !inUse(c)),
+    ];
+  }, [categories, categoryCounts, filters.categoryIds]);
+
+  const visibleCategories = showAllCategories
+    ? orderedCategories
+    : orderedCategories.slice(0, CATEGORY_PREVIEW_COUNT);
+  const hiddenCategoryCount =
+    orderedCategories.length - visibleCategories.length;
 
   // A dot in the mini month for any day holding at least one task.
   const monthInstances = useInstancesInRange(
@@ -152,7 +183,7 @@ export function Sidebar({
       </div>
 
       <div className="nav">
-        {NAV.map((item) => {
+        {MAIN_NAV.map((item) => {
           const Icon = item.icon;
           const badge =
             item.id === "today"
@@ -192,6 +223,24 @@ export function Sidebar({
         onAnchorChange={onAnchor}
       />
 
+      <div className="nav">
+        {WORKSPACE_NAV.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className="nav-item"
+              aria-current={view === item.id}
+              onClick={() => onView(item.id)}
+            >
+              <Icon size={16} />
+              {t(item.labelKey)}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="col" style={{ gap: 4 }}>
         <div className="side-heading">
           {t("categories")}
@@ -204,8 +253,20 @@ export function Sidebar({
             <Plus size={13} />
           </button>
         </div>
+        {/*
+          Nine seeded categories is a wall in a column this narrow, and most of
+          them are empty on the first day. Nothing is deleted — deleting a
+          category is the user's call and it is permanent — but the list stops
+          at five and says how many more there are.
+
+          Which five: the ones being used, in their own order, then the rest.
+          A category with tasks in it is the one you are looking for; an empty
+          one is a suggestion, and suggestions can wait behind a press. The
+          split is computed from a count that only changes when tasks do, so
+          the list does not reshuffle while it is being read.
+        */}
         <div className="chip-list">
-          {categories.map((category) => (
+          {visibleCategories.map((category) => (
             <div key={category.id} className="category-chip-row">
               <button
                 type="button"
@@ -235,6 +296,17 @@ export function Sidebar({
               </button>
             </div>
           ))}
+          {hiddenCategoryCount > 0 || showAllCategories ? (
+            <button
+              type="button"
+              className="btn ghost sm category-more"
+              onClick={() => setShowAllCategories((v) => !v)}
+            >
+              {showAllCategories
+                ? t("showLess")
+                : t("moreCount", { n: hiddenCategoryCount })}
+            </button>
+          ) : null}
           {filters.categoryIds.length > 0 ? (
             <button
               type="button"
@@ -276,9 +348,10 @@ export function Sidebar({
       {trashOpen && <TrashModal onClose={() => setTrashOpen(false)} />}
 
       {addingCategory ? (
-        <NewCategoryDialog
+        <CategoryDialog
+          category={null}
           onClose={() => setAddingCategory(false)}
-          onCreate={(name, color) => {
+          onSave={(name, color) => {
             addCategory(name, color);
             setAddingCategory(false);
           }}
@@ -286,10 +359,10 @@ export function Sidebar({
       ) : null}
 
       {editingCategory ? (
-        <EditCategoryDialog
+        <CategoryDialog
           category={editingCategory}
           onClose={() => setEditingCategory(null)}
-          onUpdate={(name, color) => {
+          onSave={(name, color) => {
             updateCategory(editingCategory.id, { name, color });
             setEditingCategory(null);
           }}
@@ -300,132 +373,5 @@ export function Sidebar({
         />
       ) : null}
     </nav>
-  );
-}
-
-function NewCategoryDialog({
-  onClose,
-  onCreate,
-}: {
-  onClose: () => void;
-  onCreate: (name: string, color: string) => void;
-}) {
-  const [name, setName] = useState("");
-  const [color, setColor] = useState(CATEGORY_COLORS[0] as string);
-  const { t } = useI18n();
-
-  return (
-    <Modal
-      title={t("newCategory")}
-      onClose={onClose}
-      width={380}
-      footer={
-        <>
-          <button type="button" className="btn" onClick={onClose}>
-            {t("cancel")}
-          </button>
-          <button
-            type="button"
-            className="btn primary"
-            disabled={!name.trim()}
-            onClick={() => onCreate(name, color)}
-          >
-            {t("create")}
-          </button>
-        </>
-      }
-    >
-      <Field label={t("categoryName")}>
-        <input
-          className="input"
-          autoFocus
-          value={name}
-          placeholder={t("categoryExample")}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </Field>
-      <Field label={t("categoryColor")}>
-        <div className="color-picker">
-          {CATEGORY_COLORS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              aria-pressed={c === color}
-              aria-label={c}
-              style={{ background: c }}
-              onClick={() => setColor(c)}
-            />
-          ))}
-        </div>
-      </Field>
-    </Modal>
-  );
-}
-
-function EditCategoryDialog({
-  category,
-  onClose,
-  onUpdate,
-  onDelete,
-}: {
-  category: Category;
-  onClose: () => void;
-  onUpdate: (name: string, color: string) => void;
-  onDelete: () => void;
-}) {
-  const [name, setName] = useState(category.name);
-  const [color, setColor] = useState(category.color);
-  const { t } = useI18n();
-
-  return (
-    <Modal
-      title={t("editCategory")}
-      onClose={onClose}
-      width={380}
-      footer={
-        <div className="row grow justify-between">
-          <button type="button" className="btn ghost danger" onClick={onDelete}>
-            {t("delete")}
-          </button>
-          <div className="row" style={{ gap: 6 }}>
-            <button type="button" className="btn" onClick={onClose}>
-              {t("cancel")}
-            </button>
-            <button
-              type="button"
-              className="btn primary"
-              disabled={!name.trim()}
-              onClick={() => onUpdate(name.trim(), color)}
-            >
-              {t("save")}
-            </button>
-          </div>
-        </div>
-      }
-    >
-      <Field label={t("categoryName")}>
-        <input
-          className="input"
-          autoFocus
-          value={name}
-          placeholder={t("categoryNamePlaceholder")}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </Field>
-      <Field label={t("categoryColor")}>
-        <div className="color-picker">
-          {CATEGORY_COLORS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              aria-pressed={c === color}
-              aria-label={c}
-              style={{ background: c }}
-              onClick={() => setColor(c)}
-            />
-          ))}
-        </div>
-      </Field>
-    </Modal>
   );
 }

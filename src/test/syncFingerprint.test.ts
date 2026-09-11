@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   cloudTaskFingerprint,
   localTaskFingerprint,
-  serializeTaskForCloud,
-} from "@/state/syncEngine";
+  toTaskRow as serializeTaskForCloud,
+} from "@/data/dto";
 import type { Task } from "@/domain/types";
 
 const USER = "user-1";

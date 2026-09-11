@@ -3,6 +3,7 @@ import type { Transaction } from "../money";
 import {
   matchRows,
   matchableEntries,
+  nearAmountTolerance,
   scoreMatch,
   settlePatch,
   type Matchable,
@@ -66,9 +67,9 @@ describe("scoring one candidate", () => {
   });
 
   /**
-   * The amount is the one thing all three witnesses agree on, so it is the one
-   * hard rule. Loosening it would merge two genuinely separate purchases, and
-   * nothing in the ledger records a row that should have been there.
+   * Exact by default, because every automatic caller matches through here and
+   * a wrongly merged pair leaves nothing behind to notice. Rounding is only
+   * allowed where someone is going to be asked about it — see below.
    */
   it("refuses an amount that is off by a single kuruş", () => {
     expect(scoreMatch(row, entry({ id: "a", amountMinor: 25_001 }))).toBeNull();
@@ -195,5 +196,95 @@ describe("settling a matched entry", () => {
   it("names the card when the entry did not", () => {
     const patch = settlePatch(entry({ id: "a" }), settled, { at: "x", account: "Bonus ••1234" });
     expect(patch.account).toBe("Bonus ••1234");
+  });
+});
+
+describe("an amount somebody rounded", () => {
+  /** 250 TL typed for a 248.75 basket: one purchase, two figures. */
+  it("matches a nearby amount when the caller allows it", () => {
+    const match = scoreMatch(row, entry({ id: "a", amountMinor: 24_875 }), {
+      nearAmounts: true,
+    });
+
+    expect(match).not.toBeNull();
+    expect(match?.exactAmount).toBe(false);
+    expect(match?.amountGapMinor).toBe(125);
+  });
+
+  it("marks a figure that agrees to the kuruş as exact", () => {
+    const match = scoreMatch(row, entry({ id: "a" }), { nearAmounts: true });
+    expect(match?.exactAmount).toBe(true);
+    expect(match?.amountGapMinor).toBe(0);
+  });
+
+  it("still refuses a gap too wide to be rounding", () => {
+    // 250 TL against 220 TL is not a rounded receipt, it is another purchase.
+    expect(
+      scoreMatch(row, entry({ id: "a", amountMinor: 22_000 }), { nearAmounts: true }),
+    ).toBeNull();
+  });
+
+  it("keeps small purchases matchable and large ones from reaching too far", () => {
+    // 5% of a 20 TL lunch is one lira, which nobody's memory is good to.
+    expect(nearAmountTolerance(2_000)).toBe(200);
+    expect(nearAmountTolerance(20_000)).toBe(1_000);
+    // Proportion alone would hand a 5.000 TL row 250 TL of slack.
+    expect(nearAmountTolerance(500_000)).toBe(2_500);
+  });
+
+  /**
+   * The rule that makes the loosening safe: an entry somebody matched to the
+   * kuruş is claimed by that row, never by another that merely rounds to it —
+   * even when the rounding row looks better on every other signal.
+   */
+  it("gives the entry to the row whose amount is exact", () => {
+    const rows: (Matchable & { id: string })[] = [
+      {
+        id: "rounded",
+        date: "2026-08-25",
+        amountMinor: 25_100,
+        flow: "EXPENSE",
+        merchant: "Migros",
+      },
+      {
+        id: "exact",
+        date: "2026-08-27",
+        amountMinor: 25_000,
+        flow: "EXPENSE",
+        merchant: "Trendyol",
+      },
+    ];
+    const entries = [entry({ id: "e1", merchant: "Migros" })];
+
+    const matched = matchRows(rows, entries, (r) => r.id, { nearAmounts: true });
+    expect(matched.get("exact")?.entry.id).toBe("e1");
+    expect(matched.has("rounded")).toBe(false);
+  });
+});
+
+describe("settling an entry the bank priced differently", () => {
+  const settled = {
+    externalId: "stmt:2026-08-25:24875:MIGROS:1",
+    merchant: "Migros",
+    categoryId: null,
+    date: "2026-08-25",
+  };
+
+  it("takes the bank's figure over the remembered one", () => {
+    const patch = settlePatch(entry({ id: "a", amountMinor: 25_000 }), {
+      ...settled,
+      amountMinor: 24_875,
+    }, { at: "x" });
+
+    expect(patch.amountMinor).toBe(24_875);
+  });
+
+  it("says nothing about the amount when the two already agree", () => {
+    const patch = settlePatch(entry({ id: "a", amountMinor: 25_000 }), {
+      ...settled,
+      amountMinor: 25_000,
+    }, { at: "x" });
+
+    expect(patch.amountMinor).toBeUndefined();
   });
 });

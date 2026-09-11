@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { SkippedRow, SyncPhase } from "@/sync/ports";
 import type { SyncFailureKind } from "@/lib/errors";
 
 /**
@@ -13,20 +14,7 @@ import type { SyncFailureKind } from "@/lib/errors";
  * columns and constraints, so the engine classifies the failure and the UI
  * picks a sentence for the kind. The detail stays in the console.
  */
-export type SyncPhase =
-  | "idle"
-  | "syncing"
-  | "offline"
-  /** The last attempt failed; local edits are queued and will be retried. */
-  | "error"
-  /** Signed out, or Supabase is not configured. Purely local operation. */
-  | "disabled";
-
-/** One local row the cloud will not accept, named so the UI can say how many. */
-export interface SkippedRow {
-  table: string;
-  id: string;
-}
+export type { SkippedRow, SyncPhase } from "@/sync/ports";
 
 export interface SyncState {
   phase: SyncPhase;

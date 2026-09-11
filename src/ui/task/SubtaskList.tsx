@@ -1,11 +1,14 @@
-import { useState, useRef } from "react";
-import { ArrowUpRight, GripVertical, Plus, Trash2 } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { ArrowUpRight, GripVertical, Plus, Sun, Trash2 } from "lucide-react";
+import { toLocalDate } from "@/domain/datetime";
+import { enclosingPlan } from "@/domain/task";
 import type { Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
-import { useSubtasks } from "@/state/selectors";
-import { useStore } from "@/state/store";
+import { useLiveTasks, useSubtasks } from "@/state/selectors";
+import { useNow, useStore } from "@/state/store";
 import { Checkbox } from "@/ui/components/primitives";
+import { useRequestDelete } from "./useRequestDelete";
 
 /**
  * Subtasks are ordinary tasks with a `parentId`.
@@ -22,10 +25,13 @@ export function SubtaskList({
   onOpen: (taskId: string) => void;
 }) {
   const subtasks = useSubtasks(parent.id);
+  const allTasks = useLiveTasks();
   const createTask = useStore((s) => s.createTask);
   const setStatus = useStore((s) => s.setStatus);
-  const deleteTask = useStore((s) => s.deleteTask);
+  const updateTask = useStore((s) => s.updateTask);
+  const requestDelete = useRequestDelete();
   const reorderSubtasks = useStore((s) => s.reorderSubtasks);
+  const now = useNow();
   const { t } = useI18n();
   const [title, setTitle] = useState("");
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -71,6 +77,26 @@ export function SubtaskList({
     endDrag();
   };
 
+  const today = toLocalDate(now);
+
+  /*
+   * Only a plan's steps get the "put this on today" control.
+   *
+   * A dated subtask reaches Today and the calendar only from inside a plan —
+   * see `useTodoGroups`, which keeps ordinary subtasks inside the task they
+   * belong to. Offering the button on rows where the date would surface
+   * nowhere would be a control that quietly does nothing.
+   *
+   * Depth is not part of the question: a step's own steps are still the
+   * plan's, so a checklist three levels down schedules like any other.
+   */
+  const schedulable = useMemo(() => {
+    if (parent.tags.includes("plan")) return true;
+    const byId = new Map<string, Task>();
+    for (const task of allTasks) byId.set(task.id, task);
+    return enclosingPlan(parent, byId) !== null;
+  }, [parent, allTasks]);
+
   const done = subtasks.filter((s) => s.status === "COMPLETED").length;
 
   return (
@@ -100,7 +126,7 @@ export function SubtaskList({
       }}
     >
       {subtasks.length > 0 ? (
-        <div className="row faint" style={{ fontSize: 11.5 }}>
+        <div className="row faint" style={{ fontSize: "var(--text-2xs)" }}>
           <span className="progress" style={{ width: 80 }}>
             <i style={{ width: `${(done / subtasks.length) * 100}%` }} />
           </span>
@@ -183,6 +209,36 @@ export function SubtaskList({
             }
           />
           <span className="label wrap">{subtask.title}</span>
+          {schedulable && subtask.dueDate === today ? (
+            <span
+              className="plan-subtask-today-tag"
+              title={t("plansAssignedToday")}
+            >
+              <Sun size={10} /> {t("today")}
+            </span>
+          ) : null}
+          {schedulable ? (
+            <button
+              type="button"
+              className={cn(
+                "btn ghost icon plan-subtask-today-btn",
+                subtask.dueDate === today && "active",
+              )}
+              title={
+                subtask.dueDate === today
+                  ? t("removeFromToday")
+                  : t("assignToToday")
+              }
+              onClick={() =>
+                updateTask(subtask.id, {
+                  dueDate: subtask.dueDate === today ? null : today,
+                  allDay: true,
+                })
+              }
+            >
+              <Sun size={14} />
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn ghost icon"
@@ -195,7 +251,7 @@ export function SubtaskList({
             type="button"
             className="btn ghost icon"
             title={t("menuDelete")}
-            onClick={() => deleteTask(subtask.id)}
+            onClick={() => requestDelete(subtask.id)}
           >
             <Trash2 size={14} />
           </button>

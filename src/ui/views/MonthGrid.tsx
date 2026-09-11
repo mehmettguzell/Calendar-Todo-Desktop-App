@@ -79,7 +79,10 @@ export function MonthGrid({
           const items = instancesByDate.get(local) ?? [];
           const showAll = expanded === local;
           const visible = showAll ? items : items.slice(0, VISIBLE_PER_CELL);
-          const weekend = day.getDay() === 0 || day.getDay() === 6;
+          // A Shift-click reaches across this day, and no further: a range
+          // that jumps a week boundary is not one anybody can see.
+          const cellIds = visible.map((instance) => instance.task.id);
+
 
           return (
             <div
@@ -87,7 +90,6 @@ export function MonthGrid({
               className={cn(
                 "month-cell",
                 !isSameMonth(day, anchorDate) && "outside",
-                weekend && isSameMonth(day, anchorDate) && "weekend",
                 local === today && "today",
                 local === selectedDate && "day-selected",
                 gestures.dropTarget === local && "drop-target",
@@ -136,6 +138,7 @@ export function MonthGrid({
                   }
                   onOpen={onOpen}
                   onContextMenu={gestures.openTaskMenu}
+                  listIds={cellIds}
                   // A series is laid out by its rule, so there is nothing here
                   // to drag: dropping one occurrence somewhere else would move
                   // every other one with it. Its copies are still one

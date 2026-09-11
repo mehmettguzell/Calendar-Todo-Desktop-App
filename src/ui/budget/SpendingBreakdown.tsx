@@ -1,14 +1,22 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, Search, TrendingDown, TrendingUp } from "lucide-react";
-import { formatMoney, type BudgetCategory, type Transaction } from "@/domain/money";
+import {
+  formatMoney,
+  limitStatus,
+  parseAmount,
+  type BudgetCategory,
+  type Transaction,
+} from "@/domain/money";
 import {
   analyseSpending,
   searchMerchants,
+  type CategorySlice as CategorySliceData,
   type DateRange,
   type MerchantSlice,
 } from "@/domain/spending";
 import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
+import { LIMIT_COLOURS } from "./labels";
 
 /**
  * Where the money went, one level deeper than a category.
@@ -28,16 +36,29 @@ export function SpendingBreakdown({
   range,
   previousRange,
   currency,
+  onSetLimit,
 }: {
   transactions: Transaction[];
   categories: BudgetCategory[];
   range: DateRange;
   previousRange: DateRange | null;
   currency: string;
+  /**
+   * Set or clear a category's monthly ceiling.
+   *
+   * The editor lives on the same row as the total it constrains, because a
+   * limit is only meaningful next to the number it is being measured against —
+   * put it anywhere else and it is a setting rather than a decision.
+   */
+  onSetLimit?: (categoryId: string, minor: number | null) => void;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const categoryById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category])),
+    [categories],
+  );
 
   const report = useMemo(
     () => analyseSpending(transactions, categories, range, { compareWith: previousRange }),
@@ -60,14 +81,14 @@ export function SpendingBreakdown({
       <div className="spend-head">
         <div>
           <div className="spend-total mono">{formatMoney(report.totalMinor, currency)}</div>
-          <div className="faint" style={{ fontSize: 12 }}>
+          <div className="faint" style={{ fontSize: "var(--text-xs)" }}>
             {t("spendPerDay", { amount: formatMoney(report.perDayMinor, currency) })}
           </div>
           {/* The bars on the left count gross, because a limit is about what
               you charged. This total is net. Saying so is cheaper than making
               someone wonder why one category shows two numbers. */}
           {report.refundMinor > 0 ? (
-            <div className="faint" style={{ fontSize: 11.5 }}>
+            <div className="faint" style={{ fontSize: "var(--text-2xs)" }}>
               {t("spendNetNote", {
                 gross: formatMoney(report.grossMinor, currency),
                 refund: formatMoney(report.refundMinor, currency),
@@ -113,57 +134,136 @@ export function SpendingBreakdown({
         <ul className="spend-categories">
           {report.categories.map((slice) => {
             const key = slice.categoryId ?? "none";
-            const expanded = open === key;
             return (
-              <li key={key} className={cn("spend-category", expanded && "open")}>
-                <button
-                  type="button"
-                  className="spend-category-head"
-                  aria-expanded={expanded}
-                  onClick={() => setOpen(expanded ? null : key)}
-                >
-                  <ChevronRight size={14} className="spend-caret" />
-                  <span aria-hidden>{slice.icon}</span>
-                  <span className="spend-name truncate">
-                    {slice.name || t("budgetUncategorised")}
-                  </span>
-                  <span className="faint spend-count">{slice.count}</span>
-                  <span className="spend-track">
-                    <span
-                      className="spend-fill"
-                      style={{
-                        width: `${Math.max(2, slice.share * 100)}%`,
-                        background: slice.color,
-                      }}
-                    />
-                  </span>
-                  <span className="mono spend-value">
-                    {formatMoney(slice.amountMinor, currency)}
-                  </span>
-                  <span className="spend-share faint">
-                    %{Math.round(slice.share * 100)}
-                  </span>
-                  {slice.changeRatio !== null ? <Delta ratio={slice.changeRatio} small /> : null}
-                </button>
-
-                {expanded ? (
-                  <ul className="spend-merchants">
-                    {slice.merchants.map((merchant) => (
-                      <MerchantRow
-                        key={merchant.merchant}
-                        slice={merchant}
-                        currency={currency}
-                        total={slice.amountMinor}
-                      />
-                    ))}
-                  </ul>
-                ) : null}
-              </li>
+              <CategorySlice
+                key={key}
+                slice={slice}
+                category={
+                  slice.categoryId
+                    ? (categoryById.get(slice.categoryId) ?? null)
+                    : null
+                }
+                currency={currency}
+                expanded={open === key}
+                onToggle={() => setOpen(open === key ? null : key)}
+                onSetLimit={onSetLimit}
+              />
             );
           })}
         </ul>
       )}
     </div>
+  );
+}
+
+/** One category's share, and the shops inside it once it is opened. */
+function CategorySlice({
+  slice,
+  category,
+  currency,
+  expanded,
+  onToggle,
+  onSetLimit,
+}: {
+  slice: CategorySliceData;
+  category: BudgetCategory | null;
+  currency: string;
+  expanded: boolean;
+  onToggle: () => void;
+  onSetLimit?: (categoryId: string, minor: number | null) => void;
+}) {
+  const { t } = useI18n();
+  const limit = limitStatus(category?.monthlyLimitMinor, slice.amountMinor);
+
+  return (
+    <li className={cn("spend-category", expanded && "open")}>
+      <div className="spend-category-line">
+      <button
+        type="button"
+        className="spend-category-head"
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <ChevronRight size={14} className="spend-caret" />
+        <span aria-hidden>{slice.icon}</span>
+        <span className="spend-name truncate">
+          {slice.name || t("budgetUncategorised")}
+        </span>
+        <span className="faint spend-count">{slice.count}</span>
+        <CategoryMeter slice={slice} limit={limit} currency={currency} />
+        {slice.changeRatio !== null ? <Delta ratio={slice.changeRatio} small /> : null}
+      </button>
+      {category && onSetLimit ? (
+        <LimitInput
+          category={category}
+          currency={currency}
+          onChange={(minor) => onSetLimit(category.id, minor)}
+        />
+      ) : null}
+      </div>
+
+      {expanded ? (
+        <ul className="spend-merchants">
+          {slice.merchants.map((merchant) => (
+            <MerchantRow
+              key={merchant.merchant}
+              slice={merchant}
+              currency={currency}
+              total={slice.amountMinor}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * The bar, the figure and the share, all measured against the same thing.
+ *
+ * Against the ceiling when the category has one, against the biggest category
+ * when it does not: a bar three-quarters full beside "%3" is two answers to one
+ * question.
+ */
+function CategoryMeter({
+  slice,
+  limit,
+  currency,
+}: {
+  slice: CategorySliceData;
+  limit: ReturnType<typeof limitStatus>;
+  currency: string;
+}) {
+  const { t } = useI18n();
+  const ratio = limit ? limit.ratio : slice.share;
+
+  return (
+    <>
+      <span className="spend-track">
+        <span
+          className="spend-fill"
+          style={{
+            width: `${Math.min(100, Math.max(2, ratio * 100))}%`,
+            background: limit ? LIMIT_COLOURS[limit.state] : slice.color,
+          }}
+        />
+      </span>
+      <span className="mono spend-value">
+        {formatMoney(slice.amountMinor, currency)}
+        {limit ? (
+          <span className={cn("budget-limit-note", limit.state)}>
+            {" / "}
+            {formatMoney(limit.limitMinor, currency)}
+          </span>
+        ) : null}
+      </span>
+      <span
+        className={cn("spend-share faint", limit && limit.state)}
+        title={limit ? t("budgetSetLimit") : t("budgetWhereItWent")}
+      >
+        %{Math.round(ratio * 100)}
+      </span>
+    </>
   );
 }
 
@@ -210,5 +310,51 @@ function Delta({ ratio, small = false }: { ratio: number; small?: boolean }) {
     <span className={cn("spend-delta", up ? "up" : "down", small && "sm")}>
       {up ? <TrendingUp size={12} /> : <TrendingDown size={12} />}%{percent}
     </span>
+  );
+}
+
+
+/**
+ * The monthly ceiling for one category, edited in place.
+ *
+ * Hidden until the row is hovered when unset, so a view about where the money
+ * went does not read as a form. Committed on blur rather than per keystroke: a
+ * half-typed "3" should not briefly mean a three-kuruş budget.
+ */
+function LimitInput({
+  category,
+  currency,
+  onChange,
+}: {
+  category: BudgetCategory;
+  currency: string;
+  onChange: (minor: number | null) => void;
+}) {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const current = category.monthlyLimitMinor ?? null;
+  const shown = draft ?? (current ? String(Math.round(current / 100)) : "");
+
+  return (
+    <input
+      className="budget-limit-input"
+      inputMode="numeric"
+      placeholder={t("budgetLimit")}
+      aria-label={`${t("budgetSetLimit")} — ${category.name}`}
+      title={`${t("budgetSetLimit")} (${currency})`}
+      value={shown}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft === null) return;
+        const parsed = parseAmount(draft);
+        onChange(draft.trim() === "" || parsed === null ? null : Math.abs(parsed));
+        setDraft(null);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") setDraft(null);
+      }}
+    />
   );
 }

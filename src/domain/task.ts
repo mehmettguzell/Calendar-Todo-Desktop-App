@@ -1,5 +1,5 @@
 import { atTime, daysBetween, fromInstant, toLocalDate } from "./datetime";
-import { instanceKey, occurrenceId } from "./ids";
+import { deadlineKey, instanceKey, occurrenceId } from "./ids";
 import { expandOccurrences } from "./recurrence";
 import type {
   Instant,
@@ -45,6 +45,9 @@ export function effectiveStatus(
  * of a still-running August 25-28 task as OVERDUE while it is perfectly on time.
  */
 export function deadlineOf(task: Task, date: LocalDate | null): Date | null {
+  // An explicit deadline outranks the schedule and does not need one: a plan
+  // with no date at all still stops being on time on the day it was due by.
+  if (task.deadline && !task.recurrence) return atTime(task.deadline, "23:59");
   if (!date) return null;
   const lastDay = spanEnd(task) ?? date;
   const on = task.recurrence ? date : lastDay > date ? lastDay : date;
@@ -76,6 +79,32 @@ export function spanOf(task: Task, date: LocalDate | null): TaskSpan {
 }
 
 /** Resolve one task on one date into the shape every view consumes. */
+/**
+ * Whose status this instance wears: the occurrence row, or the task itself.
+ *
+ * A repeating task keeps its state per day, so the row is the authority there —
+ * writing to `task.status` instead would be invisible in every view.
+ */
+function stateOf(
+  task: Task,
+  date: LocalDate | null,
+  occurrence: Occurrence | null,
+): { storedStatus: StoredStatus; completedAt: Instant | null; snoozedUntil: Instant | null } {
+  const perOccurrence = task.recurrence !== null && date !== null;
+  if (!perOccurrence) {
+    return {
+      storedStatus: task.status,
+      completedAt: task.completedAt,
+      snoozedUntil: task.snoozedUntil,
+    };
+  }
+  return {
+    storedStatus: occurrence?.status ?? "TODO",
+    completedAt: occurrence?.completedAt ?? null,
+    snoozedUntil: occurrence?.snoozedUntil ?? null,
+  };
+}
+
 export function toInstance(
   task: Task,
   date: LocalDate | null,
@@ -83,17 +112,17 @@ export function toInstance(
   now: Date,
 ): TaskInstance {
   const isRecurring = task.recurrence !== null;
-  const storedStatus = isRecurring && date ? (occurrence?.status ?? "TODO") : task.status;
-  const completedAt = isRecurring && date ? (occurrence?.completedAt ?? null) : task.completedAt;
-  const snoozedUntil = isRecurring && date ? (occurrence?.snoozedUntil ?? null) : task.snoozedUntil;
-
+  const { storedStatus, completedAt, snoozedUntil } = stateOf(task, date, occurrence);
   const timed = !task.allDay && task.startTime !== null && date !== null;
   const span = spanOf(task, date);
+
   return {
     // Every rendered day of a multi-day task needs its own React key, but the
     // *mutation* target stays the single task row — see `refOf` in the store.
     key: instanceKey(task.id, date, isRecurring || span.length > 1),
     span,
+    isDeadline: false,
+    deadlineOnly: false,
     task,
     date,
     isRecurring,
@@ -118,9 +147,34 @@ export function instancesInRange(
   occurrences: Map<string, Occurrence>,
   now: Date,
 ): TaskInstance[] {
-  return expandOccurrences(task, from, to).map((date) =>
+  const out = expandOccurrences(task, from, to).map((date) =>
     toInstance(task, date, occurrences.get(occurrenceId(task.id, date)) ?? null, now),
   );
+
+  const deadline = deadlineDateOf(task);
+  if (!deadline || deadline < from || deadline > to) return out;
+
+  // The deadline can land on a day the task already occupies — a one-day task
+  // due by its own date is the common case. Marking that instance rather than
+  // adding a second is what keeps one task from appearing twice on one day.
+  const existing = out.find((instance) => instance.date === deadline);
+  if (existing) {
+    existing.isDeadline = true;
+    return out;
+  }
+
+  out.push({
+    ...toInstance(task, deadline, null, now),
+    key: deadlineKey(task.id),
+    isDeadline: true,
+    deadlineOnly: true,
+  });
+  return out;
+}
+
+/** The day this task must be finished by, or `null` when it has no deadline. */
+export function deadlineDateOf(task: Pick<Task, "deadline" | "recurrence">): LocalDate | null {
+  return task.recurrence ? null : (task.deadline ?? null);
 }
 
 /**
@@ -175,6 +229,38 @@ export function descendantIds(tasks: Task[], rootId: string): Set<string> {
     frontier = next;
   }
   return out;
+}
+
+/**
+ * The plan `task` sits under, however deep it sits.
+ *
+ * A step of a plan is a task with the plan as its parent, but a step can have
+ * steps of its own, and those are just as much part of the plan — the views
+ * that surface a plan's scheduled work asked only about the direct parent, so
+ * a second-level step could be given a date that then appeared nowhere.
+ *
+ * The task itself is not consulted: a plan is not inside itself, and the views
+ * that show plans have their own branch for them. Returns null for anything
+ * that is not under a plan at all.
+ *
+ * `byId` is the caller's own id index, which every call site already builds.
+ */
+export function enclosingPlan(
+  task: Task,
+  byId: Map<string, Task>,
+): Task | null {
+  // A parent chain is built by `setParent`, which refuses cycles; the guard is
+  // for a corrupted or half-synced document, where looping forever would take
+  // the whole window with it.
+  const seen = new Set<string>([task.id]);
+  let current = task.parentId === null ? null : byId.get(task.parentId);
+  while (current) {
+    if (seen.has(current.id)) return null;
+    seen.add(current.id);
+    if (current.tags.includes("plan")) return current;
+    current = current.parentId === null ? null : byId.get(current.parentId);
+  }
+  return null;
 }
 
 /**

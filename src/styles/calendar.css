@@ -15,8 +15,8 @@
 .cal-weekdays span {
   padding: 6px var(--space-2);
   color: var(--text-faint);
-  font-size: 11px;
-  font-weight: 650;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   text-align: center;
@@ -43,9 +43,14 @@
 }
 
 .month-cell:nth-child(7n) { border-right: none; }
+
+/* Days from the months either side of this one. The tint says "not this
+   month" — the only thing in the grid a tint is spent on, now that weekends
+   are not. A weekend used to carry the same grey, which striped the grid every
+   five columns to repeat something the weekday header at the top already
+   says, and made a Saturday in this month look like a day outside it. */
 .month-cell.outside { background: var(--surface-2); }
 .month-cell.outside .month-daynum { color: var(--text-faint); }
-.month-cell.weekend { background: var(--surface-2); }
 .month-cell.today { background: var(--accent-soft); }
 
 .month-daynum {
@@ -56,12 +61,12 @@
   height: 22px;
   padding: 0 5px;
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
 }
 
-.month-cell.today .month-daynum { background: var(--accent); color: #fff; }
+.month-cell.today .month-daynum { background: var(--accent); color: var(--accent-text); }
 
 .month-add {
   align-self: flex-end;
@@ -83,19 +88,35 @@
   width: 100%;
   padding: 2px 5px;
   border-radius: var(--radius-sm);
-  font-size: 12px;
+  font-size: var(--text-xs);
   text-align: left;
   transition: background 100ms ease;
 }
 
 .chip:hover { background: var(--surface-hover); }
 .chip .chip-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; }
-.chip .chip-time { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 11px; }
-.chip.allday { color: #fff; }
-.chip.allday .chip-time { color: rgba(255, 255, 255, 0.85); }
+.chip .chip-time { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: var(--text-2xs); }
+/* Tinted, with the category in a stripe down the edge.
+   A saturated fill per all-day task turns a busy month into a wall of colour,
+   and — because the fill was whatever colour the category happened to be — no
+   text colour could be readable on all of them. The tint is mixed against the
+   current surface, so it lands right in both themes on its own. */
+.chip.allday {
+  --chip-color: var(--accent);
+  padding-left: 6px;
+  background: color-mix(in srgb, var(--chip-color) 15%, var(--surface));
+  border-left: 3px solid var(--chip-color);
+  color: var(--text);
+}
+
+.chip.allday:hover {
+  background: color-mix(in srgb, var(--chip-color) 26%, var(--surface));
+}
+
+.chip.allday .chip-time { color: var(--text-muted); }
 .chip.done { opacity: 0.55; }
 .chip.done .chip-title { text-decoration: line-through; }
-.chip.overdue .chip-title { color: var(--danger); font-weight: 600; }
+.chip.overdue .chip-title { color: var(--danger); font-weight: var(--weight-medium); }
 /* Multi-day tasks: one bar per covered day, with the outer corners opened up
    on the sides that continue so the run reads as a single stretch. */
 .chip.spanning { position: relative; }
@@ -115,14 +136,14 @@
 .chip .chip-span-count {
   margin-left: auto;
   flex: none;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.02em;
   opacity: 0.75;
   font-variant-numeric: tabular-nums;
 }
 
-.chip-more { padding: 1px 5px; color: var(--text-muted); font-size: 11px; font-weight: 600; text-align: left; }
+.chip-more { padding: 1px 5px; color: var(--text-muted); font-size: var(--text-2xs); font-weight: var(--weight-medium); text-align: left; }
 .chip-more:hover { color: var(--text); }
 
 /* ------------------------------------------------------- week / day */
@@ -149,8 +170,8 @@
 
 .time-head-day .dow {
   color: var(--text-faint);
-  font-size: 11px;
-  font-weight: 650;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -161,12 +182,12 @@
   min-width: 26px;
   height: 26px;
   border-radius: 999px;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
 }
 
-.time-head-day.today .dom { background: var(--accent); color: #fff; }
+.time-head-day.today .dom { background: var(--accent); color: var(--accent-text); }
 
 .allday-row {
   display: grid;
@@ -193,8 +214,8 @@
   place-items: center end;
   padding-right: 6px;
   color: var(--text-faint);
-  font-size: 10px;
-  font-weight: 650;
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -207,7 +228,7 @@
   right: 6px;
   transform: translateY(-50%);
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -238,15 +259,14 @@
   border-radius: var(--radius-sm);
   background: var(--accent-soft);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--text-xs);
   text-align: left;
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
   transition: filter 120ms ease;
 }
 
 .event:hover { filter: brightness(0.97); }
-.event .event-time { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.event .event-time { color: var(--text-muted); font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
 .event.done { opacity: 0.55; }
 .event.done .event-title { text-decoration: line-through; }
 .event.overdue { border-left-color: var(--danger); }
@@ -279,5 +299,58 @@
    title red to say "overdue" leaves red on blue — the one state that most needs
    reading becomes the one that cannot be read. The fill keeps the colour and a
    danger-coloured ring carries the warning instead. */
-.chip.allday.overdue .chip-title { color: #fff; }
-.chip.allday.overdue { box-shadow: inset 0 0 0 1.5px var(--danger); }
+.chip.allday.overdue .chip-title { color: var(--danger); }
+.chip.allday.overdue { border-left-color: var(--danger); }
+
+/* A deadline marker: the task drawn on the day it must be finished by, rather
+   than on a day it occupies. Outlined instead of filled, so a month of work
+   due on the 20th reads as one due date and never as a solid block — which is
+   the whole reason a deadline is not stored as a multi-day span. */
+.chip.chip-deadline {
+  background: none;
+  border: 1px dashed currentColor;
+  padding: 1px 4px;
+}
+.chip.chip-deadline:hover { background: var(--surface-hover); }
+.chip.chip-deadline .chip-flag { flex: none; opacity: 0.9; }
+.chip.chip-deadline .chip-title { color: var(--text); }
+.chip.chip-deadline.overdue { border-color: var(--danger); color: var(--danger); }
+
+/* A plan's own checkpoint — "backend bitecek, 25 Eylul".
+   Not a task, not a day of one, and so not drawn as either: no pill, no fill,
+   no rounded body that reads as something sitting on the 25th. A flag and a
+   ruled line under the words, which is what a date written against a day looks
+   like on paper. Met ones stay legible and step back rather than vanishing:
+   "we hit that one" is part of what the month has to say. */
+.chip.chip-checkpoint {
+  border: 0;
+  border-radius: 0;
+  padding: 1px 2px;
+  background: none;
+  color: var(--text-muted);
+  box-shadow: inset 0 -1px 0 0 var(--border-strong);
+}
+.chip.chip-checkpoint:hover {
+  background: none;
+  color: var(--text);
+  box-shadow: inset 0 -1px 0 0 var(--accent);
+}
+.chip.chip-checkpoint .chip-flag {
+  color: var(--accent);
+  opacity: 1;
+}
+.chip.chip-checkpoint .chip-title {
+  color: inherit;
+  font-weight: var(--weight-medium);
+}
+.chip.chip-checkpoint.overdue {
+  color: var(--danger);
+  box-shadow: inset 0 -1px 0 0 var(--danger);
+}
+.chip.chip-checkpoint.overdue .chip-flag { color: var(--danger); }
+.chip.chip-checkpoint.is-met {
+  color: var(--text-faint);
+  box-shadow: inset 0 -1px 0 0 var(--border);
+}
+.chip.chip-checkpoint.is-met .chip-flag { color: var(--success); }
+.chip.chip-checkpoint.is-met .chip-title { text-decoration: line-through; }

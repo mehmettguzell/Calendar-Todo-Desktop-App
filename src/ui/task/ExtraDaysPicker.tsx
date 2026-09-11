@@ -42,7 +42,7 @@ export function ExtraDaysPicker({ task }: { task: Task }) {
 
   if (availability !== "ok") {
     return (
-      <p className="faint" style={{ fontSize: 12, margin: 0 }}>
+      <p className="faint" style={{ fontSize: "var(--text-xs)", margin: 0 }}>
         {t(UNAVAILABLE_HINT[availability] ?? "extraDaysUnscheduled")}
       </p>
     );
@@ -90,7 +90,7 @@ export function ExtraDaysPicker({ task }: { task: Task }) {
           );
         })}
       </div>
-      <p className="faint" style={{ fontSize: 11.5, margin: 0 }}>
+      <p className="faint" style={{ fontSize: "var(--text-2xs)", margin: 0 }}>
         {t("extraDaysHint")}
       </p>
     </div>

@@ -5,10 +5,10 @@ import {
   computeActivityMap,
   computeStreaks,
   computeWeeklyStats,
-  getMotivationalMessage,
   XP_PER_FOCUS_SESSION,
   XP_PER_TASK,
 } from "../gamification";
+import { getMotivationalMessage } from "../motivation";
 import type { FocusSession, HistoryEntry, Occurrence, Task } from "../types";
 
 describe("Gamification Domain", () => {

@@ -1,5 +1,10 @@
 import { fold, identifyMerchant, type MerchantMatch } from "./merchant";
 import {
+  dailyShortfalls,
+  shortfallExternalId,
+  type DailyShortfall,
+} from "./statementBatch";
+import {
   categoryNamesFor,
   type BudgetCategory,
   type CategoryKey,
@@ -55,7 +60,12 @@ export interface ImportRow {
    *
    * This is what makes logging a spend at the till safe: the statement finds
    * the row the user already wrote and confirms it, rather than filing a twin
-   * beside it. On by default whenever a match was found.
+   * beside it.
+   *
+   * On by default when the two figures agree to the kuruş. When they only come
+   * close — the user wrote 100 for a 98.75 basket — the match is still offered,
+   * but off, because rounding is the one signal here that a person produced and
+   * so the one that has to be confirmed by a person. See `reconcile`.
    */
   merge: boolean;
   /** Ticked in the preview. Transfers arrive unticked. */
@@ -72,6 +82,12 @@ export interface ImportPlan {
     fresh: number;
     duplicate: number;
     similar: number;
+    /**
+     * Matches whose amount is only close, and which are therefore waiting to
+     * be ticked. A subset of `similar`; the preview counts them separately
+     * because they are the rows that need someone to look.
+     */
+    near: number;
     excluded: number;
   };
   /** Categories the statement needs that this document does not have yet. */
@@ -149,6 +165,140 @@ export interface PlanOptions {
   matchWindowDays?: number;
 }
 
+/**
+ * Which budget category this line belongs to.
+ *
+ * What kind of movement it is outranks the shop: a card payment is a transfer
+ * whatever the descriptor says. The fallback is the one the user picked in the
+ * preview, so an unknown shop is filed rather than left loose.
+ */
+function fileUnder(
+  line: StatementLine,
+  merchant: ReturnType<typeof identifyMerchant>,
+  categories: BudgetCategory[],
+  options: PlanOptions,
+): { categoryKey: CategoryKey | null; categoryId: string | null } {
+  const categoryKey =
+    KIND_CATEGORY[line.kind] ??
+    merchant.categoryKey ??
+    options.fallbackCategoryKey ??
+    null;
+  const category = categoryKey ? resolveCategory(categoryKey, categories) : null;
+  return { categoryKey, categoryId: category?.id ?? null };
+}
+
+interface RowsBuilt {
+  rows: ImportRow[];
+  missingCategories: Set<CategoryKey>;
+  unknownMerchants: Set<string>;
+}
+
+/**
+ * One row per statement line, with the merchant named and a category guessed.
+ *
+ * `occurrence` is what keeps two identical purchases on the same day apart:
+ * without it they share a fingerprint and the second looks like a duplicate of
+ * the first.
+ */
+function buildRows(
+  lines: StatementLine[],
+  byExternalId: Map<string, Transaction>,
+  categories: BudgetCategory[],
+  options: PlanOptions,
+): RowsBuilt {
+  const seen = new Map<string, number>();
+  const rows: ImportRow[] = [];
+  const missingCategories = new Set<CategoryKey>();
+  const unknownMerchants = new Set<string>();
+
+  for (const line of lines) {
+    const merchant = identifyMerchant(line.description);
+    const signature = `${line.date}|${line.amountMinor}|${fold(merchant.name)}`;
+    const occurrence = (seen.get(signature) ?? 0) + 1;
+    seen.set(signature, occurrence);
+
+    const externalId = externalIdFor(line, merchant.name, occurrence);
+    const alreadyImported = byExternalId.get(externalId);
+    const { categoryKey, categoryId } = fileUnder(line, merchant, categories, options);
+    if (categoryKey && !categoryId) missingCategories.add(categoryKey);
+    if (merchant.confidence === "none") unknownMerchants.add(merchant.name);
+
+    rows.push({
+      line,
+      merchant,
+      externalId,
+      categoryKey,
+      categoryId,
+      status: alreadyImported ? "duplicate" : "new",
+      existingId: alreadyImported?.id ?? null,
+      match: null,
+      merge: false,
+      include: !alreadyImported && includeByDefault(line.kind),
+    });
+  }
+  return { rows, missingCategories, unknownMerchants };
+}
+
+/**
+ * Offer everything new to the reconciler, which looks for the entry the user (or
+ * their bank's notification mail) already wrote for this purchase.
+ *
+ * Allocation happens across the whole file at once rather than row by row: two
+ * identical purchases in the same week would otherwise both claim the first
+ * entry that fitted. See `reconcile`.
+ */
+function claimExistingEntries(
+  rows: ImportRow[],
+  live: Transaction[],
+  options: PlanOptions,
+): void {
+  const claimable = rows.filter((row) => row.status === "new");
+  const matches = matchRows(
+    claimable.map((row) => ({
+      key: row.externalId,
+      date: row.line.date,
+      amountMinor: row.line.amountMinor,
+      flow: row.line.flow,
+      merchant: row.merchant.name,
+      account: options.account ?? null,
+    })),
+    matchableEntries(live),
+    (row) => row.key,
+    {
+      account: options.account ?? null,
+      windowDays: options.matchWindowDays,
+      // Safe here and nowhere else: whatever this finds is shown in a preview
+      // and, when the figures disagree, left for the user to tick.
+      nearAmounts: true,
+    },
+  );
+
+  for (const row of claimable) {
+    const match = matches.get(row.externalId);
+    if (!match) continue;
+    row.status = "similar";
+    row.existingId = match.entry.id;
+    row.match = match;
+    // Merging is the right default: the entry exists because the user logged the
+    // purchase, and the statement is here to confirm it, not to repeat it.
+    // Unless the amounts merely round to each other, which is a guess — and a
+    // guess that silently swallowed a second real purchase would leave nothing
+    // behind to notice.
+    row.merge = match.exactAmount;
+  }
+}
+
+function countsOf(rows: ImportRow[]): ImportPlan["counts"] {
+  return {
+    total: rows.length,
+    fresh: rows.filter((row) => row.status === "new").length,
+    duplicate: rows.filter((row) => row.status === "duplicate").length,
+    similar: rows.filter((row) => row.status === "similar").length,
+    near: rows.filter((row) => row.match !== null && !row.match.exactAmount).length,
+    excluded: rows.filter((row) => !row.include).length,
+  };
+}
+
 export function buildImportPlan(
   lines: StatementLine[],
   skipped: SkippedRow[],
@@ -163,96 +313,21 @@ export function buildImportPlan(
     if (entry.externalId) byExternalId.set(entry.externalId, entry);
   }
 
-  const seen = new Map<string, number>();
-  const rows: ImportRow[] = [];
-  const missing = new Set<CategoryKey>();
-  const unknown = new Set<string>();
-
-  for (const line of lines) {
-    const merchant = identifyMerchant(line.description);
-    const signature = `${line.date}|${line.amountMinor}|${fold(merchant.name)}`;
-    const occurrence = (seen.get(signature) ?? 0) + 1;
-    seen.set(signature, occurrence);
-
-    const externalId = externalIdFor(line, merchant.name, occurrence);
-    const alreadyImported = byExternalId.get(externalId);
-
-    const categoryKey =
-      KIND_CATEGORY[line.kind] ??
-      merchant.categoryKey ??
-      options.fallbackCategoryKey ??
-      null;
-    const category = categoryKey ? resolveCategory(categoryKey, categories) : null;
-    if (categoryKey && !category) missing.add(categoryKey);
-    if (merchant.confidence === "none") unknown.add(merchant.name);
-
-    rows.push({
-      line,
-      merchant,
-      externalId,
-      categoryKey,
-      categoryId: category?.id ?? null,
-      status: alreadyImported ? "duplicate" : "new",
-      existingId: alreadyImported?.id ?? null,
-      match: null,
-      merge: false,
-      include: !alreadyImported && includeByDefault(line.kind),
-    });
-  }
-
-  /*
-   * Everything that is not already in the ledger by fingerprint is offered to
-   * the reconciler, which looks for the entry the user (or their bank's
-   * notification mail) already wrote for this purchase.
-   *
-   * Allocation happens across the whole file at once rather than row by row:
-   * two identical purchases in the same week would otherwise both claim the
-   * first entry that fitted. See `reconcile`.
-   */
-  const claimable = rows.filter((row) => row.status === "new");
-  const matches = matchRows(
-    claimable.map((row) => ({
-      key: row.externalId,
-      date: row.line.date,
-      amountMinor: row.line.amountMinor,
-      flow: row.line.flow,
-      merchant: row.merchant.name,
-      account: options.account ?? null,
-    })),
-    matchableEntries(live),
-    (row) => row.key,
-    { account: options.account ?? null, windowDays: options.matchWindowDays },
-  );
-
-  for (const row of claimable) {
-    const match = matches.get(row.externalId);
-    if (!match) continue;
-    row.status = "similar";
-    row.existingId = match.entry.id;
-    row.match = match;
-    // Merging is the right default: the entry exists because the user logged
-    // the purchase, and the statement is here to confirm it, not to repeat it.
-    row.merge = true;
-  }
+  const built = buildRows(lines, byExternalId, categories, options);
+  claimExistingEntries(built.rows, live, options);
 
   const dates = lines.map((line) => line.date).sort();
   return {
-    rows,
+    rows: built.rows,
     skipped,
     source,
     range:
       dates.length > 0
         ? { from: dates[0] as LocalDate, to: dates[dates.length - 1] as LocalDate }
         : null,
-    counts: {
-      total: rows.length,
-      fresh: rows.filter((row) => row.status === "new").length,
-      duplicate: rows.filter((row) => row.status === "duplicate").length,
-      similar: rows.filter((row) => row.status === "similar").length,
-      excluded: rows.filter((row) => !row.include).length,
-    },
-    missingCategories: [...missing],
-    unknownMerchants: [...unknown],
+    counts: countsOf(built.rows),
+    missingCategories: [...built.missingCategories],
+    unknownMerchants: [...built.unknownMerchants],
   };
 }
 
@@ -291,6 +366,50 @@ export function draftsFrom(plan: ImportPlan): ImportDraft[] {
 }
 
 
+/**
+ * The daily top-ups a statement implies, as importable entries.
+ *
+ * The other way to read a statement. `draftsFrom` files every row the bank
+ * printed; this files one row per day, for the part of that day the ledger does
+ * not already know about. See `dailyShortfalls` for why the day's total is the
+ * only figure either side agrees on.
+ *
+ * Rows the user unticked in the preview are left out of the statement side, so
+ * excluding a transfer or a row on the wrong card still means what it means.
+ * Nothing is merged in this mode: a top-up is by construction the part no
+ * existing entry covers, so there is nothing for it to settle.
+ */
+export function dailyDraftsFrom(
+  plan: ImportPlan,
+  existing: Transaction[],
+  label: string,
+  categoryId: string | null = null,
+): { drafts: ImportDraft[]; days: DailyShortfall[] } {
+  const days = dailyShortfalls(
+    plan.rows
+      .filter((row) => row.include)
+      .map((row) => ({
+        date: row.line.date,
+        amountMinor: row.line.amountMinor,
+        flow: row.line.flow,
+      })),
+    existing,
+  );
+
+  return {
+    days,
+    drafts: days.map((day) => ({
+      date: day.date,
+      amountMinor: day.shortfallMinor,
+      flow: "EXPENSE" as const,
+      categoryId,
+      note: label,
+      merchant: "",
+      externalId: shortfallExternalId(day),
+    })),
+  };
+}
+
 /** One matched entry, and what the statement teaches it. */
 export interface ImportMerge {
   entryId: string;
@@ -325,6 +444,9 @@ export function mergesFrom(
           merchant: row.merchant.name,
           categoryId: row.categoryId,
           date: row.line.date,
+          // What the bank settled at replaces what was remembered. Only ever
+          // different on a match the user ticked themselves.
+          amountMinor: row.line.amountMinor,
         },
         { at, account: options.account ?? null, keepDate: options.keepDate },
       ),

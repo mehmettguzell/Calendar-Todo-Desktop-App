@@ -1,4 +1,3 @@
-mod mail;
 
 use std::fs;
 use std::path::PathBuf;
@@ -307,6 +306,16 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            // Registered here rather than in the chain above because both are
+            // desktop-only, and `setup` is the one place that can be made
+            // conditional without splitting the whole builder in two.
+            #[cfg(desktop)]
+            {
+                app.handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+                app.handle().plugin(tauri_plugin_process::init())?;
+            }
+
             build_tray(app.handle())?;
             start_heartbeat(app.handle().clone());
 
@@ -346,12 +355,7 @@ pub fn run() {
             focus_main_window,
             quit_app,
             autostart_enabled,
-            set_autostart,
-            mail::mail_fetch,
-            mail::mail_probe,
-            mail::mail_set_password,
-            mail::mail_has_password,
-            mail::mail_clear_password
+            set_autostart
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
