@@ -89,6 +89,19 @@ export interface SnoozeOutcome {
  * another day — because a task cannot silently sit on yesterday's date while
  * its reminder waits for tomorrow.
  */
+const SHORT_PRESETS: SnoozePresetId[] = ["10m", "30m", "1h", "3h"];
+
+/** The clock the moved task keeps, or null when it becomes an all-day one. */
+function timeAfterMove(
+  instance: TaskInstance,
+  preset: SnoozePresetId,
+  target: Date,
+): LocalTime | null {
+  if (instance.task.allDay) return null;
+  if (preset === "custom") return toLocalTime(target);
+  return instance.task.startTime;
+}
+
 export function resolveSnooze(
   instance: TaskInstance,
   preset: SnoozePresetId,
@@ -97,7 +110,6 @@ export function resolveSnooze(
   customTarget?: Date,
 ): SnoozeOutcome {
   const target = snoozeTarget(instance, preset, settings, now, customTarget);
-  const anchorDate = instance.date;
   const targetDate = toLocalDate(target);
 
   // Suppressing a task until a moment that has already passed suppresses
@@ -107,47 +119,31 @@ export function resolveSnooze(
   const until = target.getTime() > now.getTime() ? toInstant(target) : null;
 
   // A recurring series is never moved by a snooze: shifting the anchor would
-  // silently drag every future occurrence with it. Postpone this occurrence
-  // and leave the rule alone.
+  // silently drag every future occurrence with it. Postpone this occurrence and
+  // leave the rule alone.
   if (instance.isRecurring) return { until, reschedule: null };
 
-  const isShortPreset =
-    preset === "10m" || preset === "30m" || preset === "1h" || preset === "3h";
-
-  if (isShortPreset) {
-    // Short snoozes only postpone the notification/reminder.
-    // They only reschedule when a task scheduled for today crosses past midnight.
-    const isToday = anchorDate === toLocalDate(now);
-    const crossesMidnight = isToday && targetDate > anchorDate;
-    if (crossesMidnight) {
-      const keepsTime =
-        !instance.task.allDay && instance.task.startTime !== null;
-      return {
-        until,
-        reschedule: {
-          date: targetDate,
-          startTime: keepsTime ? instance.task.startTime : null,
-        },
-      };
-    }
-    return { until, reschedule: null };
+  if (SHORT_PRESETS.includes(preset)) {
+    // A short snooze only postpones the reminder — unless it carries a task
+    // scheduled for today past midnight, which really is a new day.
+    const crossesMidnight =
+      instance.date === toLocalDate(now) && targetDate > instance.date;
+    if (!crossesMidnight) return { until, reschedule: null };
+    return {
+      until,
+      reschedule: {
+        date: targetDate,
+        startTime: timeAfterMove(instance, preset, target),
+      },
+    };
   }
 
-  // Day-jumping presets (today, tomorrow, monday, custom) move the task to the target day.
-  const keepsTime =
-    preset === "custom"
-      ? !instance.task.allDay
-        ? toLocalTime(target)
-        : null
-      : !instance.task.allDay && instance.task.startTime !== null
-        ? instance.task.startTime
-        : null;
-
+  // Day-jumping presets (today, tomorrow, monday, custom) move the task outright.
   return {
     until,
     reschedule: {
       date: targetDate,
-      startTime: keepsTime,
+      startTime: timeAfterMove(instance, preset, target),
     },
   };
 }

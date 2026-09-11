@@ -79,6 +79,32 @@ export function spanOf(task: Task, date: LocalDate | null): TaskSpan {
 }
 
 /** Resolve one task on one date into the shape every view consumes. */
+/**
+ * Whose status this instance wears: the occurrence row, or the task itself.
+ *
+ * A repeating task keeps its state per day, so the row is the authority there —
+ * writing to `task.status` instead would be invisible in every view.
+ */
+function stateOf(
+  task: Task,
+  date: LocalDate | null,
+  occurrence: Occurrence | null,
+): { storedStatus: StoredStatus; completedAt: Instant | null; snoozedUntil: Instant | null } {
+  const perOccurrence = task.recurrence !== null && date !== null;
+  if (!perOccurrence) {
+    return {
+      storedStatus: task.status,
+      completedAt: task.completedAt,
+      snoozedUntil: task.snoozedUntil,
+    };
+  }
+  return {
+    storedStatus: occurrence?.status ?? "TODO",
+    completedAt: occurrence?.completedAt ?? null,
+    snoozedUntil: occurrence?.snoozedUntil ?? null,
+  };
+}
+
 export function toInstance(
   task: Task,
   date: LocalDate | null,
@@ -86,12 +112,10 @@ export function toInstance(
   now: Date,
 ): TaskInstance {
   const isRecurring = task.recurrence !== null;
-  const storedStatus = isRecurring && date ? (occurrence?.status ?? "TODO") : task.status;
-  const completedAt = isRecurring && date ? (occurrence?.completedAt ?? null) : task.completedAt;
-  const snoozedUntil = isRecurring && date ? (occurrence?.snoozedUntil ?? null) : task.snoozedUntil;
-
+  const { storedStatus, completedAt, snoozedUntil } = stateOf(task, date, occurrence);
   const timed = !task.allDay && task.startTime !== null && date !== null;
   const span = spanOf(task, date);
+
   return {
     // Every rendered day of a multi-day task needs its own React key, but the
     // *mutation* target stays the single task row — see `refOf` in the store.
