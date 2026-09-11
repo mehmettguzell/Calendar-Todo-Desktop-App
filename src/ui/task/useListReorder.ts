@@ -51,12 +51,41 @@ export interface ListReorder {
   active: boolean;
 }
 
-export function useListReorder({
-  listId,
-  ids,
-  onReorder,
-  onAccept,
-}: {
+/**
+ * Where the row in the air would land, mirrored in a ref.
+ *
+ * The drop is decided by whatever the last `dragover` said, and a browser is
+ * free to deliver both events in one task — before React has re-rendered and
+ * handed the handlers a fresh `dropSlot`. The state copy exists only to draw the
+ * marker; the ref is what the drop reads.
+ */
+function useDropSlot() {
+  const [slot, setSlot] = useState<number | null>(null);
+  const ref = useRef<number | null>(null);
+  const set = useCallback((next: number | null) => {
+    ref.current = next;
+    setSlot(next);
+  }, []);
+  return { slot, ref, set };
+}
+
+/** Which of the three drop markers this row wears, if any. */
+function rowClassName(
+  index: number,
+  count: number,
+  dragIndex: number | null,
+  dropSlot: number | null,
+): string {
+  return [
+    dragIndex === index ? "dragging" : "",
+    dropSlot === index ? "drop-before" : "",
+    dropSlot === count && index === count - 1 ? "drop-after" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export interface ReorderOptions {
   listId: string;
   /** Task ids, in the order they are rendered. */
   ids: string[];
@@ -68,28 +97,87 @@ export function useListReorder({
    * "today" onto "tomorrow" would be a reschedule, not a reorder.
    */
   onAccept?: (taskId: string, slot: number, fromListId: string) => void;
-}): ListReorder {
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  /** Where the row would land: the gap *before* this index. */
-  const [dropSlot, setDropSlot] = useState<number | null>(null);
-  const idsRef = useRef(ids);
-  idsRef.current = ids;
+}
 
-  /*
-   * The drop slot is mirrored in a ref because the drop is decided by whatever
-   * the last `dragover` said, and a browser is free to deliver both in one task
-   * — before React has re-rendered and handed the handlers a fresh `dropSlot`.
-   * The state copy exists only to draw the marker.
-   */
-  const dropSlotRef = useRef<number | null>(null);
-  const setDrop = useCallback((slot: number | null) => {
-    dropSlotRef.current = slot;
-    setDropSlot(slot);
-  }, []);
+/** Everything one row needs to be lifted, hovered over and dropped. */
+function rowHandlers(input: {
+  index: number;
+  listId: string;
+  ids: string[];
+  dragIndex: number | null;
+  drop: ReturnType<typeof useDropSlot>;
+  setDragIndex: (index: number | null) => void;
+  allow: (event: DragEvent) => boolean;
+  commit: (slot: number) => void;
+  end: () => void;
+  move: (index: number, delta: number) => void;
+}): RowReorder {
+  const { index, listId, ids, dragIndex, drop, setDragIndex, allow, commit, end, move } =
+    input;
+  return {
+    className: rowClassName(index, ids.length, dragIndex, drop.slot),
+    draggable: true as const,
+    onDragStart: (event: DragEvent) => {
+      event.stopPropagation();
+      activeDrag = { listId, taskId: ids[index] as string, index };
+      setDragIndex(index);
+      event.dataTransfer.effectAllowed = "move";
+      // Some platforms cancel a drag that carries nothing at all.
+      event.dataTransfer.setData("text/plain", ids[index] ?? "");
+    },
+    onDragEnter: (event: DragEvent) => allow(event),
+    onDragOver: (event: DragEvent) => {
+      if (!allow(event)) return;
+      const box = event.currentTarget.getBoundingClientRect();
+      drop.set(event.clientY < box.top + box.height / 2 ? index : index + 1);
+    },
+    onDrop: (event: DragEvent) => {
+      if (!allow(event)) return;
+      commit(drop.ref.current ?? index);
+    },
+    onDragEnd: (event: DragEvent) => {
+      event.stopPropagation();
+      end();
+    },
+    onGripKeyDown: (event: { key: string; preventDefault: () => void }) => {
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      event.preventDefault();
+      move(index, event.key === "ArrowUp" ? -1 : 1);
+    },
+    };
+}
+
+/** Where the lifted row lands: reordered here, or handed to the list it fell into. */
+function place(
+  drag: ActiveDrag,
+  slot: number,
+  ids: string[],
+  list: Pick<ReorderOptions, "listId" | "onReorder" | "onAccept">,
+): void {
+  if (drag.listId !== list.listId) {
+    list.onAccept?.(drag.taskId, slot, drag.listId);
+    return;
+  }
+  // The slot below the lifted row loses a place once that row is out.
+  const target = slot > drag.index ? slot - 1 : slot;
+  const next = moveItem(ids, drag.index, target);
+  if (next !== ids) list.onReorder(next, drag.taskId);
+}
+
+/** What a drag may do: take the row, place it, give up, or step it by keyboard. */
+function useDragActions(input: {
+  listId: string;
+  idsRef: { current: string[] };
+  onReorder: (orderedIds: string[], movedId: string) => void;
+  onAccept: ReorderOptions["onAccept"];
+  drop: ReturnType<typeof useDropSlot>;
+  setDragIndex: (index: number | null) => void;
+}) {
+  const { listId, idsRef, onReorder, onAccept, drop, setDragIndex } = input;
 
   /*
    * Whether this list takes the row currently in the air — read when the event
-   * arrives, never at render time, for the same reason.
+   * arrives, never at render time, for the same reason as the slot ref.
    */
   const accepts = useCallback(() => {
     if (!activeDrag) return false;
@@ -99,25 +187,16 @@ export function useListReorder({
   const end = useCallback(() => {
     activeDrag = null;
     setDragIndex(null);
-    setDrop(null);
-  }, [setDrop]);
+    drop.set(null);
+  }, [drop]);
 
   const commit = useCallback(
     (slot: number) => {
       const drag = activeDrag;
-      if (!drag) return end();
-
-      if (drag.listId === listId) {
-        // The slot below the lifted row loses a place once that row is out.
-        const target = slot > drag.index ? slot - 1 : slot;
-        const next = moveItem(idsRef.current, drag.index, target);
-        if (next !== idsRef.current) onReorder(next, drag.taskId);
-      } else if (onAccept) {
-        onAccept(drag.taskId, slot, drag.listId);
-      }
+      if (drag) place(drag, slot, idsRef.current, { listId, onReorder, onAccept });
       end();
     },
-    [end, listId, onAccept, onReorder],
+    [end, idsRef, listId, onAccept, onReorder],
   );
 
   const allow = useCallback(
@@ -140,64 +219,58 @@ export function useListReorder({
     [onReorder],
   );
 
-  return {
-    active: dragIndex !== null || dropSlot !== null,
-    containerProps: {
-      onDragEnter: (event) => allow(event),
-      onDragOver: (event) => {
-        // Rows stop this event themselves, so reaching the container means the
-        // pointer is in the loose space below them: land at the end.
-        if (!allow(event)) return;
-        setDrop(idsRef.current.length);
-      },
-      onDrop: (event) => {
-        if (!allow(event)) return;
-        commit(dropSlotRef.current ?? idsRef.current.length);
-      },
+  return { allow, commit, end, move };
+}
+
+export function useListReorder({
+  listId,
+  ids,
+  onReorder,
+  onAccept,
+}: ReorderOptions): ListReorder {
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const drop = useDropSlot();
+  const idsRef = useRef(ids);
+  idsRef.current = ids;
+
+  const { allow, commit, end, move } = useDragActions({
+    listId,
+    idsRef,
+    onReorder,
+    onAccept,
+    drop,
+    setDragIndex,
+  });
+
+  const containerProps: ListReorder["containerProps"] = {
+    onDragEnter: (event: DragEvent) => allow(event),
+    onDragOver: (event: DragEvent) => {
+      // Rows stop this event themselves, so reaching the container means the
+      // pointer is in the loose space below them: land at the end.
+      if (!allow(event)) return;
+      drop.set(idsRef.current.length);
     },
-    row: (index) => ({
-      className: [
-        dragIndex === index ? "dragging" : "",
-        dropSlot === index ? "drop-before" : "",
-        dropSlot === idsRef.current.length &&
-        index === idsRef.current.length - 1
-          ? "drop-after"
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" "),
-      draggable: true,
-      onDragStart: (event) => {
-        event.stopPropagation();
-        activeDrag = {
-          listId,
-          taskId: idsRef.current[index] as string,
-          index,
-        };
-        setDragIndex(index);
-        event.dataTransfer.effectAllowed = "move";
-        // Some platforms cancel a drag that carries nothing at all.
-        event.dataTransfer.setData("text/plain", idsRef.current[index] ?? "");
-      },
-      onDragEnter: (event) => allow(event),
-      onDragOver: (event) => {
-        if (!allow(event)) return;
-        const box = event.currentTarget.getBoundingClientRect();
-        setDrop(event.clientY < box.top + box.height / 2 ? index : index + 1);
-      },
-      onDrop: (event) => {
-        if (!allow(event)) return;
-        commit(dropSlotRef.current ?? index);
-      },
-      onDragEnd: (event) => {
-        event.stopPropagation();
-        end();
-      },
-      onGripKeyDown: (event) => {
-        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-        event.preventDefault();
-        move(index, event.key === "ArrowUp" ? -1 : 1);
-      },
-    }),
+    onDrop: (event: DragEvent) => {
+      if (!allow(event)) return;
+      commit(drop.ref.current ?? idsRef.current.length);
+    },
+  };
+
+  return {
+    active: dragIndex !== null || drop.slot !== null,
+    containerProps,
+    row: (index) =>
+      rowHandlers({
+        index,
+        listId,
+        ids: idsRef.current,
+        dragIndex,
+        drop,
+        setDragIndex,
+        allow,
+        commit,
+        end,
+        move,
+      }),
   };
 }
