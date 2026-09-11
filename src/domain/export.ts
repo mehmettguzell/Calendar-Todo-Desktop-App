@@ -204,53 +204,66 @@ function deadlinesFor(db: Database, taskId: string): string {
     .join("; ");
 }
 
+const TASK_COLUMNS = [
+  "title",
+  "status",
+  "priority",
+  "category",
+  "due_date",
+  "end_date",
+  "deadline",
+  "deadlines",
+  "start_time",
+  "end_time",
+  "tags",
+  "estimate_minutes",
+  "tracked",
+  "created_at",
+  "completed_at",
+];
+
+/** Seconds focused per task, so a row can print a total rather than a list. */
+function trackedSecondsByTask(db: Database): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const session of db.focusSessions) {
+    totals.set(session.taskId, (totals.get(session.taskId) ?? 0) + session.durationSec);
+  }
+  return totals;
+}
+
+function taskRow(
+  task: Task,
+  db: Database,
+  categories: Map<string, string>,
+  tracked: Map<string, number>,
+): string[] {
+  return [
+    task.title,
+    task.status,
+    task.priority,
+    task.categoryId ? (categories.get(task.categoryId) ?? "") : "",
+    task.dueDate ?? "",
+    task.endDate ?? "",
+    task.deadline ?? "",
+    deadlinesFor(db, task.id),
+    task.startTime ?? "",
+    task.endTime ?? "",
+    task.tags.join(" "),
+    task.estimateMinutes ? String(task.estimateMinutes) : "",
+    formatDuration(tracked.get(task.id) ?? 0),
+    task.createdAt,
+    task.completedAt ?? "",
+  ];
+}
+
 export function exportTasksCsv(db: Database, today: string): ExportFile {
   const categories = new Map(db.categories.map((c) => [c.id, c.name]));
-  const trackedByTask = new Map<string, number>();
-  for (const session of db.focusSessions) {
-    trackedByTask.set(
-      session.taskId,
-      (trackedByTask.get(session.taskId) ?? 0) + session.durationSec,
-    );
-  }
-
+  const tracked = trackedSecondsByTask(db);
   const rows = [
-    [
-      "title",
-      "status",
-      "priority",
-      "category",
-      "due_date",
-      "end_date",
-      "deadline",
-      "deadlines",
-      "start_time",
-      "end_time",
-      "tags",
-      "estimate_minutes",
-      "tracked",
-      "created_at",
-      "completed_at",
-    ],
+    TASK_COLUMNS,
     ...db.tasks
       .filter((t) => t.deletedAt === null)
-      .map((t) => [
-        t.title,
-        t.status,
-        t.priority,
-        t.categoryId ? (categories.get(t.categoryId) ?? "") : "",
-        t.dueDate ?? "",
-        t.endDate ?? "",
-        t.deadline ?? "",
-        deadlinesFor(db, t.id),
-        t.startTime ?? "",
-        t.endTime ?? "",
-        t.tags.join(" "),
-        t.estimateMinutes ? String(t.estimateMinutes) : "",
-        formatDuration(trackedByTask.get(t.id) ?? 0),
-        t.createdAt,
-        t.completedAt ?? "",
-      ]),
+      .map((t) => taskRow(t, db, categories, tracked)),
   ];
 
   return {
