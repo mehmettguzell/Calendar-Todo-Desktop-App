@@ -17,7 +17,7 @@ import { localeTag } from "@/domain/datetime";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { useAuthStore } from "@/state/authStore";
 import type { Filters } from "@/state/selectors";
-import { syncDifferences } from "@/sync";
+import { syncDifferences, type SyncDifferenceReport } from "@/sync";
 import { useSyncStore, type SkippedRow, type SyncPhase } from "@/state/syncStore";
 import { SelectButton } from "./task/SelectButton";
 import type { CalendarMode } from "./views/CalendarView";
@@ -56,10 +56,7 @@ const MODES: { id: CalendarMode; labelKey: TranslationKey }[] = [
  * saved and will go up on their own.
  */
 function SyncButton() {
-  const [feedback, setFeedback] = useState<{
-    type: "success" | "error" | "info";
-    text: string;
-  } | null>(null);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
   const user = useAuthStore((s) => s.user);
   const session = useAuthStore((s) => s.session);
   const openAuthModal = useAuthStore((s) => s.openAuthModal);
@@ -87,23 +84,7 @@ function SyncButton() {
     // returns. The try/catch is for the impossible one.
     try {
       // Manual: the press is the condition that revives a paused retry budget.
-      const report = await syncDifferences({ manual: true });
-      if (!report.success) {
-        setFeedback(
-          report.error === "offline"
-            ? { type: "info", text: t("syncOfflineNotice") }
-            : { type: "error", text: t(syncFailureKey(report.error ?? "unknown")) },
-        );
-      } else if (report.totalDifferences === 0) {
-        setFeedback({ type: "success", text: t("syncUpToDate") });
-      } else {
-        const parts: string[] = [];
-        if (report.uploadedTasks > 0) parts.push(`${report.uploadedTasks} ${t("syncTasksUp")}`);
-        if (report.downloadedTasks > 0) parts.push(`${report.downloadedTasks} ${t("syncTasksDown")}`);
-        if (report.uploadedCategories > 0) parts.push(`${report.uploadedCategories} ${t("syncCatsUp")}`);
-        if (report.downloadedCategories > 0) parts.push(`${report.downloadedCategories} ${t("syncCatsDown")}`);
-        setFeedback({ type: "success", text: `${t("syncSuccess")} ${parts.join(", ")}` });
-      }
+      setFeedback(describeReport(await syncDifferences({ manual: true }), t));
     } catch (err: unknown) {
       // The reason belongs in the console; the user gets a sentence, not a
       // Postgres message naming our tables and columns.
@@ -196,17 +177,50 @@ function syncFailureKey(kind: SyncFailureKind): TranslationKey {
   }
 }
 
+/** What the button says back, and in what colour. */
+interface Feedback {
+  type: "success" | "error" | "info";
+  text: string;
+}
+
+/** What one press of the sync button is worth saying about. */
+function describeReport(
+  report: SyncDifferenceReport,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+): Feedback {
+  if (!report.success) {
+    return report.error === "offline"
+      ? { type: "info", text: t("syncOfflineNotice") }
+      : { type: "error", text: t(syncFailureKey(report.error ?? "unknown")) };
+  }
+  if (report.totalDifferences === 0) {
+    return { type: "success", text: t("syncUpToDate") };
+  }
+
+  const parts: string[] = [];
+  const moved = (count: number, key: TranslationKey) => {
+    if (count > 0) parts.push(`${count} ${t(key)}`);
+  };
+  moved(report.uploadedTasks, "syncTasksUp");
+  moved(report.downloadedTasks, "syncTasksDown");
+  moved(report.uploadedCategories, "syncCatsUp");
+  moved(report.downloadedCategories, "syncCatsDown");
+  return { type: "success", text: `${t("syncSuccess")} ${parts.join(", ")}` };
+}
+
+interface SyncStatusInput {
+  phase: SyncPhase;
+  pending: number;
+  lastSyncedAt: number | null;
+  lastFailure: SyncFailureKind | null;
+  autoRetryPaused: boolean;
+  realtime: "connected" | "connecting" | "down";
+  skipped: SkippedRow[];
+}
+
 /** One colour and one sentence for whatever the sync layer is doing. */
 function describeSyncStatus(
-  s: {
-    phase: SyncPhase;
-    pending: number;
-    lastSyncedAt: number | null;
-    lastFailure: SyncFailureKind | null;
-    autoRetryPaused: boolean;
-    realtime: "connected" | "connecting" | "down";
-    skipped: SkippedRow[];
-  },
+  s: SyncStatusInput,
   t: (key: TranslationKey, params?: Record<string, string | number>) => string,
 ): { color: string; tooltip: string } {
   const last =
@@ -231,21 +245,8 @@ function describeSyncStatus(
       };
     case "disabled":
       return { color: "var(--text-faint)", tooltip: t("syncLoginRequired") };
-    default: {
-      // A pass that finished but left rows behind is not a green light. The
-      // rows are safe locally — that is the whole point of dropping them from
-      // the batch rather than letting Postgres reject everything — but the
-      // badge should not claim this device is fully in the cloud when it isn't.
-      const held = s.skipped.length;
-      return {
-        color: held > 0 ? "#f59e0b" : s.realtime === "connected" ? "#10b981" : "#94a3b8",
-        tooltip:
-          (s.realtime === "connected" ? `${t("syncLive")} · ` : "") +
-          last +
-          (s.pending > 0 ? ` · ${s.pending} ${t("syncPendingHint")}` : "") +
-          (held > 0 ? ` · ${t("syncSkipped", { count: held })}` : ""),
-      };
-    }
+    default:
+      return settledStatus(s, t, last);
   }
 }
 
@@ -351,4 +352,32 @@ export function Topbar({
       </button>
     </header>
   );
+}
+
+/**
+ * Idle, which is not the same as clean.
+ *
+ * A pass that finished but left rows behind is not a green light. The rows are
+ * safe locally — that is the whole point of dropping them from the batch rather
+ * than letting Postgres reject everything — but the badge should not claim this
+ * device is fully in the cloud when it isn't.
+ */
+function settledStatus(
+  s: SyncStatusInput,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+  last: string,
+): { color: string; tooltip: string } {
+  const held = s.skipped.length;
+  const live = s.realtime === "connected";
+  const notes = [
+    live ? t("syncLive") : null,
+    last,
+    s.pending > 0 ? `${s.pending} ${t("syncPendingHint")}` : null,
+    held > 0 ? t("syncSkipped", { count: held }) : null,
+  ];
+
+  return {
+    color: held > 0 ? "#f59e0b" : live ? "#10b981" : "#94a3b8",
+    tooltip: notes.filter(Boolean).join(" · "),
+  };
 }

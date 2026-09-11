@@ -14,7 +14,6 @@ import {
   Wallet,
 } from "lucide-react";
 import { addDaysLocal, toLocalDate } from "@/domain/datetime";
-import { CATEGORY_COLORS } from "@/data/db";
 import type { Category, LocalDate } from "@/domain/types";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
@@ -31,7 +30,7 @@ import { LevelBadge } from "./components/LevelBadge";
 import { MiniMonth } from "./components/MiniMonth";
 import { TrashModal } from "./components/TrashModal";
 import { UserProfileWidget } from "./components/UserProfileWidget";
-import { Field, Modal } from "./components/primitives";
+import { CategoryDialog } from "./components/CategoryDialog";
 
 export type ViewId =
   | "today"
@@ -349,9 +348,10 @@ export function Sidebar({
       {trashOpen && <TrashModal onClose={() => setTrashOpen(false)} />}
 
       {addingCategory ? (
-        <NewCategoryDialog
+        <CategoryDialog
+          category={null}
           onClose={() => setAddingCategory(false)}
-          onCreate={(name, color) => {
+          onSave={(name, color) => {
             addCategory(name, color);
             setAddingCategory(false);
           }}
@@ -359,10 +359,10 @@ export function Sidebar({
       ) : null}
 
       {editingCategory ? (
-        <EditCategoryDialog
+        <CategoryDialog
           category={editingCategory}
           onClose={() => setEditingCategory(null)}
-          onUpdate={(name, color) => {
+          onSave={(name, color) => {
             updateCategory(editingCategory.id, { name, color });
             setEditingCategory(null);
           }}
@@ -373,132 +373,5 @@ export function Sidebar({
         />
       ) : null}
     </nav>
-  );
-}
-
-function NewCategoryDialog({
-  onClose,
-  onCreate,
-}: {
-  onClose: () => void;
-  onCreate: (name: string, color: string) => void;
-}) {
-  const [name, setName] = useState("");
-  const [color, setColor] = useState(CATEGORY_COLORS[0] as string);
-  const { t } = useI18n();
-
-  return (
-    <Modal
-      title={t("newCategory")}
-      onClose={onClose}
-      width={380}
-      footer={
-        <>
-          <button type="button" className="btn" onClick={onClose}>
-            {t("cancel")}
-          </button>
-          <button
-            type="button"
-            className="btn primary"
-            disabled={!name.trim()}
-            onClick={() => onCreate(name, color)}
-          >
-            {t("create")}
-          </button>
-        </>
-      }
-    >
-      <Field label={t("categoryName")}>
-        <input
-          className="input"
-          autoFocus
-          value={name}
-          placeholder={t("categoryExample")}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </Field>
-      <Field label={t("categoryColor")}>
-        <div className="color-picker">
-          {CATEGORY_COLORS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              aria-pressed={c === color}
-              aria-label={c}
-              style={{ background: c }}
-              onClick={() => setColor(c)}
-            />
-          ))}
-        </div>
-      </Field>
-    </Modal>
-  );
-}
-
-function EditCategoryDialog({
-  category,
-  onClose,
-  onUpdate,
-  onDelete,
-}: {
-  category: Category;
-  onClose: () => void;
-  onUpdate: (name: string, color: string) => void;
-  onDelete: () => void;
-}) {
-  const [name, setName] = useState(category.name);
-  const [color, setColor] = useState(category.color);
-  const { t } = useI18n();
-
-  return (
-    <Modal
-      title={t("editCategory")}
-      onClose={onClose}
-      width={380}
-      footer={
-        <div className="row grow justify-between">
-          <button type="button" className="btn ghost danger" onClick={onDelete}>
-            {t("delete")}
-          </button>
-          <div className="row" style={{ gap: 6 }}>
-            <button type="button" className="btn" onClick={onClose}>
-              {t("cancel")}
-            </button>
-            <button
-              type="button"
-              className="btn primary"
-              disabled={!name.trim()}
-              onClick={() => onUpdate(name.trim(), color)}
-            >
-              {t("save")}
-            </button>
-          </div>
-        </div>
-      }
-    >
-      <Field label={t("categoryName")}>
-        <input
-          className="input"
-          autoFocus
-          value={name}
-          placeholder={t("categoryNamePlaceholder")}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </Field>
-      <Field label={t("categoryColor")}>
-        <div className="color-picker">
-          {CATEGORY_COLORS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              aria-pressed={c === color}
-              aria-label={c}
-              style={{ background: c }}
-              onClick={() => setColor(c)}
-            />
-          ))}
-        </div>
-      </Field>
-    </Modal>
   );
 }
