@@ -87,6 +87,47 @@ export function parseStatement(content: string, options: ParseOptions = {}): Par
 }
 
 /** Tabular input: a header if there is one, positional guessing if there is not. */
+interface RowCandidate {
+  date: LocalDate;
+  description: string;
+  signed: number;
+  kind: StatementLine["kind"];
+  raw: string;
+}
+
+function describedBy(row: string[], columns: DetectedColumns | null): string {
+  return (
+    columns ? (row[columns.description] ?? "") : findDescriptionCell(row)
+  ).trim();
+}
+
+/** One row, or the reason it is not a movement. Preamble and totals are not failures. */
+function readRow(
+  row: string[],
+  columns: DetectedColumns | null,
+): RowCandidate | SkippedRow | null {
+  const raw = row.join(" | ").trim();
+  if (!raw || row.every((cell) => !cell.trim())) return null;
+
+  const date = parseDate(columns ? (row[columns.date] ?? "") : findDateCell(row));
+  if (!date) {
+    return { raw, reason: SUMMARY_ROW.test(fold(raw)) ? "summary" : "no-date" };
+  }
+
+  const signed = columns ? readSignedAmount(row, columns) : findAmountCell(row);
+  if (signed === null) return { raw, reason: "no-amount" };
+
+  const description = describedBy(row, columns);
+  if (!description) return { raw, reason: "empty" };
+  if (SUMMARY_ROW.test(fold(description))) return { raw, reason: "summary" };
+
+  return { date, description, signed, kind: classifyRow(description), raw };
+}
+
+function isSkipped(read: RowCandidate | SkippedRow): read is SkippedRow {
+  return "reason" in read;
+}
+
 function fromRows(
   rows: string[][],
   container: "html" | "delimited",
@@ -104,49 +145,13 @@ function fromRows(
    * and on a short statement those few rows are enough to drag a plain ratio
    * below the threshold — turning a month of spending into a month of income.
    */
-  const candidates: {
-    date: LocalDate;
-    description: string;
-    signed: number;
-    kind: StatementLine["kind"];
-    raw: string;
-  }[] = [];
+  const candidates: RowCandidate[] = [];
   const skipped: SkippedRow[] = [];
-
   for (const row of body) {
-    const raw = row.join(" | ").trim();
-    if (!raw || row.every((cell) => !cell.trim())) {
-      continue;
-    }
-
-    const dateCell = columns ? (row[columns.date] ?? "") : findDateCell(row);
-    const date = parseDate(dateCell);
-    if (!date) {
-      // Preamble and totals are not failures; unreadable movements are.
-      if (SUMMARY_ROW.test(fold(raw))) skipped.push({ raw, reason: "summary" });
-      else skipped.push({ raw, reason: "no-date" });
-      continue;
-    }
-
-    const signed = columns ? readSignedAmount(row, columns) : findAmountCell(row);
-    if (signed === null) {
-      skipped.push({ raw, reason: "no-amount" });
-      continue;
-    }
-
-    const description = (
-      columns ? (row[columns.description] ?? "") : findDescriptionCell(row)
-    ).trim();
-    if (!description) {
-      skipped.push({ raw, reason: "empty" });
-      continue;
-    }
-    if (SUMMARY_ROW.test(fold(description))) {
-      skipped.push({ raw, reason: "summary" });
-      continue;
-    }
-
-    candidates.push({ date, description, signed, kind: classifyRow(description), raw });
+    const read = readRow(row, columns);
+    if (!read) continue;
+    if (isSkipped(read)) skipped.push(read);
+    else candidates.push(read);
   }
 
   const source = options.source ?? detectSource(columns, spendAmounts(candidates));
@@ -209,45 +214,43 @@ function findDescriptionCell(row: string[]): string {
   return best;
 }
 
+interface TextCandidate {
+  date: LocalDate;
+  description: string;
+  signed: number;
+  credit: boolean;
+  raw: string;
+}
+
+/** One free-text line, or the reason it carries no movement. */
+function readTextLine(line: string): TextCandidate | SkippedRow {
+  const summary = SUMMARY_ROW.test(fold(line));
+  const match = line.match(TEXT_LINE_HEAD);
+  if (!match) return { raw: line, reason: summary ? "summary" : "no-date" };
+
+  const date = parseDate(match[1] as string);
+  if (!date) return { raw: line, reason: "no-date" };
+
+  const split = splitTextLine(match[2] as string);
+  if (!split) return { raw: line, reason: summary ? "summary" : "no-amount" };
+
+  const { description, amount: signed, credit } = split;
+  if (!description || SUMMARY_ROW.test(fold(description))) {
+    return { raw: line, reason: "summary" };
+  }
+  return { date, description, signed, credit, raw: line };
+}
+
 function fromFreeText(rawLines: string[], options: ParseOptions): ParseResult {
-  const candidates: {
-    date: LocalDate;
-    description: string;
-    signed: number;
-    credit: boolean;
-    raw: string;
-  }[] = [];
+  const candidates: TextCandidate[] = [];
   const skipped: SkippedRow[] = [];
 
   for (const raw of rawLines) {
     const line = raw.replace(/\s+/g, " ").trim();
     if (!line) continue;
-
-    const match = line.match(TEXT_LINE_HEAD);
-    if (!match) {
-      if (SUMMARY_ROW.test(fold(line))) skipped.push({ raw: line, reason: "summary" });
-      else skipped.push({ raw: line, reason: "no-date" });
-      continue;
-    }
-
-    const date = parseDate(match[1] as string);
-    if (!date) {
-      skipped.push({ raw: line, reason: "no-date" });
-      continue;
-    }
-
-    const split = splitTextLine(match[2] as string);
-    if (!split) {
-      if (SUMMARY_ROW.test(fold(line))) skipped.push({ raw: line, reason: "summary" });
-      else skipped.push({ raw: line, reason: "no-amount" });
-      continue;
-    }
-    const { description, amount: signed, credit } = split;
-    if (!description || SUMMARY_ROW.test(fold(description))) {
-      skipped.push({ raw: line, reason: "summary" });
-      continue;
-    }
-    candidates.push({ date, description, signed, credit, raw: line });
+    const read = readTextLine(line);
+    if ("reason" in read) skipped.push(read);
+    else candidates.push(read);
   }
 
   const source =

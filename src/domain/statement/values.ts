@@ -21,56 +21,82 @@ import type {
  * parser that reports failure as zero produces a ledger that balances to
  * nothing.
  */
-export function parseAmount(text: string): number | null {
-  if (!text) return null;
-  let clean = text.trim();
-  if (!clean) return null;
-
-  // (1.234,56) and 1.234,56- are both how a statement writes a negative.
+/**
+ * Strip the sign off an amount and say which way it pointed.
+ *
+ * `(1.234,56)`, `1.234,56-` and `-1.234,56` are all how a statement writes a
+ * negative. A *trailing* plus is Turkish for "credit" — a direction, not a
+ * sign — so it is dropped here and read by `creditMarked` instead.
+ */
+function stripSign(text: string): { body: string; negative: boolean } {
+  let body = text;
   let negative = false;
-  if (/^\(.*\)$/.test(clean)) {
+  if (/^\(.*\)$/.test(body)) {
     negative = true;
-    clean = clean.slice(1, -1);
+    body = body.slice(1, -1);
   }
-  if (/-\s*$/.test(clean)) {
+  if (/-\s*$/.test(body)) {
     negative = true;
-    clean = clean.replace(/-\s*$/, "");
+    body = body.replace(/-\s*$/, "");
   }
-  if (/^\s*-/.test(clean)) {
+  if (/^\s*-/.test(body)) {
     negative = true;
-    clean = clean.replace(/^\s*-/, "");
+    body = body.replace(/^\s*-/, "");
   }
-  // Turkish statements mark a credit with a trailing plus rather than a sign:
-  // "14.439,15+". The plus says which direction, not which sign, so it is read
-  // as a marker in `creditMarked` and dropped here.
-  clean = clean.replace(/^\s*\+/, "").replace(/\+\s*$/, "");
+  return { body: body.replace(/^\s*\+/, "").replace(/\+\s*$/, ""), negative };
+}
 
-  clean = clean.replace(/[₺$€£]/g, "").replace(/\b(TL|TRY|USD|EUR|GBP)\b/gi, "");
-  clean = clean.replace(/\s/g, "");
-  if (!/\d/.test(clean)) return null;
-  if (/[^\d.,]/.test(clean)) return null;
-
-  const lastComma = clean.lastIndexOf(",");
-  const lastDot = clean.lastIndexOf(".");
-  let decimalAt = -1;
-
-  if (lastComma >= 0 && lastDot >= 0) {
-    decimalAt = Math.max(lastComma, lastDot);
-  } else if (lastComma >= 0) {
-    // A lone comma is decimal unless it is grouping thousands: "1,234".
-    decimalAt = clean.length - lastComma - 1 === 3 && /^\d{1,3},\d{3}$/.test(clean) ? -1 : lastComma;
-  } else if (lastDot >= 0) {
-    decimalAt = clean.length - lastDot - 1 === 3 ? -1 : lastDot;
+/**
+ * Where the decimal separator is, or -1 when the digits are all whole.
+ *
+ * The hard case is a lone separator: "1,234" is a thousand in English and one
+ * and a bit in Turkish. Three digits after it means grouping — which is why
+ * "1,234" is whole and "1,23" is not.
+ */
+function decimalPosition(digits: string): number {
+  const lastComma = digits.lastIndexOf(",");
+  const lastDot = digits.lastIndexOf(".");
+  if (lastComma >= 0 && lastDot >= 0) return Math.max(lastComma, lastDot);
+  if (lastComma >= 0) {
+    const grouped =
+      digits.length - lastComma - 1 === 3 && /^\d{1,3},\d{3}$/.test(digits);
+    return grouped ? -1 : lastComma;
   }
+  if (lastDot >= 0) return digits.length - lastDot - 1 === 3 ? -1 : lastDot;
+  return -1;
+}
 
-  const whole = (decimalAt >= 0 ? clean.slice(0, decimalAt) : clean).replace(/[.,]/g, "");
-  const fraction = decimalAt >= 0 ? clean.slice(decimalAt + 1).replace(/[.,]/g, "") : "";
-  if (!/^\d*$/.test(whole) || !/^\d*$/.test(fraction)) return null;
+/** The two halves of the number, or null when what is left is not digits. */
+function splitDigits(
+  digits: string,
+  decimalAt: number,
+): { whole: string; fraction: string } | null {
+  const ungroup = (part: string) => part.replace(/[.,]/g, "");
+  const whole = ungroup(decimalAt >= 0 ? digits.slice(0, decimalAt) : digits);
+  const fraction = decimalAt >= 0 ? ungroup(digits.slice(decimalAt + 1)) : "";
+  const digitsOnly = /^\d*$/;
+  return digitsOnly.test(whole) && digitsOnly.test(fraction)
+    ? { whole, fraction }
+    : null;
+}
+
+export function parseAmount(text: string): number | null {
+  if (!text?.trim()) return null;
+  const { body, negative } = stripSign(text.trim());
+
+  const digits = body
+    .replace(/[₺$€£]/g, "")
+    .replace(/\b(TL|TRY|USD|EUR|GBP)\b/gi, "")
+    .replace(/\s/g, "");
+  if (!/\d/.test(digits) || /[^\d.,]/.test(digits)) return null;
+
+  const parts = splitDigits(digits, decimalPosition(digits));
+  if (!parts) return null;
 
   const minor =
-    Number(whole || "0") * 100 + Number((fraction + "00").slice(0, 2) || "0");
-  if (!Number.isFinite(minor)) return null;
-  return negative ? -minor : minor;
+    Number(parts.whole || "0") * 100 +
+    Number((parts.fraction + "00").slice(0, 2) || "0");
+  return Number.isFinite(minor) ? (negative ? -minor : minor) : null;
 }
 
 const DATE_PATTERNS: [RegExp, (m: RegExpMatchArray) => [number, number, number]][] = [
