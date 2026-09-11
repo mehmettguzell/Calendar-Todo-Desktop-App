@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, CornerDownLeft } from "lucide-react";
 import {
   describeWhen,
   weekdayNames,
@@ -7,6 +6,7 @@ import {
 import { describeRecurrence } from "@/domain/recurrence";
 import { describeParse, parseQuickAdd } from "@/domain/naturalLanguage";
 import { ComposerDetails } from "./ComposerDetails";
+import { ComposerLine } from "./ComposerLine";
 import { useComposerFields } from "./composerFields";
 import {
   draftDetails,
@@ -102,25 +102,16 @@ export function Composer({
     setTitle,
     expanded,
     setExpanded,
-    description,
     dueDate,
     setDueDate,
-    endDate,
     setEndDate,
-    deadline,
     setDeadline,
-    allDay,
     setAllDay,
-    startTime,
     setStartTime,
-    endTime,
     setEndTime,
-    priority,
     setPriority,
     categoryId,
-    tags,
     setTags,
-    recurrence,
     setRecurrence,
     withReminder,
     touched,
@@ -181,29 +172,12 @@ export function Composer({
     const trimmed = (parsed.title || title).trim();
     if (!trimmed) return;
 
-    const resolvedCategoryId = resolveCategoryId(
-      categoryId,
-      parsed.categoryName,
-      categories,
-      addCategory,
-    );
-
     const task = createTask({
       title: trimmed,
-      ...draftDetails({
-        description,
-        dueDate,
-        endDate,
-        deadline,
-        allDay,
-        startTime,
-        endTime,
-        priority,
-        categoryId,
-        tags,
-        recurrence,
-      }),
-      categoryId: resolvedCategoryId || null,
+      ...draftDetails(f),
+      categoryId:
+        resolveCategoryId(categoryId, parsed.categoryName, categories, addCategory) ||
+        null,
       estimateMinutes: parsed.estimateMinutes,
       ...seed,
     });
@@ -219,8 +193,8 @@ export function Composer({
 
     reset();
     onCreated?.(task.id);
-    // Inline, the box stays where it is and takes the next task; someone
-    // adding four things in a row should not have to click back into it.
+    // Inline, the box stays where it is and takes the next task; someone adding
+    // four things in a row should not have to click back into it.
     if (variant === "inline") inputRef.current?.focus();
   };
 
@@ -228,50 +202,21 @@ export function Composer({
 
   return (
     <div className={cn("composer", variant === "modal" && "is-modal")}>
-      <div className="composer-line">
-        <input
-          id={id}
-          ref={inputRef}
-          className="composer-input"
-          autoFocus={autoFocus}
-          value={title}
-          placeholder={placeholder ?? t("composerPlaceholder")}
-          aria-label={t("formTitle")}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              submit();
-            } else if (e.key === "Escape" && onCancel) {
-              onCancel();
-            }
-          }}
-        />
-        {/* Named, not just a chevron. A bare caret at the end of an input is a
-            control nobody presses because nobody knows what is behind it, and
-            what is behind it is every field this box replaced. */}
-        <button
-          type="button"
-          className={cn("btn ghost sm composer-details-btn", expanded && "active")}
-          aria-expanded={expanded}
-          title={t("composerDetails")}
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {t("composerDetails")}
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
-        {/* The button appears with the first character.
-            A disabled grey button sitting on an empty box is dead weight on
-            the one control the whole app is trying to make inviting; an empty
-            composer is now just a line waiting to be typed in. */}
-        {ready ? (
-          <button type="button" className="btn primary sm" onClick={submit}>
-            <CornerDownLeft size={13} /> {submitLabel ?? t("add")}
-          </button>
-        ) : null}
-      </div>
+      <ComposerLine
+        id={id}
+        inputRef={inputRef}
+        title={title}
+        setTitle={setTitle}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        expanded={expanded}
+        setExpanded={setExpanded}
+        ready={ready}
+        submit={submit}
+        onCancel={onCancel}
+        setFocused={setFocused}
+        submitLabel={submitLabel}
+      />
 
       {chips.length > 0 ? (
         <div className="composer-chips">

@@ -6,7 +6,6 @@ import {
   Minus,
   Pencil,
   Pin,
-  Square,
   Tag,
   Trash2,
   X,
@@ -21,7 +20,6 @@ import {
   isPinned,
   noteColor,
   noteLabels,
-  parseNoteBody,
   toggleBodyTodo,
   wordCount,
   withNoteColor,
@@ -29,6 +27,8 @@ import {
   withPinned,
   type NoteColor,
 } from "@/domain/note";
+import { LabelEditor } from "./LabelEditor";
+import { NoteReader } from "./NoteReader";
 
 /**
  * Idle time before a body edit is written to the store. Each write appends a
@@ -342,126 +342,5 @@ export function NotePanel({
         </span>
       </div>
     </aside>
-  );
-}
-
-/**
- * The note as it reads rather than as it is typed. Checkboxes stay live here —
- * ticking one off is the most common thing to do to a note you are not editing
- * — and a click anywhere else drops back into the text.
- */
-function NoteReader({
-  body,
-  onToggle,
-  onEdit,
-}: {
-  body: string;
-  onToggle: (index: number) => void;
-  onEdit: () => void;
-}) {
-  const lines = parseNoteBody(body);
-
-  if (!body.trim()) {
-    return (
-      <div className="note-read r-empty" onClick={onEdit} role="presentation">
-        Nothing here yet.
-      </div>
-    );
-  }
-
-  return (
-    <div className="note-read" onClick={onEdit} role="presentation">
-      {lines.map((line, i) => {
-        if (line.kind === "divider") return <div key={i} className="r-divider" />;
-        if (line.kind === "heading")
-          return (
-            <div key={i} className="r-heading">
-              {line.text}
-            </div>
-          );
-        if (line.kind === "todo")
-          return (
-            <button
-              key={i}
-              type="button"
-              className={cn("r-line r-todo", line.done && "done")}
-              aria-pressed={line.done}
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggle(i);
-              }}
-            >
-              <span className="marker">
-                {line.done ? <CheckSquare size={14} /> : <Square size={14} />}
-              </span>
-              <span>{line.text}</span>
-            </button>
-          );
-        if (line.kind === "bullet")
-          return (
-            <div key={i} className="r-line">
-              <span className="marker">•</span>
-              <span>{line.text}</span>
-            </div>
-          );
-        if (!line.text.trim()) return <div key={i} className="r-blank" />;
-        return (
-          <div key={i} className="r-line">
-            <span>{line.text}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function LabelEditor({
-  labels,
-  onChange,
-}: {
-  labels: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const [draft, setDraft] = useState("");
-
-  const commit = () => {
-    const value = draft.trim().replace(/^#/, "");
-    setDraft("");
-    // Reserved namespaces would make a label indistinguishable from metadata.
-    if (!value || value === NOTE_TAG || value.startsWith("note:")) return;
-    if (labels.includes(value)) return;
-    onChange([...labels, value]);
-  };
-
-  return (
-    <div className="note-tags grow" style={{ alignItems: "center" }}>
-      {labels.map((label) => (
-        <span key={label} className="note-tag removable">
-          {label}
-          <button
-            type="button"
-            aria-label={`Remove ${label}`}
-            onClick={() => onChange(labels.filter((l) => l !== label))}
-          >
-            <X size={9} />
-          </button>
-        </span>
-      ))}
-      <input
-        className="tag-input"
-        value={draft}
-        placeholder={labels.length ? "Add tag…" : "Add a tag…"}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === ",") {
-            e.preventDefault();
-            commit();
-          } else if (e.key === "Backspace" && !draft && labels.length) {
-            onChange(labels.slice(0, -1));
-          }
-        }}
-      />
-    </div>
   );
 }
