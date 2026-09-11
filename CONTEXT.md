@@ -50,14 +50,17 @@ Standing rules for this repo. They override default habits. Decision record:
    | --- | --- | --- |
    | Entity + business rules | `src/domain/` | pure, no I/O |
    | DTO + mappers | `src/data/dto/` | Supabase row types, `to*Row`/`from*Row` |
-   | Repository / gateway | `src/data/` , `src/data/supabase/` | persistence access |
-   | Sync services | `src/sync/` | reconciliation, queue, pull, realtime |
-   | Use-cases | `src/services/` | application operations |
-   | State | `src/state/` | thin Zustand stores (UI state, delegate out) |
+   | Repository / gateway | `src/data/` | local document, migration, seeding |
+   | Sync services | `src/sync/` | reconciliation, queue, pull, realtime, cloud writes |
+   | State | `src/state/` | Zustand stores composed from slices |
+   | Platform adapters | `src/services/` | desktop, notifications, scheduler, updater |
    | Controller-equivalent | `src/ui/` hooks/handlers | translate user intent |
 
-   Dependencies point one way. `src/sync/` never imports a store — it talks
-   through **ports** (`LocalDocumentPort`, `AuthPort`, `StatusPort`).
+   Dependencies point one way. `src/sync/` imports no store: it talks through
+   **ports** (`StatusPort`, `AuthPort`, `LocalDocumentPort` in `sync/ports.ts`),
+   and `state/syncWiring.ts` is the only file that binds them to real stores.
+   Supabase access lives in `src/sync/` (`cloudWrites`, `cloudSnapshot`) rather
+   than a separate gateway directory — one client, one place that speaks to it.
 
 4. **Files short and single-purpose.** Target ≤ 200 lines, hard cap 400, one
    export / one responsibility per file. Exempt: test files, `src/lib/i18n.ts`.
