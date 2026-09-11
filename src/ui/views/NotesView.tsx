@@ -1,18 +1,15 @@
 import { useMemo, useState } from "react";
-import { localeTag } from "@/domain/datetime";
 import {
   CheckSquare,
   Lightbulb,
   Pin,
   Search,
-  Square,
   StickyNote,
   Plus,
 } from "lucide-react";
 import type { Task, TaskInstance } from "@/domain/types";
 import { useStore, useNow } from "@/state/store";
 import { useLiveTasks } from "@/state/selectors";
-import { usePickGesture } from "@/ui/task/usePickGesture";
 import { EmptyArt } from "@/ui/components/EmptyArt";
 import { Empty } from "@/ui/components/primitives";
 import { PageHeader } from "@/ui/components/PageHeader";
@@ -20,13 +17,12 @@ import { toInstance } from "@/domain/task";
 import {
   NOTE_TAG,
   isPinned,
-  noteColor,
   noteFallbackTitle,
   noteLabels,
-  parseNoteBody,
   withPinned,
 } from "@/domain/note";
 import { cn } from "@/lib/cn";
+import { NoteCard } from "./notes/NoteCard";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 
 type SortId = "updated" | "created" | "title";
@@ -293,178 +289,4 @@ function Wall({
       ))}
     </div>
   );
-}
-
-function NoteCard({
-  note,
-  selected,
-  wallIds,
-  onOpen,
-  onTogglePin,
-}: {
-  note: Task;
-  selected: boolean;
-  /** The cards drawn beside this one, in order. See `Wall`. */
-  wallIds: string[];
-  onOpen: () => void;
-  onTogglePin: () => void;
-}) {
-  const { t } = useI18n();
-  /*
-   * A note is a task with a tag on it, so it is picked like one.
-   *
-   * The bulk bar was already global and already knew what to do with these —
-   * "delete these four" is the thing anybody wants from a wall of notes — and
-   * the only reason it could not reach them is that a card had no way to be
-   * picked. It behaves exactly as a row does: invisible until the mode is on
-   * or a modifier is held, and then a checkbox in the corner.
-   */
-  const { picking, picked, onClickCapture, toggle } = usePickGesture({
-    taskId: note.id,
-    listIds: wallIds,
-  });
-  const pinned = isPinned(note);
-  const labels = noteLabels(note);
-  const named = note.title.trim().length > 0;
-  const title = named ? note.title.trim() : noteFallbackTitle(note);
-  const untitled = !named && !note.description.trim();
-  // An untitled note borrows its first line as a heading; showing that line
-  // again in the preview would just print it twice.
-  const preview = named ? note.description : dropFirstLine(note.description);
-
-  return (
-    <div
-      className={cn(
-        "note-paper note-card",
-        selected && "selected",
-        picking && "picking",
-        picked && "picked",
-      )}
-      data-color={noteColor(note)}
-      role="button"
-      tabIndex={0}
-      onClick={(e) => {
-        if (onClickCapture(e)) return;
-        onOpen();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-    >
-      {picking ? (
-        <label className="note-pick" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="checkbox"
-            checked={picked}
-            aria-label={t("bulkSelectAria", { title: note.title })}
-            onChange={() => toggle()}
-            onClick={(e) => {
-              if (e.shiftKey) {
-                e.preventDefault();
-                toggle(true);
-              }
-            }}
-          />
-        </label>
-      ) : null}
-
-      <button
-        type="button"
-        className={cn("note-pin", pinned && "on")}
-        title={pinned ? t("notesUnpin") : t("notesPin")}
-        aria-pressed={pinned}
-        onClick={(e) => {
-          e.stopPropagation();
-          onTogglePin();
-        }}
-      >
-        <Pin size={13} fill={pinned ? "currentColor" : "none"} />
-      </button>
-
-      <div className={cn("note-title", untitled && "untitled")}>
-        {untitled ? t("notesEmptyNote") : title}
-      </div>
-
-      {preview.trim() ? <NotePreview body={preview} /> : null}
-
-      <div className="note-foot">
-        {labels.length > 0 ? (
-          <div className="note-tags">
-            {labels.slice(0, 3).map((l) => (
-              <span key={l} className="note-tag">
-                {l}
-              </span>
-            ))}
-            {labels.length > 3 ? (
-              <span className="note-tag">+{labels.length - 3}</span>
-            ) : null}
-          </div>
-        ) : null}
-        <span className="grow" />
-        <span>{relativeDay(note.updatedAt)}</span>
-      </div>
-    </div>
-  );
-}
-
-/** Renders the first slice of a note body with its structure intact. */
-function NotePreview({ body }: { body: string }) {
-  const lines = parseNoteBody(body).slice(0, 14);
-
-  return (
-    <div className="note-preview">
-      {lines.map((line, i) => {
-        if (line.kind === "divider") return <div key={i} className="l-divider" />;
-        if (line.kind === "heading")
-          return (
-            <div key={i} className="l-text l-heading">
-              {line.text}
-            </div>
-          );
-        if (line.kind === "todo")
-          return (
-            <div key={i} className={cn("l-item", line.done && "done")}>
-              <span className="marker" style={{ paddingTop: 2 }}>
-                {line.done ? <CheckSquare size={11} /> : <Square size={11} />}
-              </span>
-              <span>{line.text}</span>
-            </div>
-          );
-        if (line.kind === "bullet")
-          return (
-            <div key={i} className="l-item">
-              <span className="marker">•</span>
-              <span>{line.text}</span>
-            </div>
-          );
-        if (!line.text.trim()) return <div key={i} className="l-blank" />;
-        return (
-          <div key={i} className="l-text">
-            {line.text}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function dropFirstLine(body: string): string {
-  const lines = body.split("\n");
-  const first = lines.findIndex((l) => l.trim().length > 0);
-  return first === -1 ? body : lines.slice(first + 1).join("\n");
-}
-
-function relativeDay(instant: string): string {
-  const then = new Date(instant);
-  const minutes = Math.round((Date.now() - then.getTime()) / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return then.toLocaleDateString(localeTag(), { month: "short", day: "numeric" });
 }

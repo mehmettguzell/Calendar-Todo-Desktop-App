@@ -6,16 +6,13 @@ import {
   ChevronRight,
   CircleAlert,
   Clock,
-  Flame,
   Plus,
   Sun,
 } from "lucide-react";
-import { formatTracked, localeTag, toLocalDate } from "@/domain/datetime";
-import { getMotivationalMessage } from "@/domain/motivation";
+import { toLocalDate } from "@/domain/datetime";
 import type { LocalDate, Task, TaskInstance } from "@/domain/types";
 import { fireConfetti } from "@/lib/confetti";
-import { cn } from "@/lib/cn";
-import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n";
 import {
   deadlineMarkersOf,
   splitDay,
@@ -29,12 +26,11 @@ import {
 import { useNow, useStore } from "@/state/store";
 import { EmptyArt } from "@/ui/components/EmptyArt";
 import { Empty } from "@/ui/components/primitives";
-import { ProgressRing } from "@/ui/components/ProgressRing";
-import { WeekStrip } from "@/ui/components/WeekStrip";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
 import { Composer, focusComposer } from "@/ui/task/Composer";
 import { DeadlineMarkers } from "@/ui/task/DeadlineMarkers";
 import { TaskList } from "@/ui/task/TaskList";
+import { TodayHero } from "./today/TodayHero";
 
 /**
  * Today: Command center with progress ring, inline quick add,
@@ -54,13 +50,6 @@ export function TodayView({
 }) {
   const now = useNow();
   const today = toLocalDate(now);
-  // Split in two so the weekday can sit above the date at a different weight,
-  // which is what makes the pair read as a heading rather than a timestamp.
-  const weekday = now.toLocaleDateString(localeTag(), { weekday: "long" });
-  const dayAndMonth = now.toLocaleDateString(localeTag(), {
-    day: "numeric",
-    month: "long",
-  });
   const groups = useTodoGroups(filters);
   const sessions = useFocusSessions();
   const rollOverTo = useStore((s) => s.rollOverTo);
@@ -68,7 +57,6 @@ export function TodayView({
   const { streaks } = useGamificationStats();
   const weeklyStats = useWeeklyStatsHook(7);
 
-  const [showCompletedSection, setShowCompletedSection] = useState(true);
   const [rolled, setRolled] = useState(0);
 
   const overdue = groups.find((g) => g.id === "overdue")?.instances ?? [];
@@ -134,24 +122,6 @@ export function TodayView({
   const openCount = timedTasks.length + allDayTasks.length;
   const dayCount = done + openCount;
 
-  const hasWeekHistory = useMemo(
-    () =>
-      weeklyStats.some((day) => day.tasksDone > 0 || day.focusMinutes > 0),
-    [weeklyStats],
-  );
-
-  // Dynamic motivational message
-  const motivation = useMemo(
-    () =>
-      getMotivationalMessage({
-        openCount,
-        doneCount: done,
-        overdueCount: overdue.length,
-        streak: streaks.currentStreak,
-      }),
-    [openCount, done, overdue.length, streaks.currentStreak],
-  );
-
   // Confetti trigger on 100% completion
   const prevDoneRef = useRef<number>(done);
   useEffect(() => {
@@ -167,94 +137,18 @@ export function TodayView({
 
   return (
     <div className="page">
-      {/* Today Motivation & Progress Hero Header */}
-      <div className={cn("today-hero-card section", !hasWeekHistory && "is-solo")}>
-        <div className="today-hero-left">
-          <ProgressRing
-            completed={done}
-            total={dayCount}
-            size={76}
-            strokeWidth={7}
-            onCelebrate={() => fireConfetti({ particleCount: 100 })}
-          />
-
-          {/* The date is the headline.
-              A day planner that never printed the date: the topbar said
-              "Bugün", the sidebar held a mini month, and the screen you open
-              first every morning never told you what day it was. It is the one
-              fact on this page that is true whether or not you have any tasks,
-              and it is what the screen should be recognisable by. */}
-          <div className="today-hero-text">
-            <div className="today-date">
-              <span className="today-date-weekday">{weekday}</span>
-              <h2 className="today-date-day">{dayAndMonth}</h2>
-            </div>
-
-            <p className={cn("today-hero-headline", motivation.badgeType)}>
-              {motivation.emoji}{" "}
-              {t(motivation.titleKey as TranslationKey, motivation.params)}
-            </p>
-
-            <p className="today-hero-subtitle">
-              {t(motivation.subtitleKey as TranslationKey, {
-                ...motivation.params,
-                streak: motivation.streakDays
-                  ? t("motivStreakSuffix", { n: motivation.streakDays })
-                  : "",
-              })}
-            </p>
-
-            <div className="today-hero-quickstats">
-              <span className="today-hero-stat">
-                <strong>{openCount}</strong> {t("todayOpen")}
-              </span>
-              <span className="today-hero-stat-dot">•</span>
-              <span className="today-hero-stat">
-                <strong>{done}</strong> {t("todayDone")}
-              </span>
-              {focusedToday > 0 && (
-                <>
-                  <span className="today-hero-stat-dot">•</span>
-                  <span className="today-hero-stat">
-                    <strong>{formatTracked(focusedToday)}</strong>{" "}
-                    {t("todayFocusedStat")}
-                  </span>
-                </>
-              )}
-              {overdue.length > 0 && (
-                <>
-                  <span className="today-hero-stat-dot">•</span>
-                  <span className="today-hero-stat danger">
-                    <strong>{overdue.length}</strong> {t("todayOverdueStat")}
-                  </span>
-                </>
-              )}
-              {streaks.currentStreak > 0 && (
-                <>
-                  <span className="today-hero-stat-dot">•</span>
-                  <span
-                    className="today-hero-stat streak"
-                    title={t("todayStreakBadge", { n: streaks.currentStreak })}
-                  >
-                    <Flame size={11} aria-hidden />
-                    <strong>{streaks.currentStreak}</strong>{" "}
-                    {t("todayStreakUnit")}
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* A chart of seven empty days is the first thing a new account would
-            see, and it says nothing except that there is nothing. It arrives
-            with the first finished task and stays from then on. */}
-        {hasWeekHistory ? (
-          <div className="today-hero-right">
-            <WeekStrip stats={weeklyStats} onPickDate={onPickDate} />
-          </div>
-        ) : null}
-      </div>
+      <TodayHero
+        now={now}
+        counts={{
+          open: openCount,
+          done,
+          overdue: overdue.length,
+          streak: streaks.currentStreak,
+          focusedSec: focusedToday,
+        }}
+        weeklyStats={weeklyStats}
+        onPickDate={onPickDate}
+      />
 
       {/* The same box as every other "add a task" in the app. The high-priority
           toggle that used to sit beside it is not gone — "!yüksek" in the line
@@ -362,36 +256,53 @@ export function TodayView({
         )}
       </Section>
 
-      {/* Completed Today Section */}
-      {completedTodayTasks.length > 0 ? (
-        <section className="section">
-          <div
-            className="section-head"
-            style={{ cursor: "pointer", userSelect: "none" }}
-            onClick={() => setShowCompletedSection((v) => !v)}
-          >
-            {showCompletedSection ? (
-              <ChevronDown size={14} />
-            ) : (
-              <ChevronRight size={14} />
-            )}
-            <CheckCircle2 size={14} style={{ color: "var(--success)" }} />
-            <h2>{t("todayCompletedHeading")}</h2>
-            <span className="count">{completedTodayTasks.length}</span>
-          </div>
+      <CompletedToday
+        instances={completedTodayTasks}
+        selectedKey={selectedKey}
+        onOpen={onOpen}
+      />
 
-          {showCompletedSection && (
-            <TaskList
-              listId="today:completed"
-              instances={completedTodayTasks}
-              showDate={false}
-              selectedKey={selectedKey}
-              onOpen={onOpen}
-            />
-          )}
-        </section>
-      ) : null}
     </div>
+  );
+}
+
+/** What the day already finished, folded away by default once it is long. */
+function CompletedToday({
+  instances,
+  selectedKey,
+  onOpen,
+}: {
+  instances: TaskInstance[];
+  selectedKey: string | null;
+  onOpen: (instance: TaskInstance) => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(true);
+  if (instances.length === 0) return null;
+
+  return (
+    <section className="section">
+      <div
+        className="section-head"
+        style={{ cursor: "pointer", userSelect: "none" }}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <CheckCircle2 size={14} style={{ color: "var(--success)" }} />
+        <h2>{t("todayCompletedHeading")}</h2>
+        <span className="count">{instances.length}</span>
+      </div>
+
+      {open ? (
+        <TaskList
+          listId="today:completed"
+          instances={instances}
+          showDate={false}
+          selectedKey={selectedKey}
+          onOpen={onOpen}
+        />
+      ) : null}
+    </section>
   );
 }
 

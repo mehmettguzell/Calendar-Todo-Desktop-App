@@ -9,10 +9,8 @@ import {
   List,
 } from "lucide-react";
 import { addDaysLocal, toLocalDate } from "@/domain/datetime";
-import { insertAt } from "@/domain/manualOrder";
 import { enclosingPlan, toInstance } from "@/domain/task";
-import type { Priority, Task, TaskInstance } from "@/domain/types";
-import { cn } from "@/lib/cn";
+import type { Task, TaskInstance } from "@/domain/types";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import {
   arrangeInstances,
@@ -24,7 +22,7 @@ import {
   type TodoGroup,
 } from "@/state/selectors";
 import { useViewPrefs } from "@/state/viewPrefsStore";
-import { useNow, useStore } from "@/state/store";
+import { useNow } from "@/state/store";
 import { EmptyArt } from "@/ui/components/EmptyArt";
 import { Empty } from "@/ui/components/primitives";
 import { PageHeader } from "@/ui/components/PageHeader";
@@ -33,6 +31,7 @@ import { Composer, focusComposer } from "@/ui/task/Composer";
 import { DeadlineMarkers } from "@/ui/task/DeadlineMarkers";
 import { ResetOrderButton } from "@/ui/task/ResetOrderButton";
 import { TaskList } from "@/ui/task/TaskList";
+import { CategoryKanbanView, PriorityKanbanView } from "./tasks/KanbanViews";
 
 export function TasksView({
   filters,
@@ -334,140 +333,6 @@ function ListView({
           />
         </section>
       ))}
-    </div>
-  );
-}
-
-const PRIORITY_COLUMNS: {
-  id: Priority;
-  labelKey: TranslationKey;
-  className: string;
-}[] = [
-  // A dot from the palette rather than an emoji: 🔴🟡🔵⚪ renders in whatever
-  // four colours the operating system happens to ship, none of which are this
-  // app's, and none of which change with the theme.
-  { id: "HIGH", labelKey: "kanbanHigh", className: "high" },
-  { id: "MEDIUM", labelKey: "kanbanMedium", className: "medium" },
-  { id: "LOW", labelKey: "kanbanLow", className: "low" },
-  { id: "NONE", labelKey: "kanbanNone", className: "none" },
-];
-
-function PriorityKanbanView({
-  tasks,
-  selectedKey,
-  onOpen,
-  now,
-}: {
-  tasks: Task[];
-  selectedKey: string | null;
-  onOpen: (instance: TaskInstance) => void;
-  now: Date;
-}) {
-  const { t } = useI18n();
-  const updateTask = useStore((s) => s.updateTask);
-  const reorderTasks = useStore((s) => s.reorderTasks);
-
-  return (
-    <div className="kanban-grid">
-      {PRIORITY_COLUMNS.map((col) => {
-        const instances = arrangeInstances(
-          tasks
-            .filter((task) => task.priority === col.id)
-            .map((task) => toInstance(task, task.dueDate, null, now)),
-        );
-        const ids = instances.map((instance) => instance.task.id);
-
-        return (
-          <div key={col.id} className={cn("kanban-column", col.className)}>
-            <div className="kanban-column-head">
-              <i className={cn("prio-dot", col.id)} aria-hidden />
-              <h3 className="kanban-col-title">{t(col.labelKey)}</h3>
-              <span className="count">{instances.length}</span>
-              <ResetOrderButton
-                tasks={instances.map((instance) => instance.task)}
-              />
-            </div>
-
-            <TaskList
-              listId={`priority:${col.id}`}
-              className="kanban-cards-list"
-              instances={instances}
-              selectedKey={selectedKey}
-              onOpen={onOpen}
-              empty={<div className="kanban-empty-slot">{t("tasksNone")}</div>}
-              // Crossing a column boundary is a priority change, and it goes
-              // through `updateTask` so the task's history records it as one.
-              onAccept={(task, slot) => {
-                updateTask(task.id, { priority: col.id });
-                reorderTasks(insertAt(ids, task.id, slot), task.id);
-              }}
-            />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function CategoryKanbanView({
-  tasks,
-  categories,
-  selectedKey,
-  onOpen,
-  now,
-}: {
-  tasks: Task[];
-  categories: { id: string; name: string; color: string }[];
-  selectedKey: string | null;
-  onOpen: (instance: TaskInstance) => void;
-  now: Date;
-}) {
-  const { t } = useI18n();
-  const updateTask = useStore((s) => s.updateTask);
-  const reorderTasks = useStore((s) => s.reorderTasks);
-
-  const allColumns = [
-    ...categories,
-    { id: "uncategorized", name: t("budgetUncategorised"), color: "var(--border-strong)" },
-  ];
-
-  return (
-    <div className="kanban-grid">
-      {allColumns.map((cat) => {
-        const categoryId = cat.id === "uncategorized" ? null : cat.id;
-        const instances = arrangeInstances(
-          tasks
-            .filter((task) => (task.categoryId ?? null) === categoryId)
-            .map((task) => toInstance(task, task.dueDate, null, now)),
-        );
-        const ids = instances.map((instance) => instance.task.id);
-
-        return (
-          <div key={cat.id} className="kanban-column">
-            <div className="kanban-column-head">
-              <i className="dot" style={{ background: cat.color }} />
-              <h3 className="kanban-col-title">{cat.name}</h3>
-              <span className="count">{instances.length}</span>
-              <ResetOrderButton
-                tasks={instances.map((instance) => instance.task)}
-              />
-            </div>
-
-            <TaskList
-              listId={`category:${cat.id}`}
-              className="kanban-cards-list"
-              instances={instances}
-              selectedKey={selectedKey}
-              onOpen={onOpen}
-              empty={<div className="kanban-empty-slot">{t("tasksNone")}</div>}
-              onAccept={(task, slot) => {
-                updateTask(task.id, { categoryId });
-                reorderTasks(insertAt(ids, task.id, slot), task.id);
-              }}
-            />
-          </div>
-        );
-      })}
     </div>
   );
 }
