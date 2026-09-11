@@ -11,7 +11,7 @@ import {
   Sun,
 } from "lucide-react";
 import { formatTracked, localeTag, toLocalDate } from "@/domain/datetime";
-import { getMotivationalMessage } from "@/domain/gamification";
+import { getMotivationalMessage } from "@/domain/motivation";
 import type { LocalDate, Task, TaskInstance } from "@/domain/types";
 import { fireConfetti } from "@/lib/confetti";
 import { cn } from "@/lib/cn";

@@ -110,99 +110,120 @@ export function calculateLevel(totalXp: number): LevelInfo {
 /**
  * Computes a map of date -> DayActivity based on all tasks, occurrences, focus sessions, and history.
  */
+interface DayTally {
+  tasksDone: number;
+  focusSec: number;
+  focusSessionsCount: number;
+}
+
+/** One tally per day, created on first touch. */
+class Tallies {
+  private readonly byDate = new Map<LocalDate, DayTally>();
+
+  on(date: LocalDate): DayTally {
+    let tally = this.byDate.get(date);
+    if (!tally) {
+      tally = { tasksDone: 0, focusSec: 0, focusSessionsCount: 0 };
+      this.byDate.set(date, tally);
+    }
+    return tally;
+  }
+
+  entries(): [LocalDate, DayTally][] {
+    return [...this.byDate.entries()];
+  }
+}
+
+/**
+ * Count each completion once, from whichever source saw it.
+ *
+ * History is the most granular record of *when* something was finished, but a
+ * task completed before the trail existed has only its own `completedAt`, and a
+ * recurring one has the occurrence row. The key is what keeps the three sources
+ * from counting the same completion three times.
+ */
+function countCompletions(
+  tallies: Tallies,
+  tasks: Task[],
+  occurrences: Occurrence[],
+  history: HistoryEntry[],
+): void {
+  const counted = new Set<string>();
+  const once = (key: string, date: LocalDate) => {
+    if (counted.has(key)) return;
+    counted.add(key);
+    tallies.on(date).tasksDone += 1;
+  };
+
+  for (const h of history) {
+    if (h.kind !== "STATUS_CHANGED" || h.to !== "COMPLETED") continue;
+    const date = h.at.slice(0, 10);
+    once(`${h.taskId}::${h.occurrenceDate ?? ""}::${date}`, date);
+  }
+  for (const task of tasks) {
+    if (task.status !== "COMPLETED" || !task.completedAt) continue;
+    const date = task.completedAt.slice(0, 10);
+    once(`${task.id}::::${date}`, date);
+  }
+  for (const occ of occurrences) {
+    if (occ.status !== "COMPLETED" || !occ.completedAt) continue;
+    const date = occ.completedAt.slice(0, 10);
+    once(`${occ.taskId}::${occ.date}::${date}`, date);
+  }
+}
+
+/**
+ * How dark the heatmap square is, 0–4.
+ *
+ * Tasks and focus both count: one task is two points, so is every quarter hour
+ * of focus. The absolute thresholds beside the score are what stop a day of
+ * pure focus, or pure ticking, from reading as a quiet one — a day clears a
+ * level by meeting *any* of its three.
+ */
+const INTENSITY_LADDER: { level: 1 | 2 | 3 | 4; score: number; tasks: number; minutes: number }[] = [
+  { level: 4, score: 8, tasks: 5, minutes: 90 },
+  { level: 3, score: 5, tasks: 3, minutes: 45 },
+  { level: 2, score: 3, tasks: 2, minutes: 20 },
+  { level: 1, score: 1, tasks: 1, minutes: 1 },
+];
+
+function intensityOf(tasksDone: number, focusMinutes: number): 0 | 1 | 2 | 3 | 4 {
+  const score = tasksDone * 2 + Math.floor(focusMinutes / 15) * 2;
+  const step = INTENSITY_LADDER.find(
+    (rung) =>
+      score >= rung.score || tasksDone >= rung.tasks || focusMinutes >= rung.minutes,
+  );
+  return step?.level ?? 0;
+}
+
 export function computeActivityMap(
   tasks: Task[],
   occurrences: Occurrence[],
   focusSessions: FocusSession[],
   history: HistoryEntry[],
 ): Map<LocalDate, DayActivity> {
-  const map = new Map<
-    LocalDate,
-    { tasksDone: number; focusSec: number; focusSessionsCount: number }
-  >();
-
-  const getOrCreate = (date: LocalDate) => {
-    let item = map.get(date);
-    if (!item) {
-      item = { tasksDone: 0, focusSec: 0, focusSessionsCount: 0 };
-      map.set(date, item);
-    }
-    return item;
-  };
-
-  // 1. Completed events from history (most granular source for when completions happened)
-  const completedTaskDateMap = new Set<string>();
-  for (const h of history) {
-    if (h.kind === "STATUS_CHANGED" && h.to === "COMPLETED") {
-      const date = h.at.slice(0, 10);
-      const key = `${h.taskId}::${h.occurrenceDate ?? ""}::${date}`;
-      if (!completedTaskDateMap.has(key)) {
-        completedTaskDateMap.add(key);
-        getOrCreate(date).tasksDone += 1;
-      }
-    }
-  }
-
-  // Fallback for completed tasks without history entries
-  for (const task of tasks) {
-    if (task.status === "COMPLETED" && task.completedAt) {
-      const date = task.completedAt.slice(0, 10);
-      const key = `${task.id}::::${date}`;
-      if (!completedTaskDateMap.has(key)) {
-        completedTaskDateMap.add(key);
-        getOrCreate(date).tasksDone += 1;
-      }
-    }
-  }
-
-  for (const occ of occurrences) {
-    if (occ.status === "COMPLETED" && occ.completedAt) {
-      const date = occ.completedAt.slice(0, 10);
-      const key = `${occ.taskId}::${occ.date}::${date}`;
-      if (!completedTaskDateMap.has(key)) {
-        completedTaskDateMap.add(key);
-        getOrCreate(date).tasksDone += 1;
-      }
-    }
-  }
-
-  // 2. Focus sessions
+  const tallies = new Tallies();
+  countCompletions(tallies, tasks, occurrences, history);
   for (const session of focusSessions) {
-    const date = session.startedAt.slice(0, 10);
-    const item = getOrCreate(date);
-    item.focusSec += session.durationSec;
-    item.focusSessionsCount += 1;
+    const tally = tallies.on(session.startedAt.slice(0, 10));
+    tally.focusSec += session.durationSec;
+    tally.focusSessionsCount += 1;
   }
 
   const result = new Map<LocalDate, DayActivity>();
-
-  for (const [date, item] of map.entries()) {
-    const focusMinutes = Math.round(item.focusSec / 60);
-    const xp =
-      item.tasksDone * XP_PER_TASK +
-      item.focusSessionsCount * XP_PER_FOCUS_SESSION;
-
-    // Intensity calculation (0-4)
-    // Activity score: 1 task = 2 pts, 15 min focus = 2 pts
-    const score = item.tasksDone * 2 + Math.floor(focusMinutes / 15) * 2;
-    let intensity: 0 | 1 | 2 | 3 | 4 = 0;
-    if (score >= 8 || item.tasksDone >= 5 || focusMinutes >= 90) intensity = 4;
-    else if (score >= 5 || item.tasksDone >= 3 || focusMinutes >= 45)
-      intensity = 3;
-    else if (score >= 3 || item.tasksDone >= 2 || focusMinutes >= 20)
-      intensity = 2;
-    else if (score > 0 || item.tasksDone > 0 || focusMinutes > 0) intensity = 1;
-
+  for (const [date, tally] of tallies.entries()) {
+    const focusMinutes = Math.round(tally.focusSec / 60);
     result.set(date, {
       date,
-      tasksDone: item.tasksDone,
-      focusSec: item.focusSec,
+      tasksDone: tally.tasksDone,
+      focusSec: tally.focusSec,
       focusMinutes,
-      xp,
-      intensity,
+      xp:
+        tally.tasksDone * XP_PER_TASK +
+        tally.focusSessionsCount * XP_PER_FOCUS_SESSION,
+      intensity: intensityOf(tally.tasksDone, focusMinutes),
     });
   }
-
   return result;
 }
 
@@ -222,81 +243,63 @@ export function calculateTotalXp(
 /**
  * Computes current streak, longest streak, and total active days.
  */
+/** A day counts when something was finished on it, or a minute was focused. */
+function activeOn(
+  activityMap: Map<LocalDate, DayActivity>,
+  date: LocalDate,
+): boolean {
+  const day = activityMap.get(date);
+  return day !== undefined && (day.tasksDone > 0 || day.focusSec >= 60);
+}
+
+/** How many consecutive active days end at `from`, counting backwards. */
+function runEndingAt(
+  activityMap: Map<LocalDate, DayActivity>,
+  from: LocalDate,
+): number {
+  if (!activeOn(activityMap, from)) return 0;
+  let length = 1;
+  let date = addDaysLocal(from, -1);
+  while (activeOn(activityMap, date)) {
+    length += 1;
+    date = addDaysLocal(date, -1);
+  }
+  return length;
+}
+
+/** The longest run anywhere in the record, and how many active days there are. */
+function longestRun(activityMap: Map<LocalDate, DayActivity>): {
+  longest: number;
+  totalActiveDays: number;
+} {
+  const dates = [...activityMap.keys()].filter((d) => activeOn(activityMap, d)).sort();
+  let longest = dates.length > 0 ? 1 : 0;
+  let running = longest;
+  for (let i = 1; i < dates.length; i += 1) {
+    const current = dates[i];
+    const previous = dates[i - 1];
+    if (!current || !previous) continue;
+    running = current === addDaysLocal(previous, 1) ? running + 1 : 1;
+    if (running > longest) longest = running;
+  }
+  return { longest, totalActiveDays: dates.length };
+}
+
 export function computeStreaks(
   activityMap: Map<LocalDate, DayActivity>,
   today: LocalDate,
 ): StreakInfo {
-  const isDayActive = (date: LocalDate): boolean => {
-    const act = activityMap.get(date);
-    if (!act) return false;
-    return act.tasksDone > 0 || act.focusSec >= 60;
-  };
+  const isActiveToday = activeOn(activityMap, today);
+  // A streak is not broken until the day after it could have continued: with
+  // nothing done yet today, yesterday's run is still alive.
+  const currentStreak = isActiveToday
+    ? runEndingAt(activityMap, today)
+    : runEndingAt(activityMap, addDaysLocal(today, -1));
 
-  const isActiveToday = isDayActive(today);
-
-  // 1. Current streak
-  let currentStreak = 0;
-  let checkDate = today;
-
-  if (isActiveToday) {
-    currentStreak = 1;
-    checkDate = addDaysLocal(today, -1);
-    while (isDayActive(checkDate)) {
-      currentStreak += 1;
-      checkDate = addDaysLocal(checkDate, -1);
-    }
-  } else {
-    // If today is not active yet, check if streak from yesterday is alive
-    const yesterday = addDaysLocal(today, -1);
-    if (isDayActive(yesterday)) {
-      currentStreak = 1;
-      checkDate = addDaysLocal(yesterday, -1);
-      while (isDayActive(checkDate)) {
-        currentStreak += 1;
-        checkDate = addDaysLocal(checkDate, -1);
-      }
-    }
-  }
-
-  // 2. Longest streak & total active days
-  let totalActiveDays = 0;
-  let longestStreak = 0;
-  let runningStreak = 0;
-
-  const sortedDates = Array.from(activityMap.keys())
-    .filter((d) => isDayActive(d))
-    .sort();
-
-  totalActiveDays = sortedDates.length;
-
-  if (sortedDates.length > 0) {
-    let prevDate = sortedDates[0];
-    runningStreak = 1;
-    longestStreak = 1;
-
-    for (let i = 1; i < sortedDates.length; i++) {
-      const currDate = sortedDates[i];
-      if (!currDate || !prevDate) continue;
-      const expectedNext = addDaysLocal(prevDate, 1);
-      if (currDate === expectedNext) {
-        runningStreak += 1;
-      } else {
-        runningStreak = 1;
-      }
-      if (runningStreak > longestStreak) {
-        longestStreak = runningStreak;
-      }
-      prevDate = currDate;
-    }
-  }
-
-  if (currentStreak > longestStreak) {
-    longestStreak = currentStreak;
-  }
-
+  const { longest, totalActiveDays } = longestRun(activityMap);
   return {
     currentStreak,
-    longestStreak,
+    longestStreak: Math.max(longest, currentStreak),
     totalActiveDays,
     isActiveToday,
   };
@@ -334,137 +337,4 @@ export function computeWeeklyStats(
   }
 
   return stats;
-}
-
-export interface MotivationOptions {
-  openCount: number;
-  doneCount: number;
-  overdueCount: number;
-  streak: number;
-  currentHour?: number;
-}
-
-export interface MotivationalMessage {
-  /** Dictionary keys, not sentences: this module picks the mood, not the words. */
-  titleKey: string;
-  subtitleKey: string;
-  params?: Record<string, string | number>;
-  /** Set when the "your streak lives on" clause belongs in the subtitle. */
-  streakDays?: number;
-  emoji: string;
-  badgeType: "neutral" | "success" | "warning" | "celebrate";
-}
-
-/**
- * Generates dynamic, context-aware motivational messages.
- */
-export function getMotivationalMessage(
-  options: MotivationOptions,
-): MotivationalMessage {
-  const {
-    openCount,
-    doneCount,
-    overdueCount,
-    streak,
-    currentHour = new Date().getHours(),
-  } = options;
-  const total = openCount + doneCount;
-  const percent = total === 0 ? 100 : Math.round((doneCount / total) * 100);
-
-  if (overdueCount > 0 && openCount > 0) {
-    return {
-      titleKey: "motivOverdueTitle",
-      subtitleKey: "motivOverdueSub",
-      params: { n: overdueCount },
-      emoji: "⚡",
-      badgeType: "warning",
-    };
-  }
-
-  if (total === 0) {
-    if (currentHour < 12) {
-      return {
-        titleKey: "motivMorningEmptyTitle",
-        subtitleKey: "motivMorningEmptySub",
-        emoji: "☀️",
-        badgeType: "neutral",
-      };
-    }
-    return {
-      titleKey: "motivEmptyTitle",
-      subtitleKey: "motivEmptySub",
-      emoji: "🛋️",
-      badgeType: "neutral",
-    };
-  }
-
-  if (percent === 100) {
-    return {
-      titleKey: "motivAllDoneTitle",
-      subtitleKey: "motivAllDoneSub",
-      params: { total, streak: "" },
-      // The streak clause is a whole phrase rather than glued-on words, so the
-      // sentence it joins can put it wherever that language wants it.
-      ...(streak > 1 ? { streakDays: streak } : {}),
-      emoji: "🏆",
-      badgeType: "celebrate",
-    };
-  }
-
-  if (percent >= 75) {
-    return {
-      titleKey: "motivAlmostTitle",
-      subtitleKey: "motivAlmostSub",
-      params: { done: doneCount, total, percent, open: openCount },
-      emoji: "🎯",
-      badgeType: "success",
-    };
-  }
-
-  if (percent >= 50) {
-    return {
-      titleKey: "motivHalfTitle",
-      subtitleKey: "motivHalfSub",
-      params: { done: doneCount, open: openCount },
-      emoji: "⚡",
-      badgeType: "success",
-    };
-  }
-
-  if (doneCount > 0) {
-    return {
-      titleKey: "motivStartedTitle",
-      subtitleKey: "motivStartedSub",
-      params: { done: doneCount },
-      emoji: "🌱",
-      badgeType: "neutral",
-    };
-  }
-
-  if (currentHour < 12) {
-    return {
-      titleKey: "motivMorningTitle",
-      subtitleKey: "motivMorningSub",
-      params: { open: openCount },
-      emoji: "🚀",
-      badgeType: "neutral",
-    };
-  }
-  if (currentHour >= 18) {
-    return {
-      titleKey: "motivEveningTitle",
-      subtitleKey: "motivEveningSub",
-      params: { open: openCount },
-      emoji: "💡",
-      badgeType: "neutral",
-    };
-  }
-
-  return {
-    titleKey: "motivFocusTitle",
-    subtitleKey: "motivFocusSub",
-    params: { open: openCount },
-    emoji: "⏳",
-    badgeType: "neutral",
-  };
 }
