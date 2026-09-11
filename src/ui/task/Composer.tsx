@@ -2,26 +2,25 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, CornerDownLeft } from "lucide-react";
 import {
   describeWhen,
-  shiftTime,
-  toLocalDate,
   weekdayNames,
 } from "@/domain/datetime";
 import { describeRecurrence } from "@/domain/recurrence";
 import { describeParse, parseQuickAdd } from "@/domain/naturalLanguage";
+import { ComposerDetails } from "./ComposerDetails";
+import { useComposerFields } from "./composerFields";
 import {
-  PRIORITIES,
+  draftDetails,
+  filledByParse,
+  resolveCategoryId,
+} from "./composerDraft";
+import {
   type LocalDate,
-  type Priority,
-  type Recurrence,
 } from "@/domain/types";
-import { CATEGORY_COLORS } from "@/data/db";
 import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
 import { useCategories } from "@/state/selectors";
 import { useNow, useStore } from "@/state/store";
 import type { TaskDraft } from "@/state/storeTypes";
-import { Field, Switch } from "@/ui/components/primitives";
-import { RecurrenceEditor } from "./RecurrenceEditor";
 
 /**
  * The one place a task is written.
@@ -97,27 +96,38 @@ export function Composer({
   const categories = useCategories();
   const now = useNow();
 
-  const [title, setTitle] = useState("");
-  const [expanded, setExpanded] = useState(startExpanded);
-  const [description, setDescription] = useState("");
-  const [dueDate, setDueDate] = useState<string>(
-    defaultDate ?? toLocalDate(now),
-  );
-  const [endDate, setEndDate] = useState<string>("");
-  const [deadline, setDeadline] = useState<string>("");
-  const [allDay, setAllDay] = useState(!defaultTime);
-  const [startTime, setStartTime] = useState(defaultTime ?? "09:00");
-  const [endTime, setEndTime] = useState("");
-  const [priority, setPriority] = useState<Priority>("NONE");
-  const [categoryId, setCategoryId] = useState("");
-  const [tags, setTags] = useState("");
-  const [recurrence, setRecurrence] = useState<Recurrence | null>(null);
-  // On by default. A task nobody is reminded about is the common complaint
-  // this app exists to answer, and the switch is right there for the times it
-  // is not wanted. Tasks with no date silently skip it (see submit).
-  const [withReminder, setWithReminder] = useState(true);
-  const [focused, setFocused] = useState(false);
+  const f = useComposerFields({ defaultDate, defaultTime, startExpanded, now });
+  const {
+    title,
+    setTitle,
+    expanded,
+    setExpanded,
+    description,
+    dueDate,
+    setDueDate,
+    endDate,
+    setEndDate,
+    deadline,
+    setDeadline,
+    allDay,
+    setAllDay,
+    startTime,
+    setStartTime,
+    endTime,
+    setEndTime,
+    priority,
+    setPriority,
+    categoryId,
+    tags,
+    setTags,
+    recurrence,
+    setRecurrence,
+    withReminder,
+    touched,
+    reset,
+  } = f;
 
+  const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -142,24 +152,17 @@ export function Composer({
       }),
     [parsed, now, t],
   );
-  // "Touched" means the user edited the field, not that it started with a
-  // value. Seeding it from `defaultDate` — which the calendar always supplies —
-  // meant a parsed date was computed, shown in the preview, and then silently
-  // ignored by the field it was supposed to fill.
-  const touched = useRef({ date: false, time: false });
-
   useEffect(() => {
-    if (parsed.dueDate && !touched.current.date) setDueDate(parsed.dueDate);
-    if (parsed.endDate && !touched.current.date) setEndDate(parsed.endDate);
-    if (parsed.deadline && !touched.current.date) setDeadline(parsed.deadline);
-    if (parsed.startTime && !touched.current.time) {
-      setAllDay(false);
-      setStartTime(parsed.startTime);
-      if (parsed.endTime) setEndTime(parsed.endTime);
-    }
-    if (parsed.priority !== "NONE") setPriority(parsed.priority);
-    if (parsed.recurrence) setRecurrence(parsed.recurrence);
-    if (parsed.tags.length > 0) setTags(parsed.tags.join(", "));
+    const filled = filledByParse(parsed, touched.current);
+    if (filled.dueDate !== undefined) setDueDate(filled.dueDate);
+    if (filled.endDate !== undefined) setEndDate(filled.endDate);
+    if (filled.deadline !== undefined) setDeadline(filled.deadline);
+    if (filled.allDay !== undefined) setAllDay(filled.allDay);
+    if (filled.startTime !== undefined) setStartTime(filled.startTime);
+    if (filled.endTime !== undefined) setEndTime(filled.endTime);
+    if (filled.priority !== undefined) setPriority(filled.priority);
+    if (filled.recurrence !== undefined) setRecurrence(filled.recurrence);
+    if (filled.tags !== undefined) setTags(filled.tags);
   }, [
     parsed.dueDate,
     parsed.endDate,
@@ -171,22 +174,6 @@ export function Composer({
     parsed.tags.join(","),
   ]);
 
-  const reset = () => {
-    setTitle("");
-    setDescription("");
-    setEndDate("");
-    setDeadline("");
-    setPriority("NONE");
-    setCategoryId("");
-    setTags("");
-    setRecurrence(null);
-    setDueDate(defaultDate ?? toLocalDate(now));
-    setAllDay(!defaultTime);
-    setStartTime(defaultTime ?? "09:00");
-    setEndTime("");
-    touched.current = { date: false, time: false };
-  };
-
   const submit = () => {
     // The stripped title is what gets saved: "yarın 14:00 sunum" becomes a task
     // called "sunum" that is actually scheduled, not one whose name repeats its
@@ -194,38 +181,29 @@ export function Composer({
     const trimmed = (parsed.title || title).trim();
     if (!trimmed) return;
 
-    // `#kategori` names a category, creating it when it is new.
-    let resolvedCategoryId = categoryId;
-    if (!resolvedCategoryId && parsed.categoryName) {
-      const wanted = parsed.categoryName.trim().toLowerCase();
-      const match = categories.find(
-        (c) => c.name.trim().toLowerCase() === wanted,
-      );
-      resolvedCategoryId =
-        match?.id ??
-        addCategory(
-          parsed.categoryName,
-          CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length] ??
-            "#64748b",
-        ).id;
-    }
+    const resolvedCategoryId = resolveCategoryId(
+      categoryId,
+      parsed.categoryName,
+      categories,
+      addCategory,
+    );
 
     const task = createTask({
       title: trimmed,
-      description: description.trim(),
-      dueDate: dueDate || null,
-      endDate: endDate || null,
-      deadline: deadline || null,
-      allDay,
-      startTime: allDay ? null : startTime || null,
-      endTime: allDay || !endTime ? null : endTime,
-      priority,
+      ...draftDetails({
+        description,
+        dueDate,
+        endDate,
+        deadline,
+        allDay,
+        startTime,
+        endTime,
+        priority,
+        categoryId,
+        tags,
+        recurrence,
+      }),
       categoryId: resolvedCategoryId || null,
-      tags: tags
-        .split(",")
-        .map((tag) => tag.trim().replace(/^#/, ""))
-        .filter(Boolean),
-      recurrence,
       estimateMinutes: parsed.estimateMinutes,
       ...seed,
     });
@@ -318,160 +296,7 @@ export function Composer({
         <div className="composer-teach">{t("composerExamples")}</div>
       ) : null}
 
-      {expanded ? (
-        <div className="composer-details">
-          <Field label={t("formNotes")}>
-            <textarea
-              className="textarea"
-              value={description}
-              placeholder={t("formNotesHint")}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </Field>
-
-          <div className="field-row">
-            <Field label={t("formStartDate")}>
-              <input
-                className="input"
-                type="date"
-                value={dueDate}
-                onChange={(e) => {
-                  touched.current.date = true;
-                  setDueDate(e.target.value);
-                }}
-              />
-            </Field>
-            <Field label={t("formDeadline")}>
-              <input
-                className="input"
-                type="date"
-                value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
-              />
-            </Field>
-            <Field label={t("formPriority")}>
-              <select
-                className="select"
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as Priority)}
-              >
-                {PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {t(`priority${p}`)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          <Switch checked={allDay} label={t("allDay")} onChange={setAllDay} />
-
-          {!allDay ? (
-            <div className="field-row">
-              <Field label={t("formStart")}>
-                <input
-                  className="input"
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => {
-                    touched.current.time = true;
-                    setStartTime(e.target.value);
-                  }}
-                />
-              </Field>
-              <Field label={t("formEnd")}>
-                <input
-                  className="input"
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                />
-              </Field>
-            </div>
-          ) : null}
-
-          <div className="field-row">
-            <Field label={t("formCategory")}>
-              <select
-                className="select"
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-              >
-                <option value="">{t("formNone")}</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label={t("formTags")} hint={t("formTagsHint")}>
-              <input
-                className="input"
-                value={tags}
-                placeholder={t("tagsPlaceholder")}
-                onChange={(e) => setTags(e.target.value)}
-              />
-            </Field>
-          </div>
-
-          {/* A multi-day run sits with the repeat rule, as it does in the
-              panel: both answer "over how many days", which the deadline
-              above does not. */}
-          <Field label={t("formEndDate")} hint={t("formEndDateHint")}>
-            <input
-              className="input"
-              type="date"
-              value={endDate}
-              min={dueDate || undefined}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </Field>
-
-          <RecurrenceEditor
-            value={recurrence}
-            onChange={setRecurrence}
-            anchor={dueDate || null}
-          />
-
-          <Switch
-            checked={withReminder}
-            label={reminderLabel(
-              allDay,
-              settings.defaultReminderOffset,
-              settings.allDayReminderTime,
-              t,
-            )}
-            onChange={setWithReminder}
-          />
-        </div>
-      ) : null}
+      <ComposerDetails fields={f} categories={categories} settings={settings} t={t} />
     </div>
   );
-}
-
-/**
- * An all-day task has no start time to count back from, so its reminder lands
- * at the clock time from Settings. Saying "10 min before" there would name a
- * moment that does not exist.
- */
-function reminderLabel(
-  allDay: boolean,
-  offsetMinutes: number,
-  allDayTime: string,
-  t: (
-    key:
-      | "composerRemindAtTime"
-      | "composerRemindAtStart"
-      | "composerRemindBefore",
-    params?: Record<string, string | number>,
-  ) => string,
-): string {
-  if (allDay) {
-    return t("composerRemindAtTime", {
-      time: shiftTime(allDayTime, -offsetMinutes),
-    });
-  }
-  if (offsetMinutes === 0) return t("composerRemindAtStart");
-  return t("composerRemindBefore", { n: offsetMinutes });
 }
