@@ -147,42 +147,78 @@ function merchantsAgree(a: string | null | undefined, b: string | null | undefin
  * Everything that could hide a real second purchase is a hard rule; everything
  * that is merely evidence is a weight.
  */
+/** The reasons a row and an entry cannot be the same purchase at all. */
+function disqualified(
+  row: Matchable,
+  entry: Transaction,
+  options: MatchOptions,
+): boolean {
+  if (entry.flow !== row.flow) return true;
+  const account = row.account ?? options.account ?? null;
+  if (accountsConflict(entry.account, account)) return true;
+  const windowDays = options.windowDays ?? DEFAULT_MATCH_WINDOW_DAYS;
+  return Math.abs(daysBetween(row.date, entry.date)) > windowDays;
+}
+
+/**
+ * How good a surviving candidate is, out of 100.
+ *
+ * Only ever compares one inexact candidate with another: an exact amount never
+ * competes on score, it outranks them outright in `matchRows`.
+ */
+function confidenceScore(input: {
+  distanceDays: number;
+  sameMerchant: boolean;
+  hasAccount: boolean;
+  provisional: boolean;
+  amountGapMinor: number;
+  tolerance: number;
+}): number {
+  let score = 100;
+  // Same day is the strongest signal after the amount; each day of drift is one
+  // more chance that this is a different purchase of the same size.
+  score -= Math.abs(input.distanceDays) * 12;
+  if (input.sameMerchant) score += 40;
+  if (input.hasAccount) score += 20;
+  // A provisional entry is precisely what a statement is here to settle; a
+  // confirmed one has already been spoken for.
+  if (input.provisional) score += 15;
+  if (input.amountGapMinor > 0) {
+    score -= Math.round((input.amountGapMinor / input.tolerance) * 20);
+  }
+  return score;
+}
+
 export function scoreMatch(
   row: Matchable,
   entry: Transaction,
   options: MatchOptions = {},
 ): Match | null {
-  const windowDays = options.windowDays ?? DEFAULT_MATCH_WINDOW_DAYS;
-
-  if (entry.flow !== row.flow) return null;
+  if (disqualified(row, entry, options)) return null;
 
   const amountGapMinor = Math.abs(entry.amountMinor - row.amountMinor);
   const tolerance = options.nearAmounts ? nearAmountTolerance(row.amountMinor) : 0;
   if (amountGapMinor > tolerance) return null;
-  const exactAmount = amountGapMinor === 0;
 
   const account = row.account ?? options.account ?? null;
-  if (accountsConflict(entry.account, account)) return null;
-
   const distanceDays = daysBetween(row.date, entry.date);
-  if (Math.abs(distanceDays) > windowDays) return null;
-
   const sameMerchant = merchantsAgree(entry.merchant ?? entry.note, row.merchant);
 
-  let score = 100;
-  // Same day is the strongest signal after the amount; each day of drift is
-  // one more chance that this is a different purchase of the same size.
-  score -= Math.abs(distanceDays) * 12;
-  if (sameMerchant) score += 40;
-  if (account && entry.account?.trim()) score += 20;
-  // A provisional entry is precisely what a statement is here to settle; a
-  // confirmed one has already been spoken for.
-  if (isProvisional(entry)) score += 15;
-  // Only separates two inexact candidates from one another: an exact match
-  // never competes with them on score, it outranks them outright in `matchRows`.
-  if (!exactAmount) score -= Math.round((amountGapMinor / tolerance) * 20);
-
-  return { entry, distanceDays, sameMerchant, exactAmount, amountGapMinor, score };
+  return {
+    entry,
+    distanceDays,
+    sameMerchant,
+    exactAmount: amountGapMinor === 0,
+    amountGapMinor,
+    score: confidenceScore({
+      distanceDays,
+      sameMerchant,
+      hasAccount: Boolean(account && entry.account?.trim()),
+      provisional: isProvisional(entry),
+      amountGapMinor,
+      tolerance,
+    }),
+  };
 }
 
 /**
@@ -257,6 +293,7 @@ export interface SettlePatch {
   origin: "manual" | "alert" | "statement";
 }
 
+/* eslint-disable-next-line complexity -- one guarded assignment per field */
 export function settlePatch(
   entry: Transaction,
   row: {
