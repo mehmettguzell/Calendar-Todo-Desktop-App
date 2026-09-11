@@ -63,7 +63,7 @@ export default tseslint.config(
     files: [
       "src/sync/**/*.{ts,tsx}",
       "src/domain/**/*.{ts,tsx}",
-      "src/data/supabase/**/*.{ts,tsx}",
+      "src/data/**/*.{ts,tsx}",
     ],
     rules: {
       ...sizeLimits,

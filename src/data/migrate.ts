@@ -36,99 +36,94 @@ import {
   deduplicateCategories,
 } from "./categorySeed";
 
-// Reading a document written by an older build: fill in what it lacks, drop what
-// it cannot address, and never throw away a row we merely do not understand.
 /**
- * Bring a document read from disk up to the current shape.
- * Unknown/older versions are repaired field-by-field rather than discarded —
- * losing a user's task history is never an acceptable migration outcome.
+ * The bank-mail feed is gone, and so is its configuration.
+ *
+ * Stripped rather than ignored: the block held a mailbox host and username, and
+ * a document that keeps carrying them writes them into every backup the user
+ * ever makes, for a feature that no longer exists to read them.
  */
+function settingsOf(doc: Partial<Database>): Settings {
+  const { mailSync: _removedMailSync, ...stored } = (doc.settings ?? {}) as Record<
+    string,
+    unknown
+  >;
+  return { ...DEFAULT_SETTINGS, ...stored } as Settings;
+}
+
+/** Categories and their tasks, with any seed round this document never saw. */
+function migrateCategories(doc: Partial<Database>, tasks: Task[], language: "tr" | "en") {
+  const stored =
+    Array.isArray(doc.categories) && doc.categories.length > 0
+      ? doc.categories
+      : emptyDatabase().categories;
+  // A document written before a seed round existed is offered it now, once.
+  const withSeeds = backfillCategories(
+    stored,
+    doc.settings?.categorySeedVersion ?? 0,
+    language,
+  );
+  return deduplicateCategories(withSeeds, tasks, language);
+}
+
+/** The ledger and its categories, likewise offered any round they never saw. */
+function migrateBudget(doc: Partial<Database>, language: "tr" | "en") {
+  const base = emptyDatabase();
+  const transactions = Array.isArray(doc.transactions)
+    ? doc.transactions.map(normaliseTransaction)
+    : base.transactions;
+  const stored = Array.isArray(doc.budgetCategories)
+    ? doc.budgetCategories.map(normaliseBudgetCategory)
+    : defaultBudgetCategories(language);
+  const withSeeds = backfillBudgetCategories(
+    stored,
+    doc.settings?.budgetCategorySeedVersion ?? 0,
+    language,
+  );
+  return deduplicateBudgetCategories(withSeeds, transactions, language);
+}
+
+/**
+ * Imports that happened before imports were recorded.
+ *
+ * The batch record is what "geri al" hangs off, and a document written before it
+ * existed has none — so the one import someone most wants back, the one they
+ * made by mistake last week, is the one the list cannot offer. Every row a
+ * statement wrote carries the instant of the import that wrote it, and one
+ * import writes them all at the same instant, so the groups are exact.
+ */
+function migrateBatches(doc: Partial<Database>, transactions: Transaction[]) {
+  return recoverStatementBatches(
+    transactions,
+    Array.isArray(doc.statementBatches)
+      ? doc.statementBatches.map(normaliseStatementBatch)
+      : emptyDatabase().statementBatches,
+  );
+}
+
 export function migrate(raw: unknown): Database {
   const base = emptyDatabase();
   if (!raw || typeof raw !== "object") return base;
   const doc = raw as Partial<Database>;
 
-  const tasks = Array.isArray(doc.tasks)
-    ? doc.tasks.map(normaliseTask)
-    : base.tasks;
-  /*
-   * The bank-mail feed is gone, and so is its configuration.
-   *
-   * Stripped rather than ignored: the block held a mailbox host and username,
-   * and a document that keeps carrying them writes them into every backup the
-   * user ever makes, for a feature that no longer exists to read them.
-   */
-  const { mailSync: _removedMailSync, ...storedSettings } = (doc.settings ??
-    {}) as Record<string, unknown>;
-  const settings = { ...DEFAULT_SETTINGS, ...storedSettings } as Settings;
+  const settings = settingsOf(doc);
   const language = settings.language ?? "tr";
+  const tasks = Array.isArray(doc.tasks) ? doc.tasks.map(normaliseTask) : base.tasks;
 
-  const storedCategories =
-    Array.isArray(doc.categories) && doc.categories.length > 0
-      ? doc.categories
-      : base.categories;
-  // A document written before a seed round existed is offered it now, once.
-  const rawCategories = backfillCategories(
-    storedCategories,
-    doc.settings?.categorySeedVersion ?? 0,
-    language,
-  );
-
-  const { categories: cleanCategories, tasks: cleanTasks } =
-    deduplicateCategories(rawCategories, tasks, language);
-
-  const rawTransactions = Array.isArray(doc.transactions)
-    ? doc.transactions.map(normaliseTransaction)
-    : base.transactions;
-
-  const storedBudgetCategories = Array.isArray(doc.budgetCategories)
-    ? doc.budgetCategories.map(normaliseBudgetCategory)
-    : defaultBudgetCategories(language);
-  // A document written before a budget seed round existed is offered it now.
-  const rawBudgetCategories = backfillBudgetCategories(
-    storedBudgetCategories,
-    doc.settings?.budgetCategorySeedVersion ?? 0,
-    language,
-  );
-
-  const {
-    budgetCategories: cleanBudgetCategories,
-    transactions: cleanTransactions,
-  } = deduplicateBudgetCategories(
-    rawBudgetCategories,
-    rawTransactions,
-    language,
-  );
-
-  /*
-   * Imports that happened before imports were recorded.
-   *
-   * The batch record is what "geri al" hangs off, and a document written before
-   * it existed has none — so the one import someone most wants back, the one
-   * they made by mistake last week, is the one the list cannot offer. Every row
-   * a statement wrote carries the instant of the import that wrote it, and one
-   * import writes them all at the same instant, so the groups are exact.
-   */
-  const {
-    transactions: linkedTransactions,
-    batches: recoveredBatches,
-  } = recoverStatementBatches(
-    cleanTransactions,
-    Array.isArray(doc.statementBatches)
-      ? doc.statementBatches.map(normaliseStatementBatch)
-      : base.statementBatches,
-  );
+  const categories = migrateCategories(doc, tasks, language);
+  const budget = migrateBudget(doc, language);
+  const batches = migrateBatches(doc, budget.transactions);
 
   return {
     version: DB_VERSION,
-    tasks: cleanTasks,
+    tasks: categories.tasks,
+    categories: categories.categories,
     occurrences: Array.isArray(doc.occurrences)
       ? doc.occurrences.filter(isAddressableOccurrence).map(normaliseOccurrence)
       : base.occurrences,
     reminders: Array.isArray(doc.reminders)
       ? doc.reminders.filter(isAddressableReminder).map(normaliseReminder)
       : base.reminders,
-    categories: cleanCategories,
     history: Array.isArray(doc.history) ? doc.history : base.history,
     focusSessions: Array.isArray(doc.focusSessions)
       ? doc.focusSessions
@@ -136,18 +131,18 @@ export function migrate(raw: unknown): Database {
     tombstones: Array.isArray(doc.tombstones)
       ? pruneTombstones(doc.tombstones)
       : base.tombstones,
-    transactions: linkedTransactions,
-    budgetCategories: cleanBudgetCategories,
+    transactions: batches.transactions,
+    budgetCategories: budget.budgetCategories,
     wishlist: Array.isArray(doc.wishlist)
       ? doc.wishlist.map(normaliseWishlistItem)
       : base.wishlist,
     // A checkpoint with no name or no day cannot be drawn or read, and one
-    // pointing at no task belongs to nothing — all three are dropped rather
-    // than carried as rows nothing can ever show.
+    // pointing at no task belongs to nothing — all three are dropped rather than
+    // carried as rows nothing can ever show.
     deadlines: Array.isArray(doc.deadlines)
       ? doc.deadlines.map(normaliseDeadline).filter(isUsableDeadline)
       : base.deadlines,
-    statementBatches: recoveredBatches,
+    statementBatches: batches.batches,
     settings: {
       ...settings,
       categorySeedVersion: CATEGORY_SEED_VERSION,
@@ -207,16 +202,23 @@ function normaliseReminder(reminder: Reminder): Reminder {
  * indistinguishable now from rows stamped by any other. Undoing one of these
  * takes away what it added, which is the mistake worth undoing.
  */
+/** A live row a statement wrote, which no batch record has claimed. */
+function wroteByStatement(entry: Transaction): boolean {
+  return (
+    entry.deletedAt === null &&
+    !entry.importId &&
+    typeof entry.externalId === "string" &&
+    entry.externalId.startsWith("stmt")
+  );
+}
+
 function recoverStatementBatches(
   transactions: Transaction[],
   existing: StatementBatch[],
 ): { transactions: Transaction[]; batches: StatementBatch[] } {
   const groups = new Map<Instant, Transaction[]>();
   for (const entry of transactions) {
-    if (entry.deletedAt !== null) continue;
-    if (entry.importId) continue;
-    if (typeof entry.externalId !== "string") continue;
-    if (!entry.externalId.startsWith("stmt")) continue;
+    if (!wroteByStatement(entry)) continue;
     const bucket = groups.get(entry.createdAt);
     if (bucket) bucket.push(entry);
     else groups.set(entry.createdAt, [entry]);
@@ -282,6 +284,7 @@ function normaliseStatementBatch(batch: StatementBatch): StatementBatch {
   };
 }
 
+/* eslint-disable-next-line complexity -- a flat defaulting map, not branching */
 function normaliseTransaction(t: Transaction): Transaction {
   // A row carrying `instalmentIndex` is one monthly charge of a purchase, not
   // a purchase: aggregation makes those and nothing may ever write one back.
@@ -305,6 +308,7 @@ function normaliseTransaction(t: Transaction): Transaction {
   };
 }
 
+/* eslint-disable-next-line complexity -- a flat defaulting map, not branching */
 function normaliseWishlistItem(item: WishlistItem): WishlistItem {
   return {
     ...item,
@@ -359,6 +363,7 @@ function isUsableDeadline(deadline: Deadline): boolean {
   return Boolean(deadline.id && deadline.taskId && deadline.label && deadline.date);
 }
 
+/* eslint-disable-next-line complexity -- a flat defaulting map, not branching */
 function normaliseTask(task: Task): Task {
   return {
     ...task,
