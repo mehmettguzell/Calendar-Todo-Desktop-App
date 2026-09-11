@@ -10,11 +10,13 @@ import {
 import {
   analyseSpending,
   searchMerchants,
+  type CategorySlice as CategorySliceData,
   type DateRange,
   type MerchantSlice,
 } from "@/domain/spending";
 import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
+import { LIMIT_COLOURS } from "./labels";
 
 /**
  * Where the money went, one level deeper than a category.
@@ -132,94 +134,136 @@ export function SpendingBreakdown({
         <ul className="spend-categories">
           {report.categories.map((slice) => {
             const key = slice.categoryId ?? "none";
-            const expanded = open === key;
-            const category = slice.categoryId
-              ? (categoryById.get(slice.categoryId) ?? null)
-              : null;
-            const limit = limitStatus(
-              category?.monthlyLimitMinor,
-              slice.amountMinor,
-            );
             return (
-              <li key={key} className={cn("spend-category", expanded && "open")}>
-                <div className="spend-category-line">
-                <button
-                  type="button"
-                  className="spend-category-head"
-                  aria-expanded={expanded}
-                  onClick={() => setOpen(expanded ? null : key)}
-                >
-                  <ChevronRight size={14} className="spend-caret" />
-                  <span aria-hidden>{slice.icon}</span>
-                  <span className="spend-name truncate">
-                    {slice.name || t("budgetUncategorised")}
-                  </span>
-                  <span className="faint spend-count">{slice.count}</span>
-                  <span className="spend-track">
-                    <span
-                      className="spend-fill"
-                      style={{
-                        /* Against the ceiling when there is one, against the
-                           biggest category when there is not: a bar measured
-                           against a limit answers a different question, and
-                           only one of the two can be drawn at a time. */
-                        width: `${Math.min(100, Math.max(2, (limit ? limit.ratio : slice.share) * 100))}%`,
-                        background: limit ? LIMIT_COLOURS[limit.state] : slice.color,
-                      }}
-                    />
-                  </span>
-                  <span className="mono spend-value">
-                    {formatMoney(slice.amountMinor, currency)}
-                    {limit ? (
-                      <span className={cn("budget-limit-note", limit.state)}>
-                        {" / "}
-                        {formatMoney(limit.limitMinor, currency)}
-                      </span>
-                    ) : null}
-                  </span>
-                  {/* The bar measures against the ceiling when there is one,
-                      so the number beside it has to mean the same thing —
-                      a bar three-quarters full next to "%3" is two answers to
-                      one question. */}
-                  <span
-                    className={cn("spend-share faint", limit && limit.state)}
-                    title={
-                      limit
-                        ? t("budgetSetLimit")
-                        : t("budgetWhereItWent")
-                    }
-                  >
-                    %{Math.round((limit ? limit.ratio : slice.share) * 100)}
-                  </span>
-                  {slice.changeRatio !== null ? <Delta ratio={slice.changeRatio} small /> : null}
-                </button>
-                {category && onSetLimit ? (
-                  <LimitInput
-                    category={category}
-                    currency={currency}
-                    onChange={(minor) => onSetLimit(category.id, minor)}
-                  />
-                ) : null}
-                </div>
-
-                {expanded ? (
-                  <ul className="spend-merchants">
-                    {slice.merchants.map((merchant) => (
-                      <MerchantRow
-                        key={merchant.merchant}
-                        slice={merchant}
-                        currency={currency}
-                        total={slice.amountMinor}
-                      />
-                    ))}
-                  </ul>
-                ) : null}
-              </li>
+              <CategorySlice
+                key={key}
+                slice={slice}
+                category={
+                  slice.categoryId
+                    ? (categoryById.get(slice.categoryId) ?? null)
+                    : null
+                }
+                currency={currency}
+                expanded={open === key}
+                onToggle={() => setOpen(open === key ? null : key)}
+                onSetLimit={onSetLimit}
+              />
             );
           })}
         </ul>
       )}
     </div>
+  );
+}
+
+/** One category's share, and the shops inside it once it is opened. */
+function CategorySlice({
+  slice,
+  category,
+  currency,
+  expanded,
+  onToggle,
+  onSetLimit,
+}: {
+  slice: CategorySliceData;
+  category: BudgetCategory | null;
+  currency: string;
+  expanded: boolean;
+  onToggle: () => void;
+  onSetLimit?: (categoryId: string, minor: number | null) => void;
+}) {
+  const { t } = useI18n();
+  const limit = limitStatus(category?.monthlyLimitMinor, slice.amountMinor);
+
+  return (
+    <li className={cn("spend-category", expanded && "open")}>
+      <div className="spend-category-line">
+      <button
+        type="button"
+        className="spend-category-head"
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <ChevronRight size={14} className="spend-caret" />
+        <span aria-hidden>{slice.icon}</span>
+        <span className="spend-name truncate">
+          {slice.name || t("budgetUncategorised")}
+        </span>
+        <span className="faint spend-count">{slice.count}</span>
+        <CategoryMeter slice={slice} limit={limit} currency={currency} />
+        {slice.changeRatio !== null ? <Delta ratio={slice.changeRatio} small /> : null}
+      </button>
+      {category && onSetLimit ? (
+        <LimitInput
+          category={category}
+          currency={currency}
+          onChange={(minor) => onSetLimit(category.id, minor)}
+        />
+      ) : null}
+      </div>
+
+      {expanded ? (
+        <ul className="spend-merchants">
+          {slice.merchants.map((merchant) => (
+            <MerchantRow
+              key={merchant.merchant}
+              slice={merchant}
+              currency={currency}
+              total={slice.amountMinor}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * The bar, the figure and the share, all measured against the same thing.
+ *
+ * Against the ceiling when the category has one, against the biggest category
+ * when it does not: a bar three-quarters full beside "%3" is two answers to one
+ * question.
+ */
+function CategoryMeter({
+  slice,
+  limit,
+  currency,
+}: {
+  slice: CategorySliceData;
+  limit: ReturnType<typeof limitStatus>;
+  currency: string;
+}) {
+  const { t } = useI18n();
+  const ratio = limit ? limit.ratio : slice.share;
+
+  return (
+    <>
+      <span className="spend-track">
+        <span
+          className="spend-fill"
+          style={{
+            width: `${Math.min(100, Math.max(2, ratio * 100))}%`,
+            background: limit ? LIMIT_COLOURS[limit.state] : slice.color,
+          }}
+        />
+      </span>
+      <span className="mono spend-value">
+        {formatMoney(slice.amountMinor, currency)}
+        {limit ? (
+          <span className={cn("budget-limit-note", limit.state)}>
+            {" / "}
+            {formatMoney(limit.limitMinor, currency)}
+          </span>
+        ) : null}
+      </span>
+      <span
+        className={cn("spend-share faint", limit && limit.state)}
+        title={limit ? t("budgetSetLimit") : t("budgetWhereItWent")}
+      >
+        %{Math.round(ratio * 100)}
+      </span>
+    </>
   );
 }
 
@@ -269,11 +313,6 @@ function Delta({ ratio, small = false }: { ratio: number; small?: boolean }) {
   );
 }
 
-const LIMIT_COLOURS = {
-  ok: "#22c55e",
-  close: "#eab308",
-  over: "#ef4444",
-} as const;
 
 /**
  * The monthly ceiling for one category, edited in place.

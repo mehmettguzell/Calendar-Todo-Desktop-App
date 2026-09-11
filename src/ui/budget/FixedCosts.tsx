@@ -1,35 +1,21 @@
 import { useMemo, useState } from "react";
-import { Check, Clock3, Plus, Repeat2, Trash2, X } from "lucide-react";
+import { Check, Clock3, Plus, Repeat2 } from "lucide-react";
 import { formatDate } from "@/domain/datetime";
 import { fold } from "@/domain/merchant";
 import {
   fixedCostTotals,
   fixedCostsInRange,
   formatMoney,
-  parseAmount,
-  MONEY_FLOWS,
   type BudgetCategory,
   type DateRange,
   type FixedCostRow,
-  type MoneyFlow,
 } from "@/domain/money";
-import type { LocalDate, Recurrence, RecurrenceFreq } from "@/domain/types";
+import type { LocalDate } from "@/domain/types";
 import { cn } from "@/lib/cn";
-import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n";
 import { useStore } from "@/state/store";
-
-const FLOW_LABEL: Record<MoneyFlow, TranslationKey> = {
-  INCOME: "budgetIncome",
-  EXPENSE: "budgetExpense",
-  INVESTMENT: "budgetInvestment",
-};
-
-/** Only the three cadences a standing charge actually comes in. */
-const CADENCES: { freq: RecurrenceFreq; labelKey: TranslationKey }[] = [
-  { freq: "MONTHLY", labelKey: "budgetRepeatMonthly" },
-  { freq: "WEEKLY", labelKey: "budgetRepeatWeekly" },
-  { freq: "YEARLY", labelKey: "budgetRepeatYearly" },
-];
+import { FixedEditor } from "./FixedEditor";
+import { describeCadence } from "./labels";
 
 /**
  * The money that comes round on its own: rent, salary, the gym, insurance.
@@ -136,83 +122,119 @@ export function FixedCosts({
         </p>
       ) : (
         <ul className="fixed-rows">
-          {rows.map((row) => {
-            const category = row.template.categoryId
-              ? (categoryById.get(row.template.categoryId) ?? null)
-              : null;
-            const open = editingId === row.template.id;
-            return (
-              <li key={row.template.id} className={cn("fixed-row", open && "open")}>
-                <button
-                  type="button"
-                  className="fixed-row-head"
-                  aria-expanded={open}
-                  title={t("ledgerEdit")}
-                  onClick={() => {
-                    setAdding(false);
-                    setEditingId(open ? null : row.template.id);
-                  }}
-                >
-                  <span
-                    className="fixed-row-icon"
-                    style={{
-                      background: `color-mix(in srgb, ${
-                        category?.color ?? "var(--text-faint)"
-                      } 18%, transparent)`,
-                    }}
-                    aria-hidden
-                  >
-                    {category?.icon ?? "🔁"}
-                  </span>
-
-                  <span className="fixed-row-text">
-                    <span className="fixed-row-name truncate">
-                      {row.template.note.trim() ||
-                        category?.name ||
-                        t("budgetUncategorised")}
-                    </span>
-                    <span className="fixed-row-when truncate">
-                      {describeCadence(row.template.recurrence, row.template.date, t)}
-                      {/* The category, unless the name already is it — a row
-                          called "Kira" does not need "· Kira" read back. */}
-                      {category &&
-                      row.template.note.trim() &&
-                      fold(category.name) !== fold(row.template.note)
-                        ? ` · ${category.name}`
-                        : ""}
-                    </span>
-                  </span>
-
-                  <Status row={row} />
-
-                  <span
-                    className={cn(
-                      "fixed-row-amount mono",
-                      row.template.flow.toLowerCase(),
-                    )}
-                  >
-                    {row.template.flow === "INCOME" ? "+" : "−"}
-                    {formatMoney(row.template.amountMinor, currency)}
-                  </span>
-                </button>
-
-                {open ? (
-                  <FixedEditor
-                    row={row}
-                    categories={categories}
-                    currency={currency}
-                    today={today}
-                    range={range}
-                    onDone={() => setEditingId(null)}
-                  />
-                ) : null}
-              </li>
-            );
-          })}
+          {rows.map((row) => (
+            <FixedRow
+              key={row.template.id}
+              row={row}
+              category={
+                row.template.categoryId
+                  ? (categoryById.get(row.template.categoryId) ?? null)
+                  : null
+              }
+              categories={categories}
+              currency={currency}
+              today={today}
+              range={range}
+              open={editingId === row.template.id}
+              onToggle={(next) => {
+                setAdding(false);
+                setEditingId(next);
+              }}
+            />
+          ))}
         </ul>
       )}
     </section>
   );
+}
+
+/** One fixed cost: what it is, when it repeats, and the form it opens into. */
+function FixedRow({
+  row,
+  category,
+  categories,
+  currency,
+  today,
+  range,
+  open,
+  onToggle,
+}: {
+  row: FixedCostRow;
+  category: BudgetCategory | null;
+  categories: BudgetCategory[];
+  currency: string;
+  today: LocalDate;
+  range: DateRange;
+  open: boolean;
+  onToggle: (next: string | null) => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <li className={cn("fixed-row", open && "open")}>
+      <button
+        type="button"
+        className="fixed-row-head"
+        aria-expanded={open}
+        title={t("ledgerEdit")}
+        onClick={() => onToggle(open ? null : row.template.id)}
+      >
+        <span
+          className="fixed-row-icon"
+          style={{
+            background: `color-mix(in srgb, ${
+              category?.color ?? "var(--text-faint)"
+            } 18%, transparent)`,
+          }}
+          aria-hidden
+        >
+          {category?.icon ?? "🔁"}
+        </span>
+
+        <span className="fixed-row-text">
+          <span className="fixed-row-name truncate">
+            {row.template.note.trim() ||
+              category?.name ||
+              t("budgetUncategorised")}
+          </span>
+          <span className="fixed-row-when truncate">
+            {describeCadence(row.template.recurrence, row.template.date, t)}
+            {categorySuffix(row, category)}
+          </span>
+        </span>
+
+        <Status row={row} />
+
+        <span
+          className={cn(
+            "fixed-row-amount mono",
+            row.template.flow.toLowerCase(),
+          )}
+        >
+          {row.template.flow === "INCOME" ? "+" : "−"}
+          {formatMoney(row.template.amountMinor, currency)}
+        </span>
+      </button>
+
+      {open ? (
+        <FixedEditor
+          row={row}
+          categories={categories}
+          currency={currency}
+          today={today}
+          range={range}
+          onDone={() => onToggle(null)}
+        />
+      ) : null}
+    </li>
+  );
+}
+
+/** The category, unless the name already says it: "Kira" needs no "Kira" after it. */
+function categorySuffix(row: FixedCostRow, category: BudgetCategory | null): string {
+  const name = row.template.note.trim();
+  if (!category || !name || fold(category.name) === fold(name)) return "";
+  return " · " + category.name;
 }
 
 /** Where this template stands in the window on screen. */
@@ -244,286 +266,4 @@ function Status({ row }: { row: FixedCostRow }) {
       {next ? formatDate(next, "d MMM") : t("fixedPending")}
     </span>
   );
-}
-
-/**
- * The one form, used to add and to edit.
- *
- * Same fields either way on purpose: a fixed entry the user created and one
- * they are correcting are the same record, and two different forms would be two
- * chances to disagree about what one is.
- */
-function FixedEditor({
-  row,
-  categories,
-  currency,
-  today,
-  range,
-  onDone,
-}: {
-  row: FixedCostRow | null;
-  categories: BudgetCategory[];
-  currency: string;
-  today: LocalDate;
-  range: DateRange;
-  onDone: () => void;
-}) {
-  const { t } = useI18n();
-  const addTransaction = useStore((s) => s.addTransaction);
-  const updateTransaction = useStore((s) => s.updateTransaction);
-  const deleteTransaction = useStore((s) => s.deleteTransaction);
-  const ensureBudgetCategory = useStore((s) => s.ensureBudgetCategory);
-
-  const template = row?.template ?? null;
-  const rule = template?.recurrence ?? null;
-
-  const [name, setName] = useState(template?.note ?? "");
-  const [amount, setAmount] = useState(
-    template ? String(template.amountMinor / 100) : "",
-  );
-  const [flow, setFlow] = useState<MoneyFlow>(template?.flow ?? "EXPENSE");
-  const [categoryName, setCategoryName] = useState(
-    categories.find((c) => c.id === template?.categoryId)?.name ?? "",
-  );
-  const [freq, setFreq] = useState<RecurrenceFreq>(rule?.freq ?? "MONTHLY");
-  const [monthDay, setMonthDay] = useState<string>(
-    rule?.byMonthDay != null
-      ? String(rule.byMonthDay)
-      : String(Number((template?.date ?? today).slice(8, 10))),
-  );
-  const [start, setStart] = useState<LocalDate>(template?.date ?? today);
-  const [until, setUntil] = useState<string>(rule?.until ?? "");
-  const [error, setError] = useState<string | null>(null);
-
-  /*
-   * Offered only when this period already holds an entry from this template.
-   * A rent rise announced mid-month usually applies to the rent already
-   * charged, and hunting that one row down in the ledger afterwards is exactly
-   * the chore this panel is meant to remove. Off for past periods, where the
-   * recorded figure is history rather than a mistake.
-   */
-  const currentEntry =
-    row?.recorded.find((entry) => entry.id !== template?.id) ??
-    (template && template.date >= range.from && template.date <= range.to
-      ? template
-      : null);
-  const [alsoCurrent, setAlsoCurrent] = useState(
-    currentEntry !== null && currentEntry !== template && range.to >= today,
-  );
-
-  const suggestions = categories.filter((category) => category.flow === flow);
-
-  const buildRule = (): Recurrence => {
-    const rest: Recurrence = { freq, interval: 1 };
-    if (freq === "MONTHLY") {
-      const day = Number(monthDay);
-      rest.byMonthDay = day === -1 ? -1 : Math.min(31, Math.max(1, day || 1));
-    }
-    if (until) rest.until = until;
-    return rest;
-  };
-
-  const submit = (event: React.FormEvent) => {
-    event.preventDefault();
-    const amountMinor = parseAmount(amount);
-    if (amountMinor === null || amountMinor === 0) {
-      setError(t("budgetAmountInvalid"));
-      return;
-    }
-
-    const category = categoryName.trim()
-      ? ensureBudgetCategory(categoryName, flow)
-      : null;
-    const patch = {
-      amountMinor: Math.abs(amountMinor),
-      flow,
-      categoryId: category?.id ?? null,
-      note: name.trim(),
-    };
-
-    if (!template) {
-      addTransaction({ ...patch, date: start, recurrence: buildRule() });
-      onDone();
-      return;
-    }
-
-    updateTransaction(template.id, {
-      ...patch,
-      date: start,
-      recurrence: buildRule(),
-    });
-    if (alsoCurrent && currentEntry && currentEntry.id !== template.id) {
-      updateTransaction(currentEntry.id, patch);
-    }
-    onDone();
-  };
-
-  const remove = () => {
-    if (!template) return;
-    const label = template.note.trim() || formatMoney(template.amountMinor, currency);
-    if (!window.confirm(t("fixedDeleteConfirm", { name: label }))) return;
-    deleteTransaction(template.id);
-    onDone();
-  };
-
-  return (
-    <form className="fixed-editor" onSubmit={submit}>
-      <div className="segmented-tabs is-sm">
-        {MONEY_FLOWS.map((option) => (
-          <button
-            key={option}
-            type="button"
-            aria-pressed={flow === option}
-            onClick={() => setFlow(option)}
-          >
-            {t(FLOW_LABEL[option])}
-          </button>
-        ))}
-      </div>
-
-      <label className="fixed-field grow">
-        <span>{t("fixedName")}</span>
-        <input
-          className="input"
-          placeholder={t("fixedNamePlaceholder")}
-          value={name}
-          autoFocus
-          onChange={(e) => setName(e.target.value)}
-        />
-      </label>
-
-      <label className="fixed-field">
-        <span>{t("budgetAmount")}</span>
-        <input
-          className="input mono"
-          inputMode="decimal"
-          value={amount}
-          aria-invalid={error !== null}
-          onChange={(e) => {
-            setAmount(e.target.value);
-            setError(null);
-          }}
-        />
-      </label>
-
-      <label className="fixed-field">
-        <span>{t("budgetCategory")}</span>
-        <input
-          className="input"
-          list="fixed-category-options"
-          value={categoryName}
-          onChange={(e) => setCategoryName(e.target.value)}
-        />
-        <datalist id="fixed-category-options">
-          {suggestions.map((category) => (
-            <option key={category.id} value={category.name} />
-          ))}
-        </datalist>
-      </label>
-
-      <label className="fixed-field">
-        <span>{t("budgetRepeat")}</span>
-        <select
-          className="input"
-          value={freq}
-          onChange={(e) => setFreq(e.target.value as RecurrenceFreq)}
-        >
-          {CADENCES.map((cadence) => (
-            <option key={cadence.freq} value={cadence.freq}>
-              {t(cadence.labelKey)}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {/* Only monthly has a day to choose. Rent on "the last day" is common
-          enough — and impossible to write as a number that works in February —
-          to deserve its own option rather than a 28/30/31 guess. */}
-      {freq === "MONTHLY" ? (
-        <label className="fixed-field">
-          <span>{t("fixedDayOfMonth")}</span>
-          <select
-            className="input"
-            value={monthDay}
-            onChange={(e) => setMonthDay(e.target.value)}
-          >
-            {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
-              <option key={day} value={day}>
-                {day}
-              </option>
-            ))}
-            <option value="-1">{t("fixedLastDayOption")}</option>
-          </select>
-        </label>
-      ) : null}
-
-      <label className="fixed-field">
-        <span>{t("fixedStart")}</span>
-        <input
-          className="input"
-          type="date"
-          value={start}
-          onChange={(e) => setStart(e.target.value || today)}
-        />
-      </label>
-
-      <label className="fixed-field">
-        <span>{t("fixedEnd")}</span>
-        <input
-          className="input"
-          type="date"
-          title={t("fixedEndHint")}
-          value={until}
-          onChange={(e) => setUntil(e.target.value)}
-        />
-      </label>
-
-      {currentEntry && currentEntry.id !== template?.id ? (
-        <label className="fixed-also">
-          <input
-            type="checkbox"
-            checked={alsoCurrent}
-            onChange={(e) => setAlsoCurrent(e.target.checked)}
-          />
-          {t("fixedAlsoUpdateCurrent")}
-        </label>
-      ) : null}
-
-      <div className="fixed-editor-actions">
-        <button type="submit" className="btn primary sm">
-          {template ? t("save") : t("add")}
-        </button>
-        <button type="button" className="btn ghost sm" onClick={onDone}>
-          <X size={13} /> {t("cancel")}
-        </button>
-        {template ? (
-          <button type="button" className="btn ghost sm danger" onClick={remove}>
-            <Trash2 size={13} /> {t("delete")}
-          </button>
-        ) : null}
-        {error ? <span className="budget-entry-error">{error}</span> : null}
-      </div>
-    </form>
-  );
-}
-
-/**
- * "Her ayın 5. günü" — the sentence, not the rule.
- *
- * Short enough to sit on one line of a row, which is why it does not reach for
- * `describeRecurrence`: that one is written for a task panel with room for
- * "every 2 weeks on Monday, Wednesday until 3 March".
- */
-function describeCadence(
-  rule: Recurrence | null | undefined,
-  anchor: LocalDate,
-  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
-): string {
-  if (!rule) return "";
-  if (rule.freq === "WEEKLY") return t("budgetRepeatWeekly");
-  if (rule.freq === "YEARLY") return t("budgetRepeatYearly");
-  if (rule.freq !== "MONTHLY") return t("budgetRepeatMonthly");
-  if (rule.byMonthDay === -1) return t("fixedMonthlyLast");
-  const day = rule.byMonthDay ?? Number(anchor.slice(8, 10));
-  return t("fixedMonthlyOn", { day });
 }

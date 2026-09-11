@@ -1,10 +1,8 @@
 import { useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { toLocalDate } from "@/domain/datetime";
-import { identifyMerchant } from "@/domain/merchant";
 import {
   accountNames,
-  categoryNameFor,
   formatMoney,
   isProvisional,
   parseAmount,
@@ -14,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { useI18n } from "@/lib/i18n";
 import { useStore } from "@/state/store";
 import { Modal } from "@/ui/components/primitives";
+import { entryFromText } from "./merchantEntry";
 
 /**
  * The end-of-day question.
@@ -53,18 +52,11 @@ export function DaySpendPrompt({ onClose }: { onClose: () => void }) {
       return;
     }
     const text = where.trim();
-    const match = text ? identifyMerchant(text) : null;
-    const category = match?.categoryKey
-      ? ensureBudgetCategory(categoryNameFor(match.categoryKey, language), "EXPENSE")
-      : null;
-
     addTransaction({
       date: today,
       amountMinor,
       flow: "EXPENSE",
-      categoryId: category?.id ?? null,
-      note: text,
-      merchant: match?.confidence === "none" ? null : (match?.name ?? null),
+      ...entryFromText(text, language, ensureBudgetCategory),
       account: account.trim() || null,
       origin: "manual",
     });

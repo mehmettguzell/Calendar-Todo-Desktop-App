@@ -7,11 +7,11 @@ import {
   categoryNameFor,
   formatMoney,
   parseAmount,
-  type BudgetCategory,
 } from "@/domain/money";
 import { useI18n } from "@/lib/i18n";
 import { useStore } from "@/state/store";
 import { Modal } from "@/ui/components/primitives";
+import { entryFromText } from "./merchantEntry";
 
 /**
  * Logging a purchase at the moment it happens.
@@ -74,18 +74,11 @@ export function SpendCapture({
     }
 
     const text = where.trim();
-    const match = text ? identifyMerchant(text) : null;
-    const category: BudgetCategory | null = match?.categoryKey
-      ? ensureBudgetCategory(categoryNameFor(match.categoryKey, language), "EXPENSE")
-      : null;
-
     addTransaction({
       date: toLocalDate(new Date()),
       amountMinor,
       flow: "EXPENSE",
-      categoryId: category?.id ?? null,
-      note: text,
-      merchant: match?.confidence === "none" ? null : (match?.name ?? null),
+      ...entryFromText(text, language, ensureBudgetCategory),
       account: account.trim() || null,
       origin: "manual",
     });
