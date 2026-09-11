@@ -72,13 +72,12 @@ Standing rules for this repo. They override default habits. Decision record:
    co-author trailer. The commit author is the repo owner.
 
 Enforced by ESLint (`max-lines` 400, `max-lines-per-function` 50, `complexity`):
-**error** under `src/sync/`, `src/data/dto/`, `src/data/localDocument.ts` and
-the rebuilt store (`src/state/store.ts`, `storeState`, `storeTypes`,
-`taskMutations`, `slices/`), **warn** elsewhere. `max-lines-per-function` is off
-for the store files: it reads a slice factory — an object literal of actions —
-as one enormous function, so the per-method limit is held by review there.
-Remaining files (`src/data/db.ts`, `state/authStore.ts`, `state/selectors.ts`,
-the views) graduate when their own pass lands. Run `make lint`.
+**error** under `src/sync/`, `src/state/`, `src/data/dto/` and
+`src/data/localDocument.ts`; **warn** elsewhere. `max-lines-per-function` is off
+under `src/state/`: it reads a slice factory — an object literal of actions — as
+one enormous function, so the per-method limit is held by review there.
+Remaining files (`src/data/db.ts`, the views, `src/domain/money.ts` and friends)
+graduate when their own pass lands. Run `make lint`.
 
 ### How refactors proceed
 
