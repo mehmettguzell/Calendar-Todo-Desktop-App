@@ -6,27 +6,23 @@ export function formatErrorMessage(err: unknown): string {
   if (!err) return "Bilinmeyen bir hata oluştu.";
   if (typeof err === "string") return err;
   if (err instanceof Error) return err.message;
-  if (typeof err === "object") {
-    const obj = err as Record<string, unknown>;
-    if (typeof obj.message === "string" && obj.message.trim()) {
-      return obj.message;
-    }
-    if (typeof obj.error_description === "string" && obj.error_description.trim()) {
-      return obj.error_description;
-    }
-    if (typeof obj.error === "string" && obj.error.trim()) {
-      return obj.error;
-    }
-    if (typeof obj.details === "string" && obj.details.trim()) {
-      return obj.details;
-    }
-    try {
-      return JSON.stringify(err);
-    } catch {
-      return String(err);
-    }
-  }
+  if (typeof err === "object") return messageFromObject(err as Record<string, unknown>);
   return String(err);
+}
+
+/** The fields a thrown object might carry its message in, in order of trust. */
+const MESSAGE_FIELDS = ["message", "error_description", "error", "details"];
+
+function messageFromObject(obj: Record<string, unknown>): string {
+  for (const field of MESSAGE_FIELDS) {
+    const value = obj[field];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  try {
+    return JSON.stringify(obj);
+  } catch {
+    return String(obj);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -57,28 +53,23 @@ export function isRetryableSyncFailure(kind: SyncFailureKind): boolean {
   return kind === "offline" || kind === "timeout" || kind === "server" || kind === "unknown";
 }
 
-export function classifySyncError(err: unknown): SyncFailureKind {
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return "offline";
+interface Failure {
+  code: string;
+  status: number;
+  message: string;
+}
 
-  const obj = (err ?? {}) as Record<string, unknown>;
-  const code = typeof obj.code === "string" ? obj.code : "";
-  const status = typeof obj.status === "number" ? obj.status : 0;
-  const message = formatErrorMessage(err).toLowerCase();
+const OFFLINE_SIGNS = [
+  "failed to fetch",
+  "networkerror",
+  "network request failed",
+  "err_internet_disconnected",
+  "fetch failed",
+];
 
-  if (message.includes("timed out") || message.includes("timeout")) {
-    return "timeout";
-  }
-  if (
-    message.includes("failed to fetch") ||
-    message.includes("networkerror") ||
-    message.includes("network request failed") ||
-    message.includes("err_internet_disconnected") ||
-    message.includes("fetch failed")
-  ) {
-    return "offline";
-  }
-  // PGRST301 expired/invalid JWT; 42501 insufficient privilege; RLS refusals.
-  if (
+// PGRST301 expired/invalid JWT; 42501 insufficient privilege; RLS refusals.
+function isAuthFailure({ code, status, message }: Failure): boolean {
+  return (
     status === 401 ||
     status === 403 ||
     code === "PGRST301" ||
@@ -86,21 +77,55 @@ export function classifySyncError(err: unknown): SyncFailureKind {
     message.includes("jwt") ||
     message.includes("row-level security") ||
     message.includes("not authenticated")
-  ) {
-    return "auth";
-  }
-  // PGRST204 unknown column, PGRST205 unknown table, 42P01/42703 the same from
-  // Postgres itself. The cloud project is behind this app's schema.
-  if (
+  );
+}
+
+// PGRST204 unknown column, PGRST205 unknown table, 42P01/42703 the same from
+// Postgres itself. The cloud project is behind this app's schema.
+function isSchemaFailure({ code, message }: Failure): boolean {
+  return (
     code === "PGRST204" ||
     code === "PGRST205" ||
     code === "42P01" ||
     code === "42703" ||
     message.includes("schema cache") ||
     message.includes("does not exist")
-  ) {
-    return "schema";
-  }
-  if (status === 429 || status >= 500) return "server";
-  return "unknown";
+  );
+}
+
+/** What a thrown value tells us, normalised so the predicates stay readable. */
+function failureOf(err: unknown): Failure {
+  const obj = (err ?? {}) as Record<string, unknown>;
+  return {
+    code: typeof obj.code === "string" ? obj.code : "",
+    status: typeof obj.status === "number" ? obj.status : 0,
+    message: formatErrorMessage(err).toLowerCase(),
+  };
+}
+
+function isTimeout({ message }: Failure): boolean {
+  return message.includes("timed out") || message.includes("timeout");
+}
+
+function isOffline({ message }: Failure): boolean {
+  return OFFLINE_SIGNS.some((sign) => message.includes(sign));
+}
+
+function isServerFailure({ status }: Failure): boolean {
+  return status === 429 || status >= 500;
+}
+
+/** In order: the browser's own answer first, then the most specific cause. */
+const CAUSES: [(failure: Failure) => boolean, SyncFailureKind][] = [
+  [isTimeout, "timeout"],
+  [isOffline, "offline"],
+  [isAuthFailure, "auth"],
+  [isSchemaFailure, "schema"],
+  [isServerFailure, "server"],
+];
+
+export function classifySyncError(err: unknown): SyncFailureKind {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return "offline";
+  const failure = failureOf(err);
+  return CAUSES.find(([matches]) => matches(failure))?.[1] ?? "unknown";
 }
