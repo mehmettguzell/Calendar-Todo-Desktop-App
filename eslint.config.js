@@ -5,9 +5,7 @@ import globals from "globals";
 /**
  * Lint policy follows CONTEXT.md § Engineering standards:
  *   - files <= 400 lines, functions <= 50 lines, bounded complexity
- *   - ERROR under src/sync/** and the rebuilt src/data/ layers (dto, supabase)
- *   - WARN everywhere else, including src/data/db.ts and friends, which
- *     graduate to ERROR when their own refactor pass lands
+ *   - ERROR everywhere under src/, now that every layer has had its pass
  *   - tests and src/lib/i18n.ts are exempt from the size limits
  */
 
@@ -64,6 +62,10 @@ export default tseslint.config(
       "src/sync/**/*.{ts,tsx}",
       "src/domain/**/*.{ts,tsx}",
       "src/data/**/*.{ts,tsx}",
+      "src/ui/**/*.{ts,tsx}",
+      "src/services/**/*.{ts,tsx}",
+      "src/lib/**/*.{ts,tsx}",
+      "src/App.tsx",
     ],
     rules: {
       ...sizeLimits,
@@ -108,7 +110,11 @@ export default tseslint.config(
      * hooks and helpers in `.ts` files keep the per-function limit.
      */
     files: ["src/ui/**/*.tsx", "src/App.tsx"],
-    rules: { "max-lines-per-function": "off" },
+    rules: {
+      ...sizeLimits,
+      complexity: ["error", 12],
+      "max-lines-per-function": "off",
+    },
   },
 
   {
