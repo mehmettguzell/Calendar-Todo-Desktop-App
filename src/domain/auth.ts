@@ -48,88 +48,81 @@ export interface TrialCalculation {
 /**
  * Calculates accurate trial remaining time and early bird discount eligibility.
  */
+const DAY_MS = 1000 * 60 * 60 * 24;
+const HOUR_MS = 1000 * 60 * 60;
+
+/** Never negative: a window that has closed has nothing left in it. */
+function remaining(ms: number): { days: number; hours: number } {
+  return {
+    days: Math.max(0, Math.ceil(ms / DAY_MS)),
+    hours: Math.max(0, Math.ceil(ms / HOUR_MS)),
+  };
+}
+
+/** No subscription row yet — offline, or a guest. The full trial is offered. */
+function guestTrial(): TrialCalculation {
+  return {
+    status: "TRIAL",
+    planTier: "FREE",
+    isPro: false,
+    isTrialActive: true,
+    isExpired: false,
+    daysLeftInTrial: 14,
+    hoursLeftInTrial: 14 * 24,
+    isEarlyBirdEligible: true,
+    earlyBirdDaysLeft: 7,
+    earlyBirdHoursLeft: 7 * 24,
+  };
+}
+
+/** Paid up: no clocks left to run. */
+function proStatus(subscription: UserSubscription): TrialCalculation {
+  return {
+    status: "PRO_ACTIVE",
+    planTier: subscription.planTier,
+    isPro: true,
+    isTrialActive: false,
+    isExpired: false,
+    daysLeftInTrial: 0,
+    hoursLeftInTrial: 0,
+    isEarlyBirdEligible: false,
+    earlyBirdDaysLeft: 0,
+    earlyBirdHoursLeft: 0,
+  };
+}
+
 export function calculateTrialStatus(
   subscription: UserSubscription | null,
   now: Date = new Date(),
 ): TrialCalculation {
-  if (!subscription) {
-    // Default offline/guest trial state (14 days)
-    return {
-      status: "TRIAL",
-      planTier: "FREE",
-      isPro: false,
-      isTrialActive: true,
-      isExpired: false,
-      daysLeftInTrial: 14,
-      hoursLeftInTrial: 14 * 24,
-      isEarlyBirdEligible: true,
-      earlyBirdDaysLeft: 7,
-      earlyBirdHoursLeft: 7 * 24,
-    };
-  }
-
-  const isPro = subscription.status === "PRO_ACTIVE";
-  if (isPro) {
-    return {
-      status: "PRO_ACTIVE",
-      planTier: subscription.planTier,
-      isPro: true,
-      isTrialActive: false,
-      isExpired: false,
-      daysLeftInTrial: 0,
-      hoursLeftInTrial: 0,
-      isEarlyBirdEligible: false,
-      earlyBirdDaysLeft: 0,
-      earlyBirdHoursLeft: 0,
-    };
-  }
+  if (!subscription) return guestTrial();
+  if (subscription.status === "PRO_ACTIVE") return proStatus(subscription);
 
   const currentTime = now.getTime();
-  const trialEndTime = new Date(subscription.trialEndsAt).getTime();
-  const earlyBirdEndTime = new Date(
-    subscription.earlyBirdDiscountEndsAt,
-  ).getTime();
-
-  const trialDiffMs = trialEndTime - currentTime;
-  const earlyBirdDiffMs = earlyBirdEndTime - currentTime;
+  const trial = remaining(
+    new Date(subscription.trialEndsAt).getTime() - currentTime,
+  );
+  const earlyBirdMs =
+    new Date(subscription.earlyBirdDiscountEndsAt).getTime() - currentTime;
+  const earlyBird = remaining(earlyBirdMs);
 
   const isTrialActive =
-    trialDiffMs > 0 &&
+    trial.hours > 0 &&
     subscription.status !== "EXPIRED" &&
     subscription.status !== "CANCELLED";
-  const isExpired = !isTrialActive && !isPro;
-
-  const daysLeftInTrial = Math.max(
-    0,
-    Math.ceil(trialDiffMs / (1000 * 60 * 60 * 24)),
-  );
-  const hoursLeftInTrial = Math.max(
-    0,
-    Math.ceil(trialDiffMs / (1000 * 60 * 60)),
-  );
-
-  const isEarlyBirdEligible =
-    subscription.hasEarlyBirdDiscount && earlyBirdDiffMs > 0 && isTrialActive;
-  const earlyBirdDaysLeft = Math.max(
-    0,
-    Math.ceil(earlyBirdDiffMs / (1000 * 60 * 60 * 24)),
-  );
-  const earlyBirdHoursLeft = Math.max(
-    0,
-    Math.ceil(earlyBirdDiffMs / (1000 * 60 * 60)),
-  );
 
   return {
-    status: isExpired ? "EXPIRED" : subscription.status,
+    status: isTrialActive ? subscription.status : "EXPIRED",
     planTier: subscription.planTier,
-    isPro,
+    isPro: false,
     isTrialActive,
-    isExpired,
-    daysLeftInTrial,
-    hoursLeftInTrial,
-    isEarlyBirdEligible,
-    earlyBirdDaysLeft,
-    earlyBirdHoursLeft,
+    isExpired: !isTrialActive,
+    daysLeftInTrial: trial.days,
+    hoursLeftInTrial: trial.hours,
+    isEarlyBirdEligible:
+      subscription.hasEarlyBirdDiscount && earlyBirdMs > 0 && isTrialActive,
+    earlyBirdDaysLeft: earlyBird.days,
+    earlyBirdHoursLeft: earlyBird.hours,
   };
 }
 
@@ -251,6 +244,7 @@ export function avatarFromMetadata(
  * role, which only the stored row knows. `previous` is trusted only when it
  * describes the same person.
  */
+/* eslint-disable-next-line complexity -- a flat defaulting map, not branching */
 export function profileFromAuthUser(
   authUser: AuthUserLike,
   previous?: UserProfile | null,
