@@ -349,7 +349,6 @@ export function parseQuickAdd(
  * it still works, in raw form — which is what a test asserting on shapes
  * rather than on words wants.
  */
-/* eslint-disable-next-line complexity -- a flat list of chips, one per field */
 export function describeParse(
   parsed: ParsedQuickAdd,
   format?: {

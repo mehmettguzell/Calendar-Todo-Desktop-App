@@ -293,7 +293,6 @@ export interface SettlePatch {
   origin: "manual" | "alert" | "statement";
 }
 
-/* eslint-disable-next-line complexity -- one guarded assignment per field */
 export function settlePatch(
   entry: Transaction,
   row: {
