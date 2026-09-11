@@ -166,90 +166,133 @@ function totalOver(transactions: Transaction[], range: DateRange): number {
   return total;
 }
 
-export function analyseSpending(
-  transactions: Transaction[],
-  categories: BudgetCategory[],
-  range: DateRange,
-  options: AnalyseOptions = {},
-): SpendingReport {
-  const categoryById = new Map(categories.map((category) => [category.id, category]));
-  const entries = spendingEntries(transactions, range);
+type MerchantBucket = Bucket & { categoryId: string | null; label: string };
 
-  const perCategory = new Map<string, Bucket>();
-  const perMerchant = new Map<string, Bucket & { categoryId: string | null; label: string }>();
-  const perMonth = new Map<string, number>();
-  let biggest: SpendingReport["biggest"] = null;
+interface Tallies {
+  perCategory: Map<string, Bucket>;
+  perMerchant: Map<string, MerchantBucket>;
+  perMonth: Map<string, number>;
+  biggest: SpendingReport["biggest"];
+}
+
+/** One pass over the entries, filling every bucket the report needs. */
+function tally(entries: ReturnType<typeof spendingEntries>): Tallies {
+  const out: Tallies = {
+    perCategory: new Map(),
+    perMerchant: new Map(),
+    perMonth: new Map(),
+    biggest: null,
+  };
 
   for (const entry of entries) {
     const categoryKey = entry.categoryId ?? UNCATEGORISED;
-    const category = perCategory.get(categoryKey) ?? emptyBucket(entry.date);
+    const category = out.perCategory.get(categoryKey) ?? emptyBucket(entry.date);
     absorb(category, entry);
-    perCategory.set(categoryKey, category);
+    out.perCategory.set(categoryKey, category);
 
     const label = merchantOf(entry);
     // Keyed by category as well as name: the same shop can legitimately sit in
     // two categories, and merging them would make a slice that sums to neither.
     const merchantKey = `${categoryKey}::${fold(label)}`;
     const merchant =
-      perMerchant.get(merchantKey) ??
+      out.perMerchant.get(merchantKey) ??
       Object.assign(emptyBucket(entry.date), {
         categoryId: entry.categoryId ?? null,
         label,
       });
     absorb(merchant, entry);
-    perMerchant.set(merchantKey, merchant);
+    out.perMerchant.set(merchantKey, merchant);
 
     const month = entry.date.slice(0, 7);
     const delta = entry.flow === "EXPENSE" ? entry.amountMinor : -entry.amountMinor;
-    perMonth.set(month, (perMonth.get(month) ?? 0) + delta);
+    out.perMonth.set(month, (out.perMonth.get(month) ?? 0) + delta);
 
-    if (entry.flow === "EXPENSE" && (!biggest || entry.amountMinor > biggest.amountMinor)) {
-      biggest = { merchant: label, amountMinor: entry.amountMinor, date: entry.date };
+    const bigger = !out.biggest || entry.amountMinor > out.biggest.amountMinor;
+    if (entry.flow === "EXPENSE" && bigger) {
+      out.biggest = { merchant: label, amountMinor: entry.amountMinor, date: entry.date };
     }
   }
+  return out;
+}
 
-  const grossMinor = [...perCategory.values()].reduce(
-    (sum, bucket) => sum + bucket.grossMinor,
-    0,
+/** How much bigger or smaller than last time, or null when there is no last time. */
+function changeRatioOf(current: number, previous: number | null): number | null {
+  return previous && previous !== 0 ? (current - previous) / previous : null;
+}
+
+function toCategorySlice(input: {
+  categoryId: string;
+  bucket: Bucket;
+  categoryById: Map<string, BudgetCategory>;
+  merchantSlices: MerchantSlice[];
+  previousByCategory: Map<string, number> | null;
+  totalMinor: number;
+}): CategorySlice {
+  const { categoryId, bucket, categoryById, merchantSlices, totalMinor } = input;
+  const category = categoryId === UNCATEGORISED ? null : categoryById.get(categoryId);
+  const amountMinor = bucket.grossMinor - bucket.refundMinor;
+  const previousMinor = input.previousByCategory?.get(categoryId) ?? null;
+
+  return {
+    categoryId: categoryId === UNCATEGORISED ? null : categoryId,
+    name: category?.name ?? "",
+    color: category?.color ?? "#94a3b8",
+    icon: category?.icon ?? "•",
+    amountMinor,
+    count: bucket.count,
+    share: totalMinor > 0 ? amountMinor / totalMinor : 0,
+    merchants: merchantSlices
+      .filter((slice) => (slice.categoryId ?? UNCATEGORISED) === categoryId)
+      .sort((a, b) => b.amountMinor - a.amountMinor),
+    previousMinor,
+    changeRatio: changeRatioOf(amountMinor, previousMinor),
+  };
+}
+
+/** Gross out, refunds back in, and the net of the two. */
+function totalsOf(perCategory: Map<string, Bucket>): {
+  grossMinor: number;
+  refundMinor: number;
+  totalMinor: number;
+} {
+  const buckets = [...perCategory.values()];
+  const grossMinor = buckets.reduce((sum, b) => sum + b.grossMinor, 0);
+  const refundMinor = buckets.reduce((sum, b) => sum + b.refundMinor, 0);
+  return { grossMinor, refundMinor, totalMinor: grossMinor - refundMinor };
+}
+
+export function analyseSpending(
+  transactions: Transaction[],
+  categories: BudgetCategory[],
+  range: DateRange,
+  options: AnalyseOptions = {},
+): SpendingReport {
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const { perCategory, perMerchant, perMonth, biggest } = tally(
+    spendingEntries(transactions, range),
   );
-  const refundMinor = [...perCategory.values()].reduce(
-    (sum, bucket) => sum + bucket.refundMinor,
-    0,
-  );
-  const totalMinor = grossMinor - refundMinor;
+
+  const { grossMinor, refundMinor, totalMinor } = totalsOf(perCategory);
 
   const merchantSlices = [...perMerchant.entries()].map(([key, bucket]) =>
     toMerchantSlice(key, bucket, perCategory),
   );
-
   const previousRange = options.compareWith ?? null;
   const previousByCategory = previousRange
     ? categoryTotals(transactions, previousRange)
     : null;
 
-  const categorySlices: CategorySlice[] = [...perCategory.entries()]
-    .map(([categoryId, bucket]) => {
-      const category = categoryId === UNCATEGORISED ? null : categoryById.get(categoryId);
-      const amountMinor = bucket.grossMinor - bucket.refundMinor;
-      const previousMinor = previousByCategory?.get(categoryId) ?? null;
-      return {
-        categoryId: categoryId === UNCATEGORISED ? null : categoryId,
-        name: category?.name ?? "",
-        color: category?.color ?? "#94a3b8",
-        icon: category?.icon ?? "•",
-        amountMinor,
-        count: bucket.count,
-        share: totalMinor > 0 ? amountMinor / totalMinor : 0,
-        merchants: merchantSlices
-          .filter((slice) => (slice.categoryId ?? UNCATEGORISED) === categoryId)
-          .sort((a, b) => b.amountMinor - a.amountMinor),
-        previousMinor,
-        changeRatio:
-          previousMinor && previousMinor !== 0
-            ? (amountMinor - previousMinor) / previousMinor
-            : null,
-      };
-    })
+  const categorySlices = [...perCategory.entries()]
+    .map(([categoryId, bucket]) =>
+      toCategorySlice({
+        categoryId,
+        bucket,
+        categoryById,
+        merchantSlices,
+        previousByCategory,
+        totalMinor,
+      }),
+    )
     .sort((a, b) => b.amountMinor - a.amountMinor);
 
   const dayCount = Math.max(1, daysBetween(range.from, range.to) + 1);
@@ -269,10 +312,7 @@ export function analyseSpending(
     perDayMinor: Math.round(totalMinor / dayCount),
     biggest,
     previousTotalMinor,
-    changeRatio:
-      previousTotalMinor && previousTotalMinor !== 0
-        ? (totalMinor - previousTotalMinor) / previousTotalMinor
-        : null,
+    changeRatio: changeRatioOf(totalMinor, previousTotalMinor),
   };
 }
 
