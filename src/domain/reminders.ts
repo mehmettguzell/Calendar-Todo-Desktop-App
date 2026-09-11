@@ -152,6 +152,33 @@ export function nextReminderInstant(
  * already fired, or an occurrence the user has since closed — so that "is it due
  * now?" and "when is it next due?" can never answer from different rules.
  */
+/**
+ * Has this reminder already gone off for `date`?
+ *
+ * A one-off reminder is finished the moment it has FIRED — including a multi-day
+ * task, which yields one candidate date per day it covers and would otherwise
+ * nag once for each. Only a recurring series needs the per-date check, because
+ * there the reminder stays PENDING for the next occurrence. A snooze re-arms it
+ * either way.
+ */
+function alreadyFiredFor(reminder: Reminder, isSeries: boolean, date: LocalDate | null): boolean {
+  if (reminder.snoozedUntil !== null) return false;
+  if (!isSeries) return reminder.status === "FIRED";
+  return (
+    date !== null && reminder.lastFiredFor !== null && date <= reminder.lastFiredFor
+  );
+}
+
+/** Silent because it was dismissed, the task is gone, or it is still snoozed. */
+function isMuted(reminder: Reminder, task: Task | undefined, now: Date): boolean {
+  if (reminder.status === "DISMISSED") return true;
+  if (!task || task.deletedAt) return true;
+  return (
+    reminder.snoozedUntil !== null &&
+    fromInstant(reminder.snoozedUntil).getTime() > now.getTime()
+  );
+}
+
 function firstDelivery(
   reminder: Reminder,
   tasks: Map<string, Task>,
@@ -162,31 +189,12 @@ function firstDelivery(
   to: LocalDate,
   accept: (firesAt: Date) => boolean,
 ): DueReminder | null {
-  if (reminder.status === "DISMISSED") return null;
   const task = tasks.get(reminder.taskId);
-  if (!task || task.deletedAt) return null;
-
-  if (reminder.snoozedUntil && fromInstant(reminder.snoozedUntil).getTime() > now.getTime()) {
-    return null;
-  }
+  if (isMuted(reminder, task, now) || !task) return null;
 
   const isSeries = task.recurrence !== null;
   for (const date of candidateOccurrenceDates(task, reminder, from, to)) {
-    // Already delivered, and not re-armed by a snooze.
-    //
-    // A one-off reminder is finished the moment it has FIRED — including a
-    // multi-day task, which now yields one candidate date per day it covers
-    // and would otherwise nag once for each of them. Only a recurring series
-    // needs the per-date check, because there its reminder stays PENDING for
-    // the next occurrence.
-    const alreadyFired =
-      reminder.snoozedUntil === null &&
-      (isSeries
-        ? date !== null &&
-          reminder.lastFiredFor !== null &&
-          date <= reminder.lastFiredFor
-        : reminder.status === "FIRED");
-    if (alreadyFired) continue;
+    if (alreadyFiredFor(reminder, isSeries, date)) continue;
 
     const firesAt = reminderInstantFor(reminder, task, date, settings);
     if (!firesAt || !accept(firesAt)) continue;
