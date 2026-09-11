@@ -18,9 +18,7 @@ import {
   localTransactionFingerprint,
   localWishlistFingerprint,
 } from "@/data/dto";
-import { persist } from "@/data/localDocument";
-import { useStore } from "@/state/store";
-import { isOnline, useSyncStore } from "@/state/syncStore";
+import { document } from "./ports";
 import { currentUserId } from "./account";
 import {
   fetchCloudSnapshot,
@@ -64,6 +62,7 @@ import {
 } from "./syncedState";
 import { newestStamp } from "./watermark";
 import { drainPendingWrites } from "./writeFlush";
+import { status } from "./ports";
 
 export interface SyncDifferenceReport {
   success: boolean;
@@ -116,7 +115,7 @@ async function cachedAnswer(): Promise<SyncDifferenceReport> {
   await drainPendingWrites();
   // That flush is the freshest thing that happened, so it decides the answer:
   // "up to date" over a red badge would be the app contradicting itself.
-  const failure = useSyncStore.getState().lastFailure;
+  const failure = status().lastFailure();
   if (failure) return emptyReport(failure);
   return lastReport?.success
     ? unchangedReport()
@@ -140,7 +139,7 @@ export async function syncDifferences(
     lastReportAt = 0;
   }
   if (!retriesAllowed()) {
-    return emptyReport(useSyncStore.getState().lastFailure ?? "unknown");
+    return emptyReport(status().lastFailure() ?? "unknown");
   }
   if (differencesInFlight) return differencesInFlight;
   if (lastReport && Date.now() - lastReportAt < MIN_FULL_SYNC_INTERVAL_MS) {
@@ -149,7 +148,7 @@ export async function syncDifferences(
 
   // Rebuilt by this pass: a row repaired since the last one must stop counting
   // the moment it goes through.
-  useSyncStore.getState().clearSkipped();
+  status().clearSkipped();
 
   differencesInFlight = runSyncDifferences()
     .then((result) => {
@@ -179,7 +178,7 @@ async function reconcileSpecTables(
   context: SyncContext,
   userId: string,
 ) {
-  const db = useStore.getState().db;
+  const db = document().read();
   const none = new Set<string>();
   const of = <T,>(
     spec: Parameters<typeof reconcileCollection<T>>[0],
@@ -226,7 +225,7 @@ function recordSyncedContent(merged: MergedDocument): void {
 }
 
 function commitMergedDocument(merged: MergedDocument): void {
-  const lang = useStore.getState().db.settings?.language ?? "tr";
+  const lang = document().read().settings?.language ?? "tr";
   const { categories, tasks } = deduplicateCategories(
     merged.categories,
     merged.tasks,
@@ -239,10 +238,8 @@ function commitMergedDocument(merged: MergedDocument): void {
   );
   const settled = { ...merged, tasks, categories, budgetCategories, transactions };
 
-  useStore.setState((s) => ({
-    db: { ...s.db, ...settled, tombstones: pruneTombstones(s.db.tombstones) },
-  }));
-  persist(useStore.getState().db);
+  document().apply((db) => ({ ...db, ...settled, tombstones: pruneTombstones(db.tombstones) }));
+  document().flush();
   recordSyncedContent(settled);
 }
 
@@ -281,7 +278,7 @@ async function mergeCoreTables(
   tombstoned: TombstoneIndex,
   incremental: boolean,
 ) {
-  const db = useStore.getState().db;
+  const db = document().read();
   const categories = await mergeCategories({
     client,
     userId,
@@ -293,7 +290,7 @@ async function mergeCoreTables(
   const tasks = await mergeTasks({
     client,
     userId,
-    local: useStore.getState().db.tasks,
+    local: document().read().tasks,
     cloud: snapshot.tasks,
     tombstoned: tombstoned.task,
     incremental,
@@ -308,7 +305,7 @@ async function mergeEverything(
   snapshot: CloudSnapshot,
   incremental: boolean,
 ): Promise<{ merged: MergedDocument; counts: ReportCounts }> {
-  const tombstoned = tombstoneIndex(useStore.getState().db.tombstones);
+  const tombstoned = tombstoneIndex(document().read().tombstones);
   const { categories, tasks } = await mergeCoreTables(
     client,
     userId,
@@ -324,13 +321,13 @@ async function mergeEverything(
   const focusSessions = await mergeFocusSessions({
     client,
     userId,
-    local: useStore.getState().db.focusSessions,
+    local: document().read().focusSessions,
     cloud: snapshot.focus,
     tombstoned: tombstoned.focus,
     incremental,
   });
   const history = await mergeHistory(
-    useStore.getState().db.history,
+    document().read().history,
     snapshot.history,
     userId,
   );
@@ -367,8 +364,8 @@ async function reconcileEverything(
   commitMergedDocument(pass.merged);
   advanceCursor(snapshot, since, incremental, userId);
 
-  useSyncStore.getState().markSynced();
-  useSyncStore.getState().setPending(pendingCount());
+  status().markSynced();
+  status().setPending(pendingCount());
   resetRetryBudget();
 
   const { counts } = pass;
@@ -384,32 +381,32 @@ async function reconcileEverything(
 }
 
 async function runSyncDifferences(): Promise<SyncDifferenceReport> {
-  if (!isOnline()) {
-    useSyncStore.getState().setPhase("offline");
+  if (!status().isOnline()) {
+    status().setPhase("offline");
     return emptyReport("offline");
   }
   const userId = currentUserId();
   if (!supabase || !userId) {
-    useSyncStore.getState().setPhase("disabled");
+    status().setPhase("disabled");
     return emptyReport("auth");
   }
 
-  useSyncStore.getState().setPhase("syncing");
+  status().setPhase("syncing");
   beginRemoteApply();
   try {
     return await reconcileEverything(supabase, userId);
   } catch (err: unknown) {
     const kind = classifySyncError(err);
     console.error(`[tempo sync] reconciliation failed (${kind}):`, err);
-    useSyncStore.getState().setPhase(isOnline() ? "error" : "offline", kind);
+    status().setPhase(status().isOnline() ? "error" : "offline", kind);
     scheduleRetry(kind);
     return emptyReport(kind);
   } finally {
     endRemoteApply();
     // A pass may only end in a phase the user can act on: if something escaped
     // both the try and the catch, "syncing" would stay on screen forever.
-    if (useSyncStore.getState().phase === "syncing") {
-      useSyncStore.getState().setPhase(isOnline() ? "error" : "offline", "unknown");
+    if (status().currentPhase() === "syncing") {
+      status().setPhase(status().isOnline() ? "error" : "offline", "unknown");
     }
   }
 }

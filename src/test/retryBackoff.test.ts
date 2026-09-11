@@ -6,6 +6,7 @@ import {
   scheduleRetry,
 } from "@/sync";
 import { useSyncStore } from "@/state/syncStore";
+import { wireSyncPorts } from "@/state/syncWiring";
 
 /**
  * The retry budget: a few automatic attempts on a retryable failure, then quiet
@@ -18,6 +19,9 @@ const RETRY_MAX_MS = 60_000;
 const RETRY_COOLDOWN_MS = 10 * 60_000;
 
 let requestSync: ReturnType<typeof vi.fn>;
+
+// The retry budget reports through the status port, which the app installs.
+wireSyncPorts();
 
 beforeEach(() => {
   vi.useFakeTimers();

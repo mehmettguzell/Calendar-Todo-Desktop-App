@@ -1,8 +1,6 @@
-import { useAuthStore } from "@/state/authStore";
+import { auth } from "./ports";
 
-// The id every cloud write is keyed by. `user` (the `public.profiles` row) can
-// be null for a while or forever, so the auth session is the fallback.
+/** The id every cloud write is keyed by, or null while signed out. */
 export function currentUserId(): string | null {
-  const auth = useAuthStore.getState();
-  return auth.user?.id ?? auth.session?.user?.id ?? null;
+  return auth().currentUserId();
 }

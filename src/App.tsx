@@ -52,6 +52,7 @@ import { pasteTaskOn } from "@/state/clipboardActions";
 import { useClipboardStore } from "@/state/clipboardStore";
 import { useAuthStore } from "@/state/authStore";
 import { initSyncEngine } from "@/sync";
+import { wireSyncPorts } from "@/state/syncWiring";
 import {
   useApplyLanguage,
   useApplyTheme,
@@ -147,6 +148,7 @@ export function App() {
     void (async () => {
       try {
         await hydrate();
+        wireSyncPorts();
         initSyncEngine();
         await useAuthStore.getState().initAuth();
       } catch (err) {

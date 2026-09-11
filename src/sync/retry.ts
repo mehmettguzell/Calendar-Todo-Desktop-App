@@ -1,5 +1,5 @@
 import { isRetryableSyncFailure, type SyncFailureKind } from "@/lib/errors";
-import { isOnline, useSyncStore } from "@/state/syncStore";
+import { status } from "./ports";
 
 // A few automatic attempts with doubling backoff, then quiet until a condition
 // revives it (network back, window focused, button, cooldown lapsed). A
@@ -27,7 +27,7 @@ let retryAttempt = 0;
 let retryPausedUntil = 0;
 
 function publishRetryState(): void {
-  useSyncStore.getState().setRetry(retryAttempt, retryPausedUntil > 0);
+  status().setRetry(retryAttempt, retryPausedUntil > 0);
 }
 
 /** Stop automatic attempts until a condition revives them. */
@@ -55,7 +55,7 @@ export function scheduleRetry(kind: SyncFailureKind): void {
   publishRetryState();
   retryTimer = setTimeout(() => {
     retryTimer = null;
-    if (deps.currentUserId() && isOnline()) deps.requestSync();
+    if (deps.currentUserId() && status().isOnline()) deps.requestSync();
   }, retryDelayMs);
 }
 

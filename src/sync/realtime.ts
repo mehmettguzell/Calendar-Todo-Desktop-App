@@ -9,11 +9,10 @@ import {
   handleRealtimeTransactionChange,
   type RealtimeRowChange,
 } from "./realtimeApply";
-import { persist } from "@/data/localDocument";
-import { useStore } from "@/state/store";
-import { isOnline, useSyncStore } from "@/state/syncStore";
+import { document } from "./ports";
 import { currentUserId } from "./account";
 import { beginRemoteApply, endRemoteApply } from "./remoteApply";
+import { status } from "./ports";
 
 /** What the engine does once the channel is live again, injected to avoid a cycle. */
 interface RealtimeDeps {
@@ -106,7 +105,7 @@ export function setupRealtime(userId: string) {
     client.removeChannel(realtimeChannel);
     realtimeChannel = null;
   }
-  useSyncStore.getState().setRealtime("connecting");
+  status().setRealtime("connecting");
 
   const forUser = { schema: "public", filter: `user_id=eq.${userId}` } as const;
   const bound = Object.entries(TABLE_HANDLERS).reduce(
@@ -119,20 +118,16 @@ export function setupRealtime(userId: string) {
     client.channel(`user-sync-${userId}`) as RealtimeChannel,
   );
 
-  realtimeChannel = bound.subscribe((status) => {
-    if (status === "SUBSCRIBED") {
+  realtimeChannel = bound.subscribe((state) => {
+    if (state === "SUBSCRIBED") {
       reconnectDelayMs = 0;
-      useSyncStore.getState().setRealtime("connected");
+      status().setRealtime("connected");
       // Whatever happened while we were not listening was never delivered.
       deps.onSubscribed(userId);
       return;
     }
-    if (
-      status === "CHANNEL_ERROR" ||
-      status === "TIMED_OUT" ||
-      status === "CLOSED"
-    ) {
-      useSyncStore.getState().setRealtime("down");
+    if (state === "CHANNEL_ERROR" || state === "TIMED_OUT" || state === "CLOSED") {
+      status().setRealtime("down");
       scheduleRealtimeReconnect(userId);
     }
   });
@@ -146,7 +141,7 @@ function scheduleRealtimeReconnect(userId: string): void {
       : Math.min(reconnectDelayMs * 2, REALTIME_RECONNECT_MAX_MS);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
-    if (currentUserId() === userId && isOnline()) setupRealtime(userId);
+    if (currentUserId() === userId && status().isOnline()) setupRealtime(userId);
   }, reconnectDelayMs);
 }
 
@@ -165,6 +160,6 @@ function applyRemote(mutate: () => void): void {
   } finally {
     endRemoteApply();
   }
-  persist(useStore.getState().db);
+  document().flush();
 }
 

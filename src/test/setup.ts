@@ -1,7 +1,6 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 import { useViewPrefs } from "@/state/viewPrefsStore";
-
 // Tells React that `act()` is available, which keeps state updates synchronous.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

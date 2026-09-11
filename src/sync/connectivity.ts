@@ -1,7 +1,7 @@
-import { isOnline, useSyncStore } from "@/state/syncStore";
 
 // Losing the network never signs anyone out — the app stays signed in and keeps
 // writing locally. When it returns, one reconciliation pass catches the cloud up.
+import { status } from "./ports";
 
 interface ConnectivityDeps {
   currentUserId(): string | null;
@@ -27,8 +27,8 @@ export function watchConnectivity(deps: ConnectivityDeps): void {
   });
 
   window.addEventListener("offline", () => {
-    useSyncStore.getState().setPhase("offline");
-    useSyncStore.getState().setRealtime("down");
+    status().setPhase("offline");
+    status().setRealtime("down");
   });
 
   if (typeof document === "undefined") return;
@@ -41,14 +41,14 @@ export function watchConnectivity(deps: ConnectivityDeps): void {
       return;
     }
     const id = deps.currentUserId();
-    if (!id || !isOnline()) return;
+    if (!id || !status().isOnline()) return;
 
     const now = Date.now();
     if (now - lastVisibilitySyncAt < VISIBILITY_COOLDOWN_MS) return;
 
-    const paused = useSyncStore.getState().autoRetryPaused;
+    const paused = status().retryPaused();
     if (paused) deps.resetRetryBudget();
-    if (paused || useSyncStore.getState().realtime !== "connected") {
+    if (paused || status().realtimeState() !== "connected") {
       lastVisibilitySyncAt = now;
       deps.setupRealtime(id);
       deps.requestSync();

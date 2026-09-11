@@ -12,7 +12,7 @@ import {
   taskFromRow,
   transactionFromRow,
 } from "@/data/dto";
-import { useStore } from "@/state/store";
+import { document } from "./ports";
 import { pendingIds } from "./queue";
 import { acceptsRemoteTask } from "./remoteEcho";
 import {
@@ -34,7 +34,7 @@ export interface RealtimeRowChange {
 
 /** Would this row overwrite something this device knows better? */
 function taskEchoRejected(task: ReturnType<typeof taskFromRow>): boolean {
-  const db = useStore.getState().db;
+  const db = document().read();
   return !acceptsRemoteTask({
     remoteUpdatedAt: task.updatedAt,
     remoteDeleted: task.deletedAt !== null,
@@ -58,10 +58,10 @@ export function handleRealtimeTaskChange(payload: RealtimeRowChange) {
     // lets Trash show it and Restore undo it on this device too.
     syncedTaskFingerprints.set(task.id, localTaskFingerprint(task));
 
-    useStore.setState((s) => {
-      const existing = s.db.tasks.find((t) => t.id === task.id);
+    document().apply((db) => {
+      const existing = db.tasks.find((t) => t.id === task.id);
       if (!existing) {
-        return { db: { ...s.db, tasks: [...s.db.tasks, task] } };
+        return { ...db, tasks: [...db.tasks, task] };
       }
       // The remote row does not know this device's manual ordering.
       const next = {
@@ -70,11 +70,9 @@ export function handleRealtimeTaskChange(payload: RealtimeRowChange) {
         manualOrder: existing.manualOrder ?? null,
       };
       return {
-        db: {
-          ...s.db,
-          tasks: s.db.tasks.map((t) => (t.id === task.id ? next : t)),
-        },
-      };
+          ...db,
+          tasks: db.tasks.map((t) => (t.id === task.id ? next : t)),
+        };
     });
     return;
   }
@@ -82,14 +80,12 @@ export function handleRealtimeTaskChange(payload: RealtimeRowChange) {
   if (eventType === "DELETE") {
     const id = oldRecord.id as string;
     syncedTaskFingerprints.delete(id);
-    useStore.setState((s) => ({
-      db: {
-        ...s.db,
-        tasks: s.db.tasks.filter((t) => t.id !== id),
-        occurrences: s.db.occurrences.filter((o) => o.taskId !== id),
-        reminders: s.db.reminders.filter((r) => r.taskId !== id),
-      },
-    }));
+    document().apply((db) => ({
+        ...db,
+        tasks: db.tasks.filter((t) => t.id !== id),
+        occurrences: db.occurrences.filter((o) => o.taskId !== id),
+        reminders: db.reminders.filter((r) => r.taskId !== id),
+      }));
   }
 }
 
@@ -100,15 +96,13 @@ export function handleRealtimeCategoryChange(payload: RealtimeRowChange) {
     if (newRecord.is_deleted) {
       const id = newRecord.id as string;
       syncedCategoryFingerprints.delete(id);
-      useStore.setState((s) => ({
-        db: {
-          ...s.db,
-          categories: s.db.categories.filter((c) => c.id !== id),
-          tasks: s.db.tasks.map((t) =>
+      document().apply((db) => ({
+          ...db,
+          categories: db.categories.filter((c) => c.id !== id),
+          tasks: db.tasks.map((t) =>
             t.categoryId === id ? { ...t, categoryId: null } : t,
           ),
-        },
-      }));
+        }));
       return;
     }
 
@@ -121,20 +115,20 @@ export function handleRealtimeCategoryChange(payload: RealtimeRowChange) {
 
     syncedCategoryFingerprints.set(cat.id, localCategoryFingerprint(cat));
 
-    useStore.setState((s) => {
-      const existing = s.db.categories.find(
+    document().apply((db) => {
+      const existing = db.categories.find(
         (c) =>
           c.id === cat.id ||
           c.name.toLowerCase().trim() === cat.name.toLowerCase().trim(),
       );
       const nextCategories = existing
-        ? s.db.categories.map((c) =>
+        ? db.categories.map((c) =>
             c.id === existing.id
               ? { ...c, ...cat, id: existing.id, order: c.order }
               : c,
           )
-        : [...s.db.categories, { ...cat, order: s.db.categories.length }];
-      return { db: { ...s.db, categories: nextCategories } };
+        : [...db.categories, { ...cat, order: db.categories.length }];
+      return { ...db, categories: nextCategories };
     });
     return;
   }
@@ -142,9 +136,7 @@ export function handleRealtimeCategoryChange(payload: RealtimeRowChange) {
   if (eventType === "DELETE") {
     const id = oldRecord.id as string;
     syncedCategoryFingerprints.delete(id);
-    useStore.setState((s) => ({
-      db: { ...s.db, categories: s.db.categories.filter((c) => c.id !== id) },
-    }));
+    document().apply((db) => ({ ...db, categories: db.categories.filter((c) => c.id !== id) }));
   }
 }
 
@@ -154,24 +146,20 @@ export function handleRealtimeOccurrenceChange(payload: RealtimeRowChange) {
 
   if (eventType === "DELETE" || newRecord?.is_deleted) {
     syncedOccurrenceFingerprints.delete(id);
-    useStore.setState((s) => ({
-      db: { ...s.db, occurrences: s.db.occurrences.filter((o) => o.id !== id) },
-    }));
+    document().apply((db) => ({ ...db, occurrences: db.occurrences.filter((o) => o.id !== id) }));
     return;
   }
 
   const occurrence = occurrenceFromRow(newRecord);
   syncedOccurrenceFingerprints.set(id, localOccurrenceFingerprint(occurrence));
-  useStore.setState((s) => {
-    const exists = s.db.occurrences.some((o) => o.id === id);
+  document().apply((db) => {
+    const exists = db.occurrences.some((o) => o.id === id);
     return {
-      db: {
-        ...s.db,
+        ...db,
         occurrences: exists
-          ? s.db.occurrences.map((o) => (o.id === id ? occurrence : o))
-          : [...s.db.occurrences, occurrence],
-      },
-    };
+          ? db.occurrences.map((o) => (o.id === id ? occurrence : o))
+          : [...db.occurrences, occurrence],
+      };
   });
 }
 
@@ -181,24 +169,20 @@ export function handleRealtimeReminderChange(payload: RealtimeRowChange) {
 
   if (eventType === "DELETE" || newRecord?.is_deleted) {
     syncedReminderFingerprints.delete(id);
-    useStore.setState((s) => ({
-      db: { ...s.db, reminders: s.db.reminders.filter((r) => r.id !== id) },
-    }));
+    document().apply((db) => ({ ...db, reminders: db.reminders.filter((r) => r.id !== id) }));
     return;
   }
 
   const reminder = reminderFromRow(newRecord);
   syncedReminderFingerprints.set(id, localReminderFingerprint(reminder));
-  useStore.setState((s) => {
-    const exists = s.db.reminders.some((r) => r.id === id);
+  document().apply((db) => {
+    const exists = db.reminders.some((r) => r.id === id);
     return {
-      db: {
-        ...s.db,
+        ...db,
         reminders: exists
-          ? s.db.reminders.map((r) => (r.id === id ? reminder : r))
-          : [...s.db.reminders, reminder],
-      },
-    };
+          ? db.reminders.map((r) => (r.id === id ? reminder : r))
+          : [...db.reminders, reminder],
+      };
   });
 }
 
@@ -208,12 +192,10 @@ export function handleRealtimeTransactionChange(payload: RealtimeRowChange) {
 
   if (eventType === "DELETE") {
     syncedTransactionFingerprints.delete(id);
-    useStore.setState((s) => ({
-      db: {
-        ...s.db,
-        transactions: s.db.transactions.filter((t) => t.id !== id),
-      },
-    }));
+    document().apply((db) => ({
+        ...db,
+        transactions: db.transactions.filter((t) => t.id !== id),
+      }));
     return;
   }
 
@@ -224,16 +206,14 @@ export function handleRealtimeTransactionChange(payload: RealtimeRowChange) {
     id,
     localTransactionFingerprint(transaction),
   );
-  useStore.setState((s) => {
-    const exists = s.db.transactions.some((t) => t.id === id);
+  document().apply((db) => {
+    const exists = db.transactions.some((t) => t.id === id);
     return {
-      db: {
-        ...s.db,
+        ...db,
         transactions: exists
-          ? s.db.transactions.map((t) => (t.id === id ? transaction : t))
-          : [...s.db.transactions, transaction],
-      },
-    };
+          ? db.transactions.map((t) => (t.id === id ? transaction : t))
+          : [...db.transactions, transaction],
+      };
   });
 }
 
@@ -243,15 +223,13 @@ export function handleRealtimeBudgetCategoryChange(payload: RealtimeRowChange) {
 
   if (eventType === "DELETE" || newRecord?.is_deleted) {
     syncedBudgetCategoryFingerprints.delete(id);
-    useStore.setState((s) => ({
-      db: {
-        ...s.db,
-        budgetCategories: s.db.budgetCategories.filter((c) => c.id !== id),
-        transactions: s.db.transactions.map((t) =>
+    document().apply((db) => ({
+        ...db,
+        budgetCategories: db.budgetCategories.filter((c) => c.id !== id),
+        transactions: db.transactions.map((t) =>
           t.categoryId === id ? { ...t, categoryId: null } : t,
         ),
-      },
-    }));
+      }));
     return;
   }
 
@@ -260,15 +238,13 @@ export function handleRealtimeBudgetCategoryChange(payload: RealtimeRowChange) {
     id,
     localBudgetCategoryFingerprint(category),
   );
-  useStore.setState((s) => {
-    const exists = s.db.budgetCategories.some((c) => c.id === id);
+  document().apply((db) => {
+    const exists = db.budgetCategories.some((c) => c.id === id);
     return {
-      db: {
-        ...s.db,
+        ...db,
         budgetCategories: exists
-          ? s.db.budgetCategories.map((c) => (c.id === id ? category : c))
-          : [...s.db.budgetCategories, category],
-      },
-    };
+          ? db.budgetCategories.map((c) => (c.id === id ? category : c))
+          : [...db.budgetCategories, category],
+      };
   });
 }

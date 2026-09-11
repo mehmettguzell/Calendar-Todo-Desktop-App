@@ -1,14 +1,12 @@
 import { supabase } from "@/lib/supabase";
 
-import { useAuthStore } from "@/state/authStore";
-import { useStore } from "@/state/store";
-import { useSyncStore } from "@/state/syncStore";
 import {
   classifySyncError,
   formatErrorMessage,
 } from "@/lib/errors";
 
 import { currentUserId } from "./account";
+import { auth, document, status } from "./ports";
 import { watchConnectivity } from "./connectivity";
 import { MIN_FULL_SYNC_INTERVAL_MS, forgetLastPass, lastPassAt, syncDifferences } from "./differences";
 import { ensureProfileRow } from "./profile";
@@ -91,7 +89,7 @@ export function initSyncEngine() {
   isEngineInitialized = true;
 
   if (!supabase) {
-    useSyncStore.getState().setPhase("disabled");
+    status().setPhase("disabled");
   }
 
   const requestSync = () => {
@@ -113,13 +111,8 @@ export function initSyncEngine() {
   // Auth drives everything: which local document is open, and which cloud rows
   // are ours. Both have to move together, or one account briefly sees the
   // other's tasks.
-  useAuthStore.subscribe((state, prevState) => {
-    const prevUserId =
-      prevState.user?.id ?? prevState.session?.user?.id ?? null;
-    const nextUserId = state.user?.id ?? state.session?.user?.id ?? null;
-    if (nextUserId === prevUserId) return;
-
-    void enqueueAccountChange(nextUserId);
+  auth().onAccountChange((userId) => {
+    void enqueueAccountChange(userId);
   });
 
   watchLocalDocument();
@@ -157,10 +150,10 @@ async function handleAccountChange(userId: string | null): Promise<void> {
   resetRetryBudget();
   forgetLastPass();
 
-  await useStore.getState().switchAccount(userId);
+  await document().switchAccount(userId);
 
   if (!userId) {
-    useSyncStore.getState().setPhase(supabase ? "disabled" : "disabled");
+    status().setPhase(supabase ? "disabled" : "disabled");
     return;
   }
   await startSync(userId);
@@ -192,7 +185,7 @@ async function startSync(userId: string) {
       `[tempo sync] startup failed (${kind}):`,
       formatErrorMessage(err),
     );
-    useSyncStore.getState().setPhase("error", kind);
+    status().setPhase("error", kind);
   } finally {
     isSyncing = false;
   }
@@ -203,7 +196,7 @@ function stopSync() {
   isSyncing = false;
   syncedNamespace = null;
   resetPullState();
-  useSyncStore.getState().setRealtime("down");
+  status().setRealtime("down");
 }
 
 // The reconciliation pass lives in `@/sync/differences`, realtime in

@@ -1,6 +1,6 @@
 import type { Category, FocusSession, Task, Tombstone } from "@/domain/types";
 import { supabase } from "@/lib/supabase";
-import { useStore } from "@/state/store";
+import { document } from "./ports";
 import { currentUserId } from "./account";
 import { pendingCount, pendingIds } from "./queue";
 import { isApplyingRemoteUpdate } from "./remoteApply";
@@ -72,56 +72,56 @@ function queueTombstones(prev: Tombstone[], next: Tombstone[]): void {
 export function watchLocalDocument(): void {
   if (isStoreSubscribed) return;
   isStoreSubscribed = true;
-  useStore.subscribe((state, prevState) => {
+  document().subscribe((next, previous) => {
     const userId = currentUserId();
     if (!supabase || !userId || isApplyingRemoteUpdate()) return;
 
     // Zustand updates are immutable, so an untouched row keeps its identity:
     // a reference check finds the changed rows without walking their fields.
-    queueChangedById(prevState.db.tasks, state.db.tasks, pendingIds.tasks);
+    queueChangedById(previous.tasks, next.tasks, pendingIds.tasks);
     queueChangedById(
-      prevState.db.categories,
-      state.db.categories,
+      previous.categories,
+      next.categories,
       pendingIds.categories,
     );
     queueChangedById(
-      prevState.db.occurrences,
-      state.db.occurrences,
+      previous.occurrences,
+      next.occurrences,
       pendingIds.occurrences,
     );
     queueChangedById(
-      prevState.db.reminders,
-      state.db.reminders,
+      previous.reminders,
+      next.reminders,
       pendingIds.reminders,
     );
     queueChangedById(
-      prevState.db.transactions,
-      state.db.transactions,
+      previous.transactions,
+      next.transactions,
       pendingIds.transactions,
     );
     queueChangedById(
-      prevState.db.budgetCategories,
-      state.db.budgetCategories,
+      previous.budgetCategories,
+      next.budgetCategories,
       pendingIds.budgetCategories,
     );
 
-    const prevFocusIds = new Set(prevState.db.focusSessions.map((f) => f.id));
-    for (const session of state.db.focusSessions) {
+    const prevFocusIds = new Set(previous.focusSessions.map((f) => f.id));
+    for (const session of next.focusSessions) {
       if (!prevFocusIds.has(session.id)) pendingIds.focus.add(session.id);
     }
 
     // Append-only, so only the new ids are ever interesting.
-    if (prevState.db.history !== state.db.history) {
-      const prevHistoryIds = new Set(prevState.db.history.map((h) => h.id));
-      for (const entry of state.db.history) {
+    if (previous.history !== next.history) {
+      const prevHistoryIds = new Set(previous.history.map((h) => h.id));
+      for (const entry of next.history) {
         if (!prevHistoryIds.has(entry.id)) pendingIds.history.add(entry.id);
       }
     }
 
     // A tombstone is the only durable record that a purge happened, so new
     // ones become deletes on the wire.
-    if (prevState.db.tombstones !== state.db.tombstones) {
-      queueTombstones(prevState.db.tombstones, state.db.tombstones);
+    if (previous.tombstones !== next.tombstones) {
+      queueTombstones(previous.tombstones, next.tombstones);
     }
 
     if (pendingCount() > 0) scheduleFlush();

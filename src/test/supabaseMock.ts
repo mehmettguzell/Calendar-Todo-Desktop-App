@@ -1,9 +1,8 @@
 /**
  * A stand-in for the Supabase client, so the write paths can be tested.
  *
- * In a test run the real `supabase` is `null` (no credentials), which means
- * every flush, pull and realtime path short-circuits and nothing about them is
- * covered. This fake records what a pass would have sent and lets a test decide
+ * `vitest.config.ts` blanks the Supabase credentials, so the real client is
+ * `null` in a test run and every flush, pull and realtime path short-circuits. This fake records what a pass would have sent and lets a test decide
  * what the server says back — including saying no, which is the branch that
  * decides whether a user's edit survives a failed request.
  */

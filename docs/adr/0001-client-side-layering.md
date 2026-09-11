@@ -48,13 +48,13 @@ Take option 1.
 - Import paths change from `@/state/syncEngine` to `@/sync` with no
   compatibility shim; tests are updated in the same pass.
 
-### Not done yet: the port boundary
+### The port boundary
 
-`src/sync/` still imports the Zustand stores directly (`useStore`,
-`useAuthStore`, `useSyncStore`). Only `retry`, `connectivity` and `realtime`
-take injected dependencies. `LocalDocumentPort` / `AuthPort` / `StatusPort`
-remain the intended end state; inverting the remaining call sites is its own
-pass, tracked separately from this split.
+`src/sync/` imports no store. It talks to `StatusPort`, `AuthPort` and
+`LocalDocumentPort`, declared in `sync/ports.ts`; `state/syncWiring.ts` is the
+only file that says those are Zustand stores, and `App.tsx` installs them once
+before `initSyncEngine()`. A suite that drives the engine installs the same
+ports itself.
 
 ## Consequences
 

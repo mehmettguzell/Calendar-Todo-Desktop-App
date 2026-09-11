@@ -6,6 +6,7 @@ vi.mock("@/lib/supabase", async () => {
 });
 
 import { supabaseMock } from "./supabaseMock";
+import { wireSyncPorts } from "@/state/syncWiring";
 import {
   FLUSH_DELAY_MS,
   forgetSyncedState,
@@ -31,6 +32,9 @@ const flush = async () => {
 };
 
 const pendingCount = () => useSyncStore.getState().pendingWrites;
+
+// The app installs the ports at startup; this suite drives the same engine.
+wireSyncPorts();
 
 beforeEach(async () => {
   vi.useFakeTimers();

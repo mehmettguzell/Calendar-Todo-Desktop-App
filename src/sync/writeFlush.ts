@@ -3,10 +3,9 @@ import type { Category, Task } from "@/domain/types";
 import { supabase } from "@/lib/supabase";
 import { classifySyncError, formatErrorMessage } from "@/lib/errors";
 import { localCategoryFingerprint, localTaskFingerprint, toCategoryRow } from "@/data/dto";
-import { useStore } from "@/state/store";
-import { isOnline, useSyncStore } from "@/state/syncStore";
-import { UNDO_WINDOW_MS, useUndoStore } from "@/state/undoStore";
+import type { Database } from "@/data/db";
 import { currentUserId } from "./account";
+import { document } from "./ports";
 import { withTimeout } from "./cloudRequest";
 import {
   BUDGET_CATEGORY_SPEC,
@@ -38,6 +37,7 @@ import {
   syncedTaskFingerprints,
 } from "./syncedState";
 import { planTaskWrites } from "./writePlan";
+import { status } from "./ports";
 
 /**
  * Local mutations are coalesced instead of fired one request per row.
@@ -58,7 +58,7 @@ let flushInFlight: Promise<void> | null = null;
 
 export function clearPending(): void {
   clearAllQueues();
-  useSyncStore.getState().setPending(0);
+  status().setPending(0);
 }
 
 /**
@@ -72,12 +72,11 @@ export function clearPending(): void {
  * postponing the write forever.
  */
 export function scheduleFlush() {
-  useSyncStore.getState().setPending(pendingCount());
+  status().setPending(pendingCount());
 
   const now = Date.now();
   if (queuedSince === null) queuedSince = now;
 
-  const offer = useUndoStore.getState().pending;
   if (flushTimer) clearTimeout(flushTimer);
   flushTimer = setTimeout(
     () => {
@@ -90,7 +89,7 @@ export function scheduleFlush() {
     flushDelayMs({
       now,
       queuedSince,
-      undoOfferExpiresAt: offer ? offer.at + UNDO_WINDOW_MS : null,
+      undoOfferExpiresAt: document().undoOfferExpiresAt(),
     }),
   );
 }
@@ -108,7 +107,7 @@ export async function drainPendingWrites(): Promise<void> {
   if (flushInFlight) await flushInFlight;
 }
 
-type LocalDb = ReturnType<typeof useStore.getState>["db"];
+type LocalDb = Database;
 
 async function writeQueuedCategories(
   client: SupabaseClient,
@@ -273,7 +272,7 @@ async function sendQueuedWrites(
   queued: QueueSnapshot,
   userId: string,
 ): Promise<void> {
-  const db = useStore.getState().db;
+  const db = document().read();
   // Categories first: a task row's category_id points at one of them.
   await writeQueuedCategories(
     client,
@@ -296,8 +295,8 @@ async function sendQueuedWrites(
 function reportWriteFailure(err: unknown, queued: QueueSnapshot): void {
   requeue(queued);
   const kind = classifySyncError(err);
-  useSyncStore.getState().setPending(pendingCount());
-  useSyncStore.getState().setPhase(isOnline() ? "error" : "offline", kind);
+  status().setPending(pendingCount());
+  status().setPhase(status().isOnline() ? "error" : "offline", kind);
   // Full detail to the console only: the message can name tables, columns and
   // constraints, which is not the user's business.
   console.warn(
@@ -313,25 +312,25 @@ export async function flushPendingWrites(): Promise<void> {
     clearPending();
     return;
   }
-  if (!isOnline()) {
+  if (!status().isOnline()) {
     // Nothing is lost: the ids stay queued and `syncDifferences` would find the
     // same rows by content even if this process never runs again.
-    useSyncStore.getState().setPhase("offline");
+    status().setPhase("offline");
     return;
   }
   // Same reasoning while the retry budget is spent: keep editing, keep queuing,
   // just stop calling a server that has said no four times in a row.
   if (!retriesAllowed()) {
-    useSyncStore.getState().setPending(pendingCount());
+    status().setPending(pendingCount());
     return;
   }
 
   const queued = drainQueues();
   try {
     await sendQueuedWrites(supabase, queued, userId);
-    useSyncStore.getState().setPending(pendingCount());
-    if (useSyncStore.getState().phase !== "syncing") {
-      useSyncStore.getState().setPhase("idle");
+    status().setPending(pendingCount());
+    if (status().currentPhase() !== "syncing") {
+      status().setPhase("idle");
     }
     resetRetryBudget();
   } catch (err) {

@@ -6,6 +6,7 @@ vi.mock("@/lib/supabase", async () => {
 });
 
 import { supabaseMock } from "./supabaseMock";
+import { wireSyncPorts } from "@/state/syncWiring";
 import {
   forgetSyncedState,
   pendingIds,
@@ -21,8 +22,8 @@ import { useSyncStore } from "@/state/syncStore";
  * The safety net: reconcile both sides by content, with no queue or journal.
  *
  * A pass reads nine tables and writes back whichever side won, row by row.
- * Nothing else in the suite reaches it — with no credentials the real client is
- * null and the whole function returns early — so these are the only tests that
+ * Nothing else in the suite reaches it — the real client is null in tests and
+ * the whole function returns early — so these are the only tests that
  * hold its shape while it is broken into pieces.
  */
 const cloudTask = (over: Record<string, unknown> = {}) => ({
@@ -57,6 +58,9 @@ const cloudHolds = (rows: Record<string, Record<string, unknown>[]>) => {
 };
 
 const titles = () => useStore.getState().db.tasks.map((t) => t.title);
+
+// The app installs the ports at startup; this suite drives the same engine.
+wireSyncPorts();
 
 beforeEach(async () => {
   supabaseMock.reset();
