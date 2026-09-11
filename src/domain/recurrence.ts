@@ -148,66 +148,135 @@ export function describeRecurrence(
   anchor?: LocalDate | null,
 ): string {
   if (!rule) return t("formNoRepeat");
-  const n = Math.max(1, rule.interval);
-  const single = n === 1;
-
-  let base: string;
-  switch (rule.freq) {
-    case "DAILY":
-      base = single ? t("repeatEveryDay") : t("repeatEveryNDays", { n });
-      break;
-    case "WEEKLY": {
-      base = single ? t("repeatEveryWeek") : t("repeatEveryNWeeks", { n });
-      if (rule.byWeekday?.length) {
-        const days = rule.byWeekday
-          .slice()
-          .sort((a, b) => a - b)
-          .map((d) => weekdayNames[d] ?? "")
-          .filter(Boolean)
-          .join(", ");
-        if (days) base = t("repeatOnDays", { base, days });
-      }
-      break;
-    }
-    case "MONTHLY": {
-      base = single ? t("repeatEveryMonth") : t("repeatEveryNMonths", { n });
-      const mode = monthlyModeOf(rule);
-      if (mode === "LAST_DAY") {
-        base = t("repeatOnLastDay", { base });
-      } else if (mode === "NTH_WEEKDAY") {
-        const weekday = rule.byWeekday?.[0];
-        const day = weekday === undefined ? "" : (weekdayNames[weekday] ?? "");
-        const posKey = rule.bySetPos == null ? undefined : POSITION_KEYS[rule.bySetPos];
-        if (day && posKey) base = t("repeatOnNthWeekday", { base, pos: t(posKey), day });
-      } else {
-        const day = rule.byMonthDay ?? (anchor ? getDate(fromLocalDate(anchor)) : null);
-        if (day !== null) {
-          // 29, 30 and 31 do not exist in every month. The series pulls those
-          // back to the last day rather than skipping the month, so the
-          // sentence says as much instead of letting February be a surprise.
-          base = day > 28
-            ? t("repeatOnMonthDayShort", { base, day })
-            : t("repeatOnMonthDay", { base, day });
-        }
-      }
-      break;
-    }
-    case "YEARLY":
-      base = single ? t("repeatEveryYear") : t("repeatEveryNYears", { n });
-      break;
-  }
-
+  const base = describeFrequency(rule, t, weekdayNames, anchor ?? null);
   if (rule.until) return t("repeatUntil", { base, date: rule.until });
   if (rule.count) return t("repeatTimes", { base, n: rule.count });
   return base;
 }
 
+/** "her hafta" / "2 haftada bir", plus whatever narrows it down. */
+function describeFrequency(
+  rule: Recurrence,
+  t: Translate,
+  weekdayNames: string[],
+  anchor: LocalDate | null,
+): string {
+  const n = Math.max(1, rule.interval);
+  const single = n === 1;
+  switch (rule.freq) {
+    case "DAILY":
+      return single ? t("repeatEveryDay") : t("repeatEveryNDays", { n });
+    case "WEEKLY":
+      return describeWeekly(
+        single ? t("repeatEveryWeek") : t("repeatEveryNWeeks", { n }),
+        rule,
+        t,
+        weekdayNames,
+      );
+    case "MONTHLY":
+      return describeMonthly(
+        single ? t("repeatEveryMonth") : t("repeatEveryNMonths", { n }),
+        rule,
+        t,
+        weekdayNames,
+        anchor,
+      );
+    case "YEARLY":
+      return single ? t("repeatEveryYear") : t("repeatEveryNYears", { n });
+  }
+}
+
+function describeWeekly(
+  base: string,
+  rule: Recurrence,
+  t: Translate,
+  weekdayNames: string[],
+): string {
+  if (!rule.byWeekday?.length) return base;
+  const days = rule.byWeekday
+    .slice()
+    .sort((a, b) => a - b)
+    .map((d) => weekdayNames[d] ?? "")
+    .filter(Boolean)
+    .join(", ");
+  return days ? t("repeatOnDays", { base, days }) : base;
+}
+
+/** "ayın ilk pazartesi" — needs both a weekday and a position to say anything. */
+function describeNthWeekday(
+  base: string,
+  rule: Recurrence,
+  t: Translate,
+  weekdayNames: string[],
+): string {
+  const weekday = rule.byWeekday?.[0];
+  const day = weekday === undefined ? "" : (weekdayNames[weekday] ?? "");
+  const posKey = rule.bySetPos == null ? undefined : POSITION_KEYS[rule.bySetPos];
+  return day && posKey
+    ? t("repeatOnNthWeekday", { base, pos: t(posKey), day })
+    : base;
+}
+
+function describeMonthly(
+  base: string,
+  rule: Recurrence,
+  t: Translate,
+  weekdayNames: string[],
+  anchor: LocalDate | null,
+): string {
+  const mode = monthlyModeOf(rule);
+  if (mode === "LAST_DAY") return t("repeatOnLastDay", { base });
+
+  if (mode === "NTH_WEEKDAY") return describeNthWeekday(base, rule, t, weekdayNames);
+
+  const day = rule.byMonthDay ?? (anchor ? getDate(fromLocalDate(anchor)) : null);
+  if (day === null) return base;
+  // 29, 30 and 31 do not exist in every month. The series pulls those back to
+  // the last day rather than skipping the month, so the sentence says as much
+  // instead of letting February be a surprise.
+  return day > 28
+    ? t("repeatOnMonthDayShort", { base, day })
+    : t("repeatOnMonthDay", { base, day });
+}
+
 /**
- * Every date the series produces inside `[rangeStart, rangeEnd]`, inclusive.
+ * A task with an `endDate` occupies every day of `[dueDate, endDate]`, so
+ * "August 25 - 28" shows up on all four days instead of only the first.
  *
- * Occurrences are computed, never stored: a series stays one row no matter how
- * far the calendar is scrolled.
+ * A recurring rule keeps its own single-day occurrences: `recurrence.until`
+ * already bounds the series, and letting each repeat span days as well would
+ * make two independent controls fight over the same dates.
  */
+function spanOf(
+  dueDate: LocalDate,
+  endDate: LocalDate | null | undefined,
+  rangeStart: LocalDate,
+  rangeEnd: LocalDate,
+): LocalDate[] {
+  const last = endDate && endDate > dueDate ? endDate : dueDate;
+  if (last === dueDate) {
+    return dueDate >= rangeStart && dueDate <= rangeEnd ? [dueDate] : [];
+  }
+  return daysBetweenInclusive(
+    dueDate > rangeStart ? dueDate : rangeStart,
+    last < rangeEnd ? last : rangeEnd,
+  );
+}
+
+/** The series, already stopped where `until` or `count` says it ends. */
+function* boundedSeries(dueDate: LocalDate, rule: Recurrence): Generator<Date> {
+  const until = rule.until ? fromLocalDate(rule.until) : null;
+  const limit = rule.count && rule.count > 0 ? rule.count : null;
+  let produced = 0;
+
+  for (const date of iterate(fromLocalDate(dueDate), rule)) {
+    if (until && isAfter(date, until)) return;
+    if (limit !== null && produced >= limit) return;
+    produced += 1;
+    yield date;
+  }
+}
+
 export function expandOccurrences(
   task: Pick<Task, "dueDate" | "recurrence"> & Partial<Pick<Task, "endDate">>,
   rangeStart: LocalDate,
@@ -215,35 +284,12 @@ export function expandOccurrences(
 ): LocalDate[] {
   const { dueDate, recurrence } = task;
   if (!dueDate) return [];
-  if (!recurrence) {
-    // A task with an `endDate` occupies every day of `[dueDate, endDate]`, so
-    // "August 25 - 28" shows up on all four days instead of only the first.
-    // A recurring rule keeps its own single-day occurrences: `recurrence.until`
-    // already bounds the series, and letting each repeat span days as well
-    // would make two independent controls fight over the same dates.
-    const last = task.endDate && task.endDate > dueDate ? task.endDate : dueDate;
-    if (last === dueDate) {
-      return dueDate >= rangeStart && dueDate <= rangeEnd ? [dueDate] : [];
-    }
-    return daysBetweenInclusive(
-      dueDate > rangeStart ? dueDate : rangeStart,
-      last < rangeEnd ? last : rangeEnd,
-    );
-  }
+  if (!recurrence) return spanOf(dueDate, task.endDate, rangeStart, rangeEnd);
 
-  const anchor = fromLocalDate(dueDate);
   const start = fromLocalDate(rangeStart);
   const end = fromLocalDate(rangeEnd);
-  const until = recurrence.until ? fromLocalDate(recurrence.until) : null;
-  const limit = recurrence.count && recurrence.count > 0 ? recurrence.count : null;
-
   const out: LocalDate[] = [];
-  let produced = 0;
-
-  for (const date of iterate(anchor, recurrence)) {
-    if (until && isAfter(date, until)) break;
-    if (limit !== null && produced >= limit) break;
-    produced += 1;
+  for (const date of boundedSeries(dueDate, recurrence)) {
     if (isAfter(date, end)) break;
     if (!isBefore(date, start)) out.push(toLocalDate(date));
   }
@@ -258,15 +304,7 @@ export function nextOccurrenceAfter(
   if (!task.dueDate) return null;
   if (!task.recurrence) return task.dueDate > after ? task.dueDate : null;
 
-  const anchor = fromLocalDate(task.dueDate);
-  const until = task.recurrence.until ? fromLocalDate(task.recurrence.until) : null;
-  const limit = task.recurrence.count && task.recurrence.count > 0 ? task.recurrence.count : null;
-  let produced = 0;
-
-  for (const date of iterate(anchor, task.recurrence)) {
-    if (until && isAfter(date, until)) return null;
-    if (limit !== null && produced >= limit) return null;
-    produced += 1;
+  for (const date of boundedSeries(task.dueDate, task.recurrence)) {
     const local = toLocalDate(date);
     if (local > after) return local;
   }
@@ -280,64 +318,81 @@ export function occursOn(
   return expandOccurrences(task, date, date).length > 0;
 }
 
+/** Named weekdays: walk to the Sunday of the anchor's week, then step blocks. */
+function* iterateWeekdays(
+  anchor: Date,
+  weekdays: number[],
+  interval: number,
+): Generator<Date> {
+  const ordered = [...new Set(weekdays)].sort((a, b) => a - b);
+  const weekStart = addDays(anchor, -getDay(anchor));
+  for (let step = 0, guard = 0; guard < MAX_STEPS; step += interval) {
+    const base = addDays(weekStart, step * 7);
+    for (const weekday of ordered) {
+      const date = addDays(base, weekday);
+      if (isBefore(date, anchor)) continue;
+      guard += 1;
+      yield date;
+    }
+    guard += 1;
+  }
+}
+
+/**
+ * A monthly rule that names its own day, walked month by month.
+ *
+ * Not by adding months to the anchor: "the last Tuesday" is a different day in
+ * every month, so there is no fixed offset to add. The chosen day can also land
+ * before the anchor in the anchor's own month ("the 1st Monday" on a task dated
+ * the 20th) — skipping rather than yielding keeps a series out of its own past.
+ */
+function* iterateMonthDays(
+  anchor: Date,
+  rule: Recurrence,
+  interval: number,
+): Generator<Date> {
+  const firstMonth = startOfMonth(anchor);
+  for (let step = 0; step < MAX_STEPS; step += 1) {
+    const date = resolveInMonth(addMonths(firstMonth, step * interval), rule);
+    if (isBefore(date, anchor)) continue;
+    yield date;
+  }
+}
+
+/**
+ * The plain case: a fixed offset from the anchor, every time.
+ *
+ * Monthly measures every step from the anchor rather than the previous
+ * occurrence, so the 31st is pulled back to the 28th in February and returns to
+ * the 31st in March.
+ */
+function* iterateFixedStep(
+  anchor: Date,
+  freq: Recurrence["freq"],
+  interval: number,
+): Generator<Date> {
+  for (let step = 0; step < MAX_STEPS; step += 1) {
+    const offset = step * interval;
+    if (freq === "DAILY") yield addDays(anchor, offset);
+    else if (freq === "WEEKLY") yield addDays(anchor, offset * 7);
+    else if (freq === "MONTHLY") yield addMonths(anchor, offset);
+    else yield addYears(anchor, offset);
+  }
+}
+
 /** Lazily walk the series from its anchor, oldest first. */
 function* iterate(anchor: Date, rule: Recurrence): Generator<Date> {
   const interval = Math.max(1, Math.floor(rule.interval) || 1);
 
-  if (rule.freq === "WEEKLY" && rule.byWeekday && rule.byWeekday.length > 0) {
-    const weekdays = [...new Set(rule.byWeekday)].sort((a, b) => a - b);
-    // Walk to the Sunday of the anchor's week, then step week-blocks.
-    const weekStart = addDays(anchor, -getDay(anchor));
-    for (let step = 0, guard = 0; guard < MAX_STEPS; step += interval) {
-      const base = addDays(weekStart, step * 7);
-      for (const weekday of weekdays) {
-        const date = addDays(base, weekday);
-        if (isBefore(date, anchor)) continue;
-        guard += 1;
-        yield date;
-      }
-      guard += 1;
-    }
+  if (rule.freq === "WEEKLY" && rule.byWeekday?.length) {
+    yield* iterateWeekdays(anchor, rule.byWeekday, interval);
     return;
   }
-
   if (rule.freq === "MONTHLY" && (rule.byMonthDay != null || rule.bySetPos != null)) {
-    // Walked month by month rather than by adding months to the anchor: "the
-    // last Tuesday" is a different day in every month, so there is no fixed
-    // offset from the anchor to add.
-    const firstMonth = startOfMonth(anchor);
-    for (let step = 0; step < MAX_STEPS; step += 1) {
-      const date = resolveInMonth(addMonths(firstMonth, step * interval), rule);
-      // The chosen day can land before the anchor in the anchor's own month
-      // ("the 1st Monday" on a task dated the 20th). Skipping rather than
-      // yielding keeps a series from starting in its own past.
-      if (isBefore(date, anchor)) continue;
-      yield date;
-    }
+    yield* iterateMonthDays(anchor, rule, interval);
     return;
   }
-
-  for (let step = 0; step < MAX_STEPS; step += 1) {
-    const offset = step * interval;
-    switch (rule.freq) {
-      case "DAILY":
-        yield addDays(anchor, offset);
-        break;
-      case "WEEKLY":
-        yield addDays(anchor, offset * 7);
-        break;
-      case "MONTHLY":
-        // A rule with no monthly fields of its own repeats on the anchor's day
-        // of the month. `addMonths` pulls the 31st back to the 28th in
-        // February and returns to the 31st in March, because every step is
-        // measured from the anchor rather than from the previous occurrence.
-        yield addMonths(anchor, offset);
-        break;
-      case "YEARLY":
-        yield addYears(anchor, offset);
-        break;
-    }
-  }
+  yield* iterateFixedStep(anchor, rule.freq, interval);
 }
 
 /** The one day `month` contributes to a rule that names its own day. */
