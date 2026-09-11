@@ -98,6 +98,20 @@ export default tseslint.config(
   },
 
   {
+    /*
+     * A component's body is one JSX tree, not fifty lines of logic.
+     *
+     * `max-lines-per-function` counts markup, so it reports a readable component
+     * as an offender and is satisfied only by splitting the tree into one-use
+     * children — which is the over-splitting rule 5 warns about, not an
+     * improvement. Components are held to file size and complexity instead;
+     * hooks and helpers in `.ts` files keep the per-function limit.
+     */
+    files: ["src/ui/**/*.tsx", "src/App.tsx"],
+    rules: { "max-lines-per-function": "off" },
+  },
+
+  {
     files: [
       "src/**/*.test.{ts,tsx}",
       "src/test/**/*.{ts,tsx}",

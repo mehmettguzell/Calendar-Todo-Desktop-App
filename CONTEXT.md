@@ -76,9 +76,11 @@ Standing rules for this repo. They override default habits. Decision record:
 
 Enforced by ESLint (`max-lines` 400, `max-lines-per-function` 50, `complexity`):
 **error** under `src/domain/`, `src/data/`, `src/sync/` and `src/state/`;
-**warn** elsewhere. `max-lines-per-function` is off
-under `src/state/`: it reads a slice factory — an object literal of actions — as
-one enormous function, so the per-method limit is held by review there.
+**warn** elsewhere. `max-lines-per-function` is off in two
+places where it measures the wrong thing: under `src/state/` it reads a slice
+factory — an object literal of actions — as one enormous function, and in
+`.tsx` files it counts a component's JSX tree. Both keep the per-function limit
+by review; hooks and helpers in `.ts` files are still checked.
 Remaining files (`src/ui/`, `src/lib/`, `App.tsx`) graduate when their own pass
 lands. Run `make lint`.
 
