@@ -66,8 +66,26 @@ export function groupByDate(
   return map;
 }
 
-/** All-day items sort above timed items; timed items sort by start. */
+/**
+ * The day first; then all-day above timed, and timed by start.
+ *
+ * Most lists that come through here hold a single day, where the date test
+ * decides nothing. The buckets that span one — "Bu hafta", "Daha sonra", and
+ * the flat pill lists on Görevler — are the reason it is here: without it a
+ * plan set for December sat above one set for next week whenever it happened
+ * to be higher priority or older, and the heading said only that both were
+ * later than this week. A list of dates that is not in date order makes the
+ * reader check every row to find the next one.
+ *
+ * Undated rows sort last. They only meet dated ones in the pill lists, and
+ * "no day" is the furthest-off day there is.
+ */
 export function compareInstances(a: TaskInstance, b: TaskInstance): number {
+  if (a.date !== b.date) {
+    if (a.date === null) return 1;
+    if (b.date === null) return -1;
+    return a.date < b.date ? -1 : 1;
+  }
   const aTimed = a.startsAt !== null;
   const bTimed = b.startsAt !== null;
   if (aTimed !== bTimed) return aTimed ? 1 : -1;

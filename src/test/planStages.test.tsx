@@ -195,6 +195,30 @@ describe("the plans page", () => {
     expect(screen.queryByText("Başlamadım")).toBeNull();
   });
 
+  /**
+   * "Tümü" is every plan you still have, not every plan you have ever had.
+   *
+   * It is the tab you reach for to stop sorting by hand, and finished plans
+   * are the one pile that only ever grows — left in, the tab that was meant to
+   * save the sorting was the one with the most to sort through. They keep
+   * their own tab two steps to the right.
+   */
+  it("keeps finished plans out of Tümü, and counts it that way", () => {
+    makePlan("Başlamadım", ["a"]);
+    const finished = makePlan("Bitti", ["b"]);
+    tick(stepsOf(finished.id)[0]?.id ?? "");
+
+    render(<PlansView selectedKey={null} onOpen={() => undefined} />);
+
+    act(() => tab(/Tümü/).click());
+    expect(screen.getByText("Başlamadım")).toBeTruthy();
+    expect(screen.queryByText("Bitti")).toBeNull();
+
+    // The tab counts what it shows: one of the two plans.
+    expect(within(tab(/Tümü/)).getByText("1")).toBeTruthy();
+    expect(within(tab(/Tamamlananlar/)).getByText("1")).toBeTruthy();
+  });
+
   it("is still on the tab you left it on when you come back", () => {
     makePlan("Başlamadım", ["a"]);
     const started = makePlan("Başladım", ["b"]);

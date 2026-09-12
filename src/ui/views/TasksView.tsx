@@ -99,8 +99,11 @@ export function TasksView({
   // Filtered main tasks
   const filteredTasks = useMemo(() => {
     return mainTasks.filter((task) => {
-      if (filterPill === "high" && task.priority !== "HIGH") return false;
+      // Tamamlananlar is the one pill the eye cannot empty: asking for the
+      // finished work and being shown none of it is not a filter, it is a bug.
       if (filterPill === "completed") return task.status === "COMPLETED";
+      if (!filters.showCompleted && task.status === "COMPLETED") return false;
+      if (filterPill === "high") return task.priority === "HIGH";
       if (filterPill === "overdue") {
         return (
           task.status !== "COMPLETED" &&
@@ -108,8 +111,6 @@ export function TasksView({
           task.dueDate < today
         );
       }
-      // default "all"
-      if (!filters.showCompleted && task.status === "COMPLETED") return false;
       return true;
     });
   }, [mainTasks, filterPill, today, filters.showCompleted]);

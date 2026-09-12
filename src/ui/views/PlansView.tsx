@@ -50,6 +50,11 @@ import {
  * plans most needs to keep apart. `PlanStage` splits them, and `ALL` stays for
  * when the split is not what you are looking for.
  *
+ * `ALL` is every plan you still have, which is not every plan you have ever
+ * had: a finished one is not work, and it has a tab of its own two steps to
+ * the right. Left in, it grew without bound — the tab you reach for to stop
+ * sorting by hand was the one that made the most to sort through.
+ *
  * Which one is chosen lives in `viewPrefsStore`, not in this component: a view
  * unmounts when you click another one in the sidebar, and a filter that resets
  * every time you glance at Today is the app undoing a choice you just made.
@@ -131,19 +136,24 @@ export function PlansView({
 
   const stageCounts = useMemo(() => {
     const counts: Record<PlanFilter, number> = {
-      ALL: staged.length,
+      ALL: 0,
       NOT_STARTED: 0,
       STARTED: 0,
       COMPLETED: 0,
     };
     for (const row of staged) counts[row.stage] += 1;
+    // The tab counts what its tab shows, or the number is a promise the list
+    // underneath does not keep.
+    counts.ALL = counts.NOT_STARTED + counts.STARTED;
     return counts;
   }, [staged]);
 
   const visiblePlans = useMemo(
     () =>
       staged
-        .filter((row) => filter === "ALL" || row.stage === filter)
+        .filter((row) =>
+          filter === "ALL" ? row.stage !== "COMPLETED" : row.stage === filter,
+        )
         .map((row) => row.plan),
     [staged, filter],
   );

@@ -65,7 +65,13 @@ export function TodayView({
     () => overdue.filter((i) => !i.isRecurring && i.date !== null && i.date < today),
     [overdue, today],
   );
-  // Today always shows what was finished today, whatever the global filter says.
+  /*
+   * The day is always fetched whole, whatever the eye in the topbar says.
+   *
+   * The ring is a fraction — 3/5 — and it has no numerator if the finished
+   * work is filtered out before it is counted. So the toggle decides one
+   * thing only: whether the finished list is drawn underneath it.
+   */
   const todayFilters = useMemo(
     () => ({ ...filters, showCompleted: true }),
     [filters],
@@ -256,11 +262,13 @@ export function TodayView({
         )}
       </Section>
 
-      <CompletedToday
-        instances={completedTodayTasks}
-        selectedKey={selectedKey}
-        onOpen={onOpen}
-      />
+      {filters.showCompleted ? (
+        <CompletedToday
+          instances={completedTodayTasks}
+          selectedKey={selectedKey}
+          onOpen={onOpen}
+        />
+      ) : null}
 
     </div>
   );

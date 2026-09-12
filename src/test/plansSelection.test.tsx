@@ -96,7 +96,7 @@ describe("picking plans in bulk", () => {
     expect(document.querySelectorAll(".task-pick").length).toBe(0);
   });
 
-  it("reaches every finished plan and step, and nothing else", async () => {
+  it("reaches every finished step on screen, and nothing else", async () => {
     await mountPlans();
     let seeded!: ReturnType<typeof seedPlans>;
     act(() => {
@@ -106,10 +106,34 @@ describe("picking plans in bulk", () => {
     await openPlansAndSelect();
     press(/Tamamlananları seç|Select completed/);
 
+    // A press reaches what the tab is showing, and "Tümü" no longer shows
+    // finished plans — so the finished plan and its step are not here. The
+    // ticked step inside the plan that is still running is, which is the case
+    // the quick-select exists for.
+    expect([...useSelectionStore.getState().ids].sort()).toEqual(
+      [seeded.doneStep.id].sort(),
+    );
+  });
+
+  it("reaches a finished plan from the tab that shows finished plans", async () => {
+    await mountPlans();
+    let seeded!: ReturnType<typeof seedPlans>;
+    act(() => {
+      seeded = seedPlans();
+    });
+
+    await openPlansAndSelect();
+    act(() =>
+      screen
+        .getByRole("tab", { name: /^(Tamamlananlar|Completed)/ })
+        .click(),
+    );
+    press(/Tamamlananları seç|Select completed/);
+
     // The finished plan counts as finished through its steps, not its own
     // status — nobody ever ticked the plan itself.
     expect([...useSelectionStore.getState().ids].sort()).toEqual(
-      [seeded.doneStep.id, seeded.finished.id, seeded.finishedStep.id].sort(),
+      [seeded.finished.id, seeded.finishedStep.id].sort(),
     );
   });
 

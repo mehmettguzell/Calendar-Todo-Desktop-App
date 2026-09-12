@@ -40,6 +40,21 @@ const SELECTABLE_VIEWS = new Set<ViewId>([
   "notes",
 ]);
 
+/**
+ * Where the topbar's filters reach.
+ *
+ * `Filters` is handed to these four views and to nobody else — Planlar,
+ * Notlar and Butce each read the store on their own terms. Drawing the
+ * search box and the completed-eye over those three put two live-looking
+ * controls on screen that no list was listening to.
+ */
+const FILTERABLE_VIEWS = new Set<ViewId>([
+  "today",
+  "tasks",
+  "calendar",
+  "focus",
+]);
+
 const MODES: { id: CalendarMode; labelKey: TranslationKey }[] = [
   { id: "month", labelKey: "calMonth" },
   { id: "week", labelKey: "calWeek" },
@@ -318,32 +333,38 @@ export function Topbar({
           nothing is worse than one that is absent. */}
       {SELECTABLE_VIEWS.has(view) ? <SelectButton /> : null}
 
-      <label className="search">
-        <Search size={14} />
-        <input
-          type="search"
-          placeholder={t("searchTasksPlaceholder")}
-          value={filters.query}
-          onChange={(e) => onFilters({ ...filters, query: e.target.value })}
-        />
-      </label>
+      {FILTERABLE_VIEWS.has(view) ? (
+        <label className="search">
+          <Search size={14} />
+          <input
+            type="search"
+            placeholder={t("searchTasksPlaceholder")}
+            value={filters.query}
+            onChange={(e) => onFilters({ ...filters, query: e.target.value })}
+          />
+        </label>
+      ) : null}
 
       {/* "Show finished tasks" was a labelled switch standing at the same
           weight as the primary button beside it, for something you toggle once
           a week. It is the same setting, as an eye you press — on when it is
           on, and it says which it is on hover. */}
-      <button
-        type="button"
-        className={cn("btn ghost icon", filters.showCompleted && "active")}
-        aria-pressed={filters.showCompleted}
-        title={filters.showCompleted ? t("hideCompleted") : t("showCompleted")}
-        aria-label={filters.showCompleted ? t("hideCompleted") : t("showCompleted")}
-        onClick={() =>
-          onFilters({ ...filters, showCompleted: !filters.showCompleted })
-        }
-      >
-        {filters.showCompleted ? <Eye size={16} /> : <EyeOff size={16} />}
-      </button>
+      {FILTERABLE_VIEWS.has(view) ? (
+        <button
+          type="button"
+          className={cn("btn ghost icon", filters.showCompleted && "active")}
+          aria-pressed={filters.showCompleted}
+          title={filters.showCompleted ? t("hideCompleted") : t("showCompleted")}
+          aria-label={
+            filters.showCompleted ? t("hideCompleted") : t("showCompleted")
+          }
+          onClick={() =>
+            onFilters({ ...filters, showCompleted: !filters.showCompleted })
+          }
+        >
+          {filters.showCompleted ? <Eye size={16} /> : <EyeOff size={16} />}
+        </button>
+      ) : null}
 
       <SyncButton />
 
